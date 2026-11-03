@@ -1,5 +1,8 @@
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { blocked, checkPackages, isAllowlisted, runCommand } from './commands'
+import { blocked, checkPackages, detectVerify, isAllowlisted, runCommand, runVerify } from './commands'
 
 const never = new AbortController().signal
 
@@ -84,5 +87,24 @@ describe('runCommand', () => {
     const out = await runCommand('seq 1 20000', '/tmp', never)
     expect(out).toMatch(/^\[output truncated/)
     expect(out).toContain('20000')
+  })
+})
+
+describe('verify helpers', () => {
+  it('runVerify reports pass and fail from the exit code', async () => {
+    expect(await runVerify('echo fine', '/tmp', never)).toMatchObject({ ok: true, command: 'echo fine' })
+    const bad = await runVerify('echo broken; exit 2', '/tmp', never)
+    expect(bad.ok).toBe(false)
+    expect(bad.output).toContain('broken')
+  })
+  it('detectVerify uses a real package.json test script only', () => {
+    const d = mkdtempSync(join(tmpdir(), 'forge-v-'))
+    expect(detectVerify(d)).toBeNull()
+    writeFileSync(join(d, 'package.json'), '{"scripts":{"test":"echo \\"Error: no test specified\\" && exit 1"}}')
+    expect(detectVerify(d)).toBeNull()
+    writeFileSync(join(d, 'package.json'), '{"scripts":{"test":"vitest run"}}')
+    expect(detectVerify(d)).toBe('npm test')
+    writeFileSync(join(d, 'package.json'), 'not json')
+    expect(detectVerify(d)).toBeNull()
   })
 })

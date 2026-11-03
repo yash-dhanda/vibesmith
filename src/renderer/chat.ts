@@ -47,6 +47,7 @@ let reply: { el: HTMLElement; text: string } | null = null
 const cards = new Map<string, { dot: HTMLElement; body: HTMLElement; name: string; path: string; actions?: HTMLElement }>()
 let running = false
 let onFileChanged: (path: string) => void = () => {}
+let onFilesRestored: (paths: string[]) => void = () => {}
 
 const nearBottom = () => thread.scrollHeight - thread.scrollTop - thread.clientHeight < 80
 const add = (el: HTMLElement) => {
@@ -136,6 +137,35 @@ function toolCard(ev: Extract<AgentEvent, { type: 'tool' }>) {
   add(card)
 }
 
+function changesCard(ev: Extract<AgentEvent, { type: 'changes' }>) {
+  const card = h('div', 'changes')
+  const sum = (k: 'added' | 'removed') => ev.files.reduce((n, f) => n + f[k], 0)
+  const head = h('div', 'changes-head')
+  const title = h('span', '', `${ev.files.length} file${ev.files.length === 1 ? '' : 's'} changed`)
+  const stat = h('span', 'stat')
+  stat.append(h('span', 'plus', `+${sum('added')}`), document.createTextNode(' '), h('span', 'minus', `−${sum('removed')}`))
+  const undo = h('button', 'undo', 'Undo') as HTMLButtonElement
+  head.append(title, stat, undo)
+  card.append(head)
+  for (const f of ev.files) {
+    const row = h('button', 'file-row')
+    row.append(h('span', 'file-status ' + f.status, f.status === 'added' ? 'A' : f.status === 'deleted' ? 'D' : 'M'), h('span', 'tool-path', f.path))
+    if (f.status !== 'deleted') row.onclick = () => onFileChanged(f.path)
+    card.append(row)
+  }
+  undo.onclick = async () => {
+    undo.disabled = true
+    try {
+      onFilesRestored(await window.forge.agentUndo(ev.checkpoint))
+      card.replaceChildren(h('div', 'note changes-done', `Undone: ${ev.files.length} file${ev.files.length === 1 ? '' : 's'} restored.`))
+    } catch (e) {
+      undo.disabled = false
+      card.append(h('div', 'errtext', cleanErr(e)))
+    }
+  }
+  add(card)
+}
+
 function handle(ev: AgentEvent) {
   switch (ev.type) {
     case 'delta': {
@@ -166,8 +196,26 @@ function handle(ev: AgentEvent) {
       }
       break
     }
+    case 'verify': {
+      const card = h('div', 'tool')
+      const head = h('button', 'tool-head')
+      head.append(h('span', 'dot ' + (ev.ok ? 'ok' : 'err')), h('span', 'tool-label', ev.ok ? 'Check passed' : 'Check failed'), h('span', 'tool-path', ev.command))
+      const body = h('div', 'tool-body')
+      body.hidden = ev.ok
+      body.append(h('pre', ev.ok ? '' : 'err', ev.output.length > 3000 ? '…' + ev.output.slice(-3000) : ev.output))
+      head.onclick = () => (body.hidden = !body.hidden)
+      card.append(head, body)
+      add(card)
+      break
+    }
+    case 'note':
+      add(h('div', 'note', ev.text))
+      break
+    case 'changes':
+      changesCard(ev)
+      break
     case 'done': {
-      const msg = { stopped: 'Stopped.', stuck: 'Stopped: the agent kept repeating a failing step.', max_steps: 'Stopped: step limit reached.', finished: '' }[ev.reason]
+      const msg = { stopped: 'Stopped.', stuck: 'Stopped: the agent kept repeating a failing step.', max_steps: 'Stopped: step limit reached.', finished: '', unverified: 'Finished, but the project check still fails. Review the changes before keeping them.' }[ev.reason]
       if (msg) add(h('div', 'note', msg))
       setRunning(false)
       break
@@ -287,6 +335,17 @@ async function openSettings() {
         box.append(mrow)
       }
     }
+    const verify = await window.forge.verifyGet()
+    if (verify) {
+      box.append(h('h3', '', 'This project'), h('p', 'note', 'After the agent edits files and says it is done, Forge runs this command. If it fails, the output goes back to the agent. Full auto requires one.'))
+      const vrow = h('div', 'modelrow')
+      const vin = document.createElement('input')
+      vin.placeholder = verify.detected ? `${verify.detected} (detected)` : 'e.g. npm test'
+      vin.value = verify.configured ?? ''
+      vin.onchange = () => window.forge.verifySet(vin.value)
+      vrow.append(h('label', 'note', 'Verify'), vin)
+      box.append(vrow)
+    }
     const close = h('button', 'close', 'Done')
     close.onclick = () => dlg.close()
     box.append(close)
@@ -296,8 +355,9 @@ async function openSettings() {
   dlg.showModal()
 }
 
-export function initChat(opts: { onFileChanged: (path: string) => void }) {
+export function initChat(opts: { onFileChanged: (path: string) => void; onFilesRestored: (paths: string[]) => void }) {
   onFileChanged = opts.onFileChanged
+  onFilesRestored = opts.onFilesRestored
   try {
     modeSel.value = localStorage.getItem('forge.mode') ?? 'ask-all'
   } catch {}

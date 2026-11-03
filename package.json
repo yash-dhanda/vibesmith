@@ -9,7 +9,8 @@
     "test": "vitest run",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "eval": "vitest run --config vitest.eval.config.ts"
   },
   "keywords": [],
   "author": "",

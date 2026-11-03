@@ -10,7 +10,10 @@ export type AgentEvent =
   | { type: 'tool'; id: string; name: string; args: unknown; needsApproval: boolean }
   | { type: 'tool_result'; id: string; text: string; ok: boolean }
   | { type: 'turn_end' }
-  | { type: 'done'; reason: 'finished' | 'stopped' | 'stuck' | 'max_steps'; steps: number }
+  | { type: 'verify'; command: string; ok: boolean; output: string }
+  | { type: 'note'; text: string }
+  | { type: 'changes'; checkpoint: string; files: { path: string; status: 'added' | 'modified' | 'deleted'; added: number; removed: number }[] }
+  | { type: 'done'; reason: 'finished' | 'unverified' | 'stopped' | 'stuck' | 'max_steps'; steps: number }
   | { type: 'error'; message: string }
 
 export const SYSTEM_PROMPT = `You are Forge, a coding agent working inside the user's project folder.
@@ -30,6 +33,8 @@ export function needsApproval(tool: string, mode: Mode, args?: unknown): boolean
   return !(mode === 'auto-edit' && typeof cmd === 'string' && isAllowlisted(cmd))
 }
 
+const MAX_VERIFY_FAILURES = 2
+
 export type RunOpts = {
   messages: Message[] // conversation so far, ending with the new user message; mutated in place
   mode: Mode
@@ -39,6 +44,8 @@ export type RunOpts = {
   approve: (id: string) => Promise<boolean>
   signal: AbortSignal
   maxSteps?: number
+  // The project's own check. Runs when the model says it is done after editing files; a failure goes back to the model.
+  verify?: () => Promise<{ command: string; ok: boolean; output: string }>
 }
 
 export async function runAgent(o: RunOpts): Promise<void> {
@@ -46,7 +53,9 @@ export async function runAgent(o: RunOpts): Promise<void> {
   // Per call signature: the last result and how many times in a row it came back identical.
   const repeats = new Map<string, { result: string; n: number }>()
   let steps = 0
-  const done = (reason: 'finished' | 'stopped' | 'stuck' | 'max_steps') => o.emit({ type: 'done', reason, steps })
+  let edited = false
+  let verifyFailures = 0
+  const done = (reason: 'finished' | 'unverified' | 'stopped' | 'stuck' | 'max_steps') => o.emit({ type: 'done', reason, steps })
 
   try {
     while (steps < max) {
@@ -57,7 +66,17 @@ export async function runAgent(o: RunOpts): Promise<void> {
       const calls = turn.toolCalls.map((c, i) => ({ ...c, id: c.id ?? `call_${steps}_${i}`, name: resolveToolName(c.name) ?? c.name }))
       o.messages.push({ role: 'assistant', content: turn.content, toolCalls: calls.length ? calls : undefined })
       o.emit({ type: 'turn_end' })
-      if (!calls.length) return done('finished')
+      if (!calls.length) {
+        if (!o.verify || !edited) return done('finished')
+        const v = await o.verify()
+        if (o.signal.aborted) return done('stopped')
+        o.emit({ type: 'verify', ...v })
+        if (v.ok) return done('finished')
+        // "Done" only counts if the project's check passes. Hand the real output back, twice at most.
+        if (++verifyFailures > MAX_VERIFY_FAILURES) return done('unverified')
+        o.messages.push({ role: 'user', content: `Verification failed. Command: ${v.command}\n${v.output}\nFix the cause, then finish.` })
+        continue
+      }
 
       for (const call of calls) {
         const id = `${steps}-${Math.random().toString(36).slice(2, 8)}`
@@ -68,6 +87,7 @@ export async function runAgent(o: RunOpts): Promise<void> {
         else if (o.signal.aborted) return done('stopped')
         else text = await o.tools.run(call.name, call.args, o.signal)
         const ok = !text.startsWith('ERROR:') && !text.startsWith('DENIED:')
+        if (ok && call.name === 'edit_file') edited = true
 
         // The same call returning the same result three times means nothing is changing: the model is looping.
         // Errors, empty searches, a repeated read or an unchanged test run all land here.

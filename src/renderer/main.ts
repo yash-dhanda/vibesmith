@@ -118,7 +118,33 @@ async function agentChangedFile(path: string) {
   }
 }
 
-initChat({ onFileChanged: agentChangedFile })
+// Files were put back on disk (undo): reload open tabs, close tabs whose file no longer exists, refresh the tree.
+async function filesRestored(paths: string[]) {
+  for (const path of paths) {
+    const t = tabs.get(path)
+    if (!t) continue
+    try {
+      const text = await window.forge.read(path)
+      t.model.setValue(text)
+      t.saved = text
+    } catch {
+      t.model.dispose()
+      tabs.delete(path)
+      if (active === path) {
+        active = null
+        const next = [...tabs.keys()][0]
+        if (next) show(next)
+        else editor.setModel(null)
+      }
+    }
+  }
+  renderTabs()
+  const tree = document.getElementById('tree')!
+  tree.replaceChildren()
+  await renderDir('.', tree, 0)
+}
+
+initChat({ onFileChanged: agentChangedFile, onFilesRestored: filesRestored })
 
 document.getElementById('open')!.onclick = async () => {
   if (await window.forge.openProject()) await loadTree()

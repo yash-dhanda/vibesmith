@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 // ponytail: pattern deny-list, not a sandbox. Real containment is the approval gate; upgrade to a container if full-auto becomes the default.
 const DENY: [RegExp, string][] = [
@@ -106,4 +108,20 @@ export async function runCommand(cmd: string, cwd: string, signal: AbortSignal, 
     child.on('error', (e) => finish(`\nERROR: ${e.message}`))
     child.on('close', (code) => finish(`\n[exit code ${code ?? 'killed'}]`))
   })
+}
+
+// ---- verify: the project's own check (tests, build). The user picks it, so it is trusted like a button, not like a model-chosen command ----
+export async function runVerify(command: string, cwd: string, signal: AbortSignal): Promise<{ command: string; ok: boolean; output: string }> {
+  const output = await runCommand(command, cwd, signal, { timeoutMs: 120_000 })
+  return { command, ok: /\[exit code 0\]\s*$/.test(output), output }
+}
+
+// A package.json test script is a safe default. Anything fancier is the user's call in Settings.
+export function detectVerify(root: string): string | null {
+  try {
+    const test = (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { scripts?: { test?: string } }).scripts?.test
+    return test && !/no test specified/.test(test) ? 'npm test' : null
+  } catch {
+    return null
+  }
 }

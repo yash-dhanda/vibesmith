@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { setRoot } from '../project'
-import { needsApproval, runAgent, type AgentEvent, type Mode } from './loop'
+import { needsApproval, runAgent, type AgentEvent, type Mode, type RunOpts } from './loop'
 import type { Message, Provider, ToolCall } from './provider'
 import { ToolBox } from './tools'
 
@@ -27,10 +27,10 @@ const script = (turns: ToolCall[][]): Provider => {
   }
 }
 
-async function run(turns: ToolCall[][], mode: Mode, approve: boolean, signal = new AbortController().signal) {
+async function run(turns: ToolCall[][], mode: Mode, approve: boolean, signal = new AbortController().signal, verify?: RunOpts['verify']) {
   const events: AgentEvent[] = []
   const messages: Message[] = [{ role: 'user', content: 'go' }]
-  await runAgent({ messages, mode, provider: script(turns), tools: new ToolBox(), emit: (e) => events.push(e), approve: async () => approve, signal })
+  await runAgent({ messages, mode, provider: script(turns), tools: new ToolBox(), emit: (e) => events.push(e), approve: async () => approve, signal, verify })
   return { events, messages }
 }
 
@@ -127,5 +127,55 @@ describe('runAgent', () => {
     const failing: Provider = { chat: async () => { throw new Error('Cannot reach Ollama') } }
     await runAgent({ messages: [], mode: 'ask-all', provider: failing, tools: new ToolBox(), emit: (e) => events.push(e), approve: async () => true, signal: new AbortController().signal })
     expect(events.at(-1)).toEqual({ type: 'error', message: 'Cannot reach Ollama' })
+  })
+})
+
+describe('verify step', () => {
+  const edit2: ToolCall[] = [{ name: 'edit_file', args: { path: 'a.txt', old_text: 'bye', new_text: 'ciao' } }]
+  const check = (results: boolean[]) => {
+    let i = 0
+    const calls: string[] = []
+    const fn: NonNullable<RunOpts['verify']> = async () => {
+      const ok = results[Math.min(i++, results.length - 1)]
+      calls.push(ok ? 'pass' : 'fail')
+      return { command: 'npm test', ok, output: ok ? 'ok\n[exit code 0]' : 'FAIL: expected ciao\n[exit code 1]' }
+    }
+    return { fn, calls }
+  }
+
+  it('passing check: finished, with a verify event', async () => {
+    const v = check([true])
+    const { events } = await run([read, edit], 'full-auto', true, undefined, v.fn)
+    expect(events.find((e) => e.type === 'verify')).toMatchObject({ ok: true, command: 'npm test' })
+    expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'finished' })
+  })
+
+  it('failing check goes back to the model, which fixes it', async () => {
+    const v = check([false, true])
+    const { events, messages } = await run([read, edit, [], edit2, []], 'full-auto', true, undefined, v.fn)
+    expect(v.calls).toEqual(['fail', 'pass'])
+    expect(messages.some((m) => m.role === 'user' && m.content.startsWith('Verification failed') && m.content.includes('FAIL: expected ciao'))).toBe(true)
+    expect(readFileSync(join(dir, 'a.txt'), 'utf8')).toBe('ciao\n')
+    expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'finished' })
+  })
+
+  it('gives up as unverified after two failed rounds', async () => {
+    const v = check([false])
+    const { events } = await run([read, edit, [], [], []], 'full-auto', true, undefined, v.fn)
+    expect(v.calls).toEqual(['fail', 'fail', 'fail'])
+    expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'unverified' })
+  })
+
+  it('does not run when the model changed nothing', async () => {
+    const v = check([false])
+    const { events } = await run([read], 'ask-all', true, undefined, v.fn)
+    expect(v.calls).toEqual([])
+    expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'finished' })
+  })
+
+  it('does not run when the user rejected the only edit', async () => {
+    const v = check([false])
+    await run([read, edit], 'ask-all', false, undefined, v.fn)
+    expect(v.calls).toEqual([])
   })
 })

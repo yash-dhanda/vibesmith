@@ -5,11 +5,14 @@ import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { getRoot, inRoot, setRoot } from './project'
-import { runAgent, SYSTEM_PROMPT, type Mode } from './agent/loop'
+import { runVerify } from './agent/commands'
+import { runAgent, SYSTEM_PROMPT, type AgentEvent, type Mode } from './agent/loop'
 import type { Message } from './agent/provider'
 import { ToolBox } from './agent/tools'
+import { changesSince, createCheckpoint, initRepo, isRepo, undoTo, type Checkpoint } from './checkpoint'
 import { clearKey, keyStatus, setKey, type KeyProvider } from './keys'
 import { listModels, makeProvider } from './models'
+import { getVerify, setVerify } from './settings'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -48,24 +51,72 @@ ipcMain.on('term:resize', (_e, cols: number, rows: number) => term?.resize(cols,
 // One chat session per window: the conversation survives across prompts, like any chat app.
 let agent: { messages: Message[]; tools: ToolBox } | null = null
 let running: { ctl: AbortController; pending: Map<string, (ok: boolean) => void> } | null = null
+const checkpoints = new Map<string, Checkpoint>() // runs that changed files, by id, until undone
 
-ipcMain.handle('agent:send', (e, p: { text: string; mode: Mode; model: string }) => {
+ipcMain.handle('agent:send', async (e, p: { text: string; mode: Mode; model: string }) => {
   if (running) throw new Error('agent already running')
-  if (!getRoot()) throw new Error('open a project folder first')
+  const root = getRoot()
+  if (!root) throw new Error('open a project folder first')
   const provider = makeProvider(p.model) // throws a readable error (e.g. missing key) before anything is recorded
-  agent ??= { messages: [{ role: 'system', content: SYSTEM_PROMPT }], tools: new ToolBox() }
-  agent.messages.push({ role: 'user', content: p.text })
+  const verifyCmd = getVerify(root).effective
+  if (p.mode === 'full-auto' && !verifyCmd) throw new Error('Full auto needs a verify command, because nothing else checks the model\'s work. Set one in Settings (gear icon).')
+
+  const send = (ev: AgentEvent) => e.sender.send('agent:event', ev)
   const run = (running = { ctl: new AbortController(), pending: new Map() })
-  runAgent({
-    messages: agent.messages,
-    mode: p.mode,
-    provider,
-    tools: agent.tools,
-    emit: (ev) => e.sender.send('agent:event', ev),
-    approve: (id) => new Promise((res) => run.pending.set(id, res)),
-    signal: run.ctl.signal,
-  }).finally(() => (running = null))
+  try {
+    // Undo needs git. Ask before creating a repo in someone's folder.
+    if (!(await isRepo(root))) {
+      const win = BrowserWindow.fromWebContents(e.sender)!
+      const r = await dialog.showMessageBox(win, {
+        type: 'question', buttons: ['Initialize git', 'Continue without undo'], defaultId: 0, cancelId: 1,
+        message: "This folder isn't a git repository.", detail: 'Forge uses git to snapshot your files before each agent run, so you can undo it. Initialize one here?',
+      })
+      if (r.response === 0) await initRepo(root)
+    }
+    let cp: Checkpoint | null = null
+    if (await isRepo(root)) cp = await createCheckpoint(root)
+    else send({ type: 'note', text: 'No git repository: this run cannot be undone.' })
+
+    agent ??= { messages: [{ role: 'system', content: SYSTEM_PROMPT }], tools: new ToolBox() }
+    agent.messages.push({ role: 'user', content: p.text })
+    const a = agent
+    runAgent({
+      messages: a.messages,
+      mode: p.mode,
+      provider,
+      tools: a.tools,
+      emit: send,
+      approve: (id) => new Promise((res) => run.pending.set(id, res)),
+      signal: run.ctl.signal,
+      verify: verifyCmd ? () => runVerify(verifyCmd, root, run.ctl.signal) : undefined,
+    })
+      .then(async () => {
+        const files = cp ? await changesSince(root, cp) : []
+        if (cp && files.length) {
+          checkpoints.set(cp.id, cp)
+          send({ type: 'changes', checkpoint: cp.id, files })
+        }
+      })
+      .catch((err) => send({ type: 'error', message: (err as Error).message }))
+      .finally(() => (running = null))
+  } catch (err) {
+    running = null
+    throw err
+  }
 })
+
+ipcMain.handle('agent:undo', async (_e, id: string) => {
+  const root = getRoot()
+  const cp = checkpoints.get(id)
+  if (running || !root || !cp) throw new Error('nothing to undo')
+  const touched = await undoTo(root, cp)
+  checkpoints.delete(id)
+  agent?.messages.push({ role: 'user', content: '[The user undid your last changes. Files are back to how they were before your edits. Re-read a file before editing it again.]' })
+  return touched
+})
+
+ipcMain.handle('verify:get', () => (getRoot() ? getVerify(getRoot()!) : null))
+ipcMain.handle('verify:set', (_e, cmd: string) => getRoot() && setVerify(getRoot()!, cmd))
 
 ipcMain.on('agent:approve', (_e, id: string, ok: boolean) => {
   running?.pending.get(id)?.(ok)
