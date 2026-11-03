@@ -17,6 +17,7 @@
   "description": "Desktop code editor with autonomous AI agent",
   "type": "module",
   "devDependencies": {
+    "@electron/rebuild": "^4.2.1",
     "@types/node": "^26.6.6",
     "electron": "^45.2.1",
     "electron-vite": "^6.0.0",
@@ -24,6 +25,9 @@
     "vite": "^8.3.5"
   },
   "dependencies": {
-    "monaco-editor": "^0.57.0"
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "monaco-editor": "^0.57.0",
+    "node-pty": "^1.1.0"
   }
 }

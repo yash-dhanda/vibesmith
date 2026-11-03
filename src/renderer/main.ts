@@ -1,6 +1,9 @@
 import * as monaco from 'monaco-editor'
 import editorWorker from 'monaco-editor/editor/editor.worker?worker'
 import type { ForgeApi } from '../preload'
+import { Terminal } from '@xterm/xterm'
+import { FitAddon } from '@xterm/addon-fit'
+import '@xterm/xterm/css/xterm.css'
 
 declare global {
   interface Window {
@@ -94,6 +97,7 @@ async function loadTree() {
   editor.setModel(null)
   renderTabs()
   await renderDir('.', tree, 0)
+  await startTerminal()
 }
 
 document.getElementById('open')!.onclick = async () => {
@@ -103,3 +107,20 @@ document.getElementById('open')!.onclick = async () => {
 window.forge.currentProject().then((r) => {
   if (r) loadTree()
 })
+
+const term = new Terminal({ fontSize: 13, theme: { background: '#1e1e1e' }, cursorBlink: true })
+const fit = new FitAddon()
+term.loadAddon(fit)
+term.open(document.getElementById('term')!)
+term.onData((d) => window.forge.termWrite(d))
+window.forge.onTermData((d) => term.write(d))
+new ResizeObserver(() => {
+  fit.fit()
+  window.forge.termResize(term.cols, term.rows)
+}).observe(document.getElementById('term')!)
+
+async function startTerminal() {
+  fit.fit()
+  term.clear()
+  await window.forge.termSpawn(term.cols, term.rows)
+}

@@ -1,4 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import * as pty from 'node-pty'
+import { homedir } from 'node:os'
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'
 import { dirname, join, relative, resolve, isAbsolute } from 'node:path'
@@ -41,6 +43,18 @@ ipcMain.handle('fs:list', async (_e, dir: string) => {
     .map((d) => ({ name: d.name, dir: d.isDirectory() }))
     .sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name))
 })
+
+// One terminal per window. It runs in the project folder; the shell itself is the user's, not jailed.
+let term: pty.IPty | null = null
+
+ipcMain.handle('term:spawn', (e, cols: number, rows: number) => {
+  term?.kill()
+  term = pty.spawn(process.env.SHELL || 'bash', [], { name: 'xterm-256color', cols, rows, cwd: root ?? homedir(), env: process.env as Record<string, string> })
+  term.onData((d) => e.sender.send('term:data', d))
+  term.onExit(() => e.sender.send('term:data', '\r\n[process exited]\r\n'))
+})
+ipcMain.on('term:write', (_e, d: string) => term?.write(d))
+ipcMain.on('term:resize', (_e, cols: number, rows: number) => term?.resize(cols, rows))
 
 ipcMain.handle('fs:read', (_e, file: string) => readFile(inRoot(file), 'utf8'))
 ipcMain.handle('fs:write', (_e, file: string, text: string) => writeFile(inRoot(file), text))

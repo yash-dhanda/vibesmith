@@ -11,7 +11,8 @@
     #side button.open { margin: 4px 8px 8px; padding: 4px 10px; }
     .row { padding: 2px 8px; cursor: pointer; white-space: nowrap; user-select: none; }
     .row:hover { background: #2a2d2e; }
-    #main { display: grid; grid-template-rows: 32px 1fr; min-width: 0; }
+    #main { display: grid; grid-template-rows: 32px 1fr 240px; min-width: 0; }
+    #term { border-top: 1px solid #333; padding: 4px 0 0 8px; min-height: 0; overflow: hidden; }
     #tabs { display: flex; background: #252526; overflow-x: auto; }
     .tab { padding: 0 12px; line-height: 32px; cursor: pointer; border-right: 1px solid #1e1e1e; white-space: nowrap; }
     .tab.active { background: #1e1e1e; color: #fff; }
@@ -21,7 +22,7 @@
 <body>
   <div id="app">
     <div id="side"><button class="open" id="open">Open folder</button><div id="tree"></div></div>
-    <div id="main"><div id="tabs"></div><div id="editor"></div></div>
+    <div id="main"><div id="tabs"></div><div id="editor"></div><div id="term"></div></div>
   </div>
   <script type="module" src="./main.ts"></script>
 </body>
