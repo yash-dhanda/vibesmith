@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { getRoot, inRoot, resolveIn, setRoot } from './project'
 import { isPreviewable } from './preview'
 import { PreviewServer } from './previewServer'
+import { isRemote } from './ollamaHost'
 import { BriefStore, type BriefEdit } from './briefStore'
 import { applyUserPlan, planFromTranscript, planNote, type PlanState } from './agent/plan'
 import { runVerify } from './agent/commands'
@@ -78,7 +79,7 @@ const lastProject = (): string | null => {
 const rememberProject = (p: string) => writeState({ lastProject: p })
 
 // ---- chat sessions: each chat has its own run, so work carries on in the background while you look at another chat ----
-type Run = { ctl: AbortController; pending: Map<string, (ok: boolean) => void>; model: string; stoppedByUser: boolean }
+type Run = { ctl: AbortController; pending: Map<string, (ok: boolean) => void>; model: string; stoppedByUser: boolean; startedAt: number; refreshed: boolean }
 type Session = { chat: Chat; tools: ToolBox; run: Run | null; dirty: boolean; saveTimer: NodeJS.Timeout | null; plan: PlanState | null; steer: string[] }
 const sessions = new Map<string, Session>()
 const planOf = (s: Session): PlanState => (s.plan ??= planFromTranscript(s.chat.transcript))
@@ -129,6 +130,14 @@ function emit(s: Session, ev: AgentEvent) {
     win?.webContents.send('usage:changed')
   }
   scheduleSave(s)
+}
+
+async function runtimeEvent(model: string, queueSeconds?: number): Promise<Extract<AgentEvent, { type: 'runtime' }>> {
+  if (!model.startsWith('ollama:')) return { type: 'runtime', location: 'cloud', model, modelLoaded: true, ...(queueSeconds === undefined ? {} : { queueSeconds }) }
+  const name = model.slice('ollama:'.length).replace(/:latest$/, '')
+  const st = await ollamaStatus().catch(() => null)
+  const m = st?.loaded.find((l) => l.name.replace(/:latest$/, '') === name)
+  return { type: 'runtime', location: isRemote() ? 'remote' : 'local', model, modelLoaded: !!m, ...(m ? { gpuPercent: m.gpuPercent } : {}), ...(queueSeconds === undefined ? {} : { queueSeconds: Math.round(queueSeconds * 10) / 10 }) }
 }
 
 const withPreview = (files: Change[]) => files.map((f) => ({ ...f, previewable: f.status !== 'deleted' && isPreviewable(f.path) }))
@@ -301,10 +310,11 @@ ipcMain.handle('agent:send', async (e, p: { chatId: string; text: string; mode: 
   tools.maxRead = local ? Math.min(20_000, Math.max(4000, numCtx)) : 20_000
   const clamp = (n: unknown, lo: number, hi: number, d: number) => (typeof n === 'number' && isFinite(n) ? Math.min(hi, Math.max(lo, Math.round(n))) : d)
 
-  const run: Run = { ctl: new AbortController(), pending: new Map(), model: p.model, stoppedByUser: false }
+  const run: Run = { ctl: new AbortController(), pending: new Map(), model: p.model, stoppedByUser: false, startedAt: Date.now(), refreshed: false }
   session.run = run
   changed()
 
+  void runtimeEvent(p.model).then((r) => emit(session, r))
   let cp: Checkpoint | null = null
   if (git && (await isRepo(root))) cp = await createCheckpoint(root)
   else emit(session, { type: 'note', text: git ? 'No git repository: this run cannot be undone.' : 'Git is not installed on this computer, so this run cannot be undone. Install git to get Undo.' })
@@ -315,7 +325,15 @@ ipcMain.handle('agent:send', async (e, p: { chatId: string; text: string; mode: 
     mode: p.mode,
     provider,
     tools,
-    emit: (ev) => emit(session, ev),
+    emit: (ev) => {
+      emit(session, ev)
+      // After the first reply the model is loaded: say so, and how long the user waited for it to start.
+      if (ev.type === 'usage' && !run.refreshed) {
+        run.refreshed = true
+        const waited = Math.max(0, (Date.now() - run.startedAt) / 1000 - (ev.tps > 0 ? ev.output / ev.tps : 0))
+        void runtimeEvent(p.model, waited).then((r) => emit(session, r))
+      }
+    },
     approve: (id) =>
       new Promise((res) => {
         run.pending.set(id, res)

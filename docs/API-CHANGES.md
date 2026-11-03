@@ -48,3 +48,9 @@ Claude appends every new `window.forge` call or event here. Additive only.
 - **`forge.changeDetail(chatId, checkpoint, path): Promise<{ before, after, existedBefore, existsNow, binary, truncated }>`** — file text as it was before the run and as it is now (each capped at 120k chars; `binary` files return empty strings). Rejects if the checkpoint is gone (after "Undo this run").
 - **New event `{ type: 'restored', checkpoint, paths, remaining }`** after either Undo. `remaining` has the same shape as `changes.files` (empty after Undo-all). Stored in the transcript: when you replay history, apply `restored` to the earlier `changes` card for that checkpoint (drop the paths no longer in `remaining`).
 - `agentUndoFile` now returns files with `previewable` too.
+
+## 2026-11-03 — roadmap #4: runtime event
+
+- **New event `{ type: 'runtime', location: 'local'|'remote'|'cloud', model, modelLoaded: boolean, gpuPercent?: number, queueSeconds?: number }`.** Sent when a run starts (`modelLoaded` is false if the model still has to be loaded into memory: show "Loading the model…") and again after the first reply (`modelLoaded: true`, `gpuPercent` 0-100 for Ollama models, `queueSeconds` = how long the user waited before the model began answering). Stored in the transcript; the latest one wins.
+- `location` is `remote` when the engine address is another computer (see engineHostGet), `cloud` for Anthropic/OpenAI/OpenRouter.
+- **No cost fields.** Forge has no verified prices for the cloud models, so nothing is invented. Show tokens, and cost only when a price source exists (a Settings field for the user's own price per million tokens is the likely next step; ask in UI-REQUESTS.md if you want it).

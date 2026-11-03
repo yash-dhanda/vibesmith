@@ -11,6 +11,9 @@ export type Mode = 'ask-all' | 'auto-edit' | 'full-auto'
 export type AgentEvent =
   | { type: 'delta'; text: string }
   | { type: 'tool'; id: string; name: string; args: unknown; needsApproval: boolean; label?: string }
+  // Where the model runs and how it is doing. Sent when a run starts and again after the first reply (then the model is loaded
+  // and `queueSeconds` is known: how long the user waited before it began answering). No cost fields: Forge has no verified prices.
+  | { type: 'runtime'; location: 'local' | 'remote' | 'cloud'; model: string; modelLoaded: boolean; gpuPercent?: number; queueSeconds?: number }
   | { type: 'plan'; revision: number; items: PlanStep[] }
   | { type: 'tool_result'; id: string; text: string; ok: boolean }
   | { type: 'turn_end' }
