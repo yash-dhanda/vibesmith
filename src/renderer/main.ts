@@ -4,6 +4,7 @@ import type { ForgeApi } from '../preload'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
+import { initChat } from './chat'
 
 declare global {
   interface Window {
@@ -99,6 +100,25 @@ async function loadTree() {
   await renderDir('.', tree, 0)
   await startTerminal()
 }
+
+// The agent edited a file on disk: show it. A tab with unsaved user changes is left alone.
+async function agentChangedFile(path: string) {
+  const t = tabs.get(path)
+  if (!t) {
+    await openFile(path)
+    // ponytail: rebuilds the tree, which collapses folders; track created paths and patch the tree if that annoys
+    const tree = document.getElementById('tree')!
+    tree.replaceChildren()
+    await renderDir('.', tree, 0)
+  } else if (t.model.getValue() === t.saved) {
+    const text = await window.forge.read(path)
+    t.model.setValue(text)
+    t.saved = text
+    show(path)
+  }
+}
+
+initChat({ onFileChanged: agentChangedFile })
 
 document.getElementById('open')!.onclick = async () => {
   if (await window.forge.openProject()) await loadTree()
