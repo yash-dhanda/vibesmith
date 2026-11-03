@@ -43,14 +43,34 @@ export async function loadModels() {
   if (noModels) modelSel.append(new Option('No model found', 'ollama:qwen3:8b'))
   if (list.some((m) => m.id === saved)) modelSel.value = saved
   window.dispatchEvent(new Event('forge-models'))
+  updateHonesty()
 }
 
 export function initModels() {
   modelSel.onfocus = loadModels
   modelSel.onchange = () => {
+    updateHonesty()
     try {
       localStorage.setItem('forge.model', modelSel.value)
     } catch {}
   }
+  window.forge.onEngineChanged(updateHonesty)
   return loadModels()
+}
+
+let honestyRequest = 0
+async function updateHonesty() {
+  const request = ++honestyRequest
+  const id = selectedModel()
+  const line = $('model-honesty')
+  if (noModels) { line.textContent = 'Choose a model to start building'; return }
+  if (!id.startsWith('ollama:')) { line.textContent = 'Cloud model · internet required · provider bills usage'; return }
+  line.textContent = 'Local model · checking where it runs…'
+  try {
+    const [status, host] = await Promise.all([window.forge.ollamaStatus(), typeof window.forge.engineHostGet === 'function' ? window.forge.engineHostGet() : Promise.resolve({ host: '' })])
+    if (request !== honestyRequest) return
+    if (host.host) { line.textContent = status.up ? 'On another computer · network connection required' : 'Remote engine unavailable · check Settings'; return }
+    const loaded = status.loaded.find(m => m.name === id.slice(7))
+    line.textContent = !status.up ? 'Local engine unavailable · open Models' : loaded ? loaded.gpuPercent === 100 ? 'On your GPU · local and private' : loaded.gpuPercent === 0 ? 'On your CPU · expect a slower build' : `${loaded.gpuPercent}% on GPU · partly on CPU` : 'Local model · hardware use shown once loaded'
+  } catch { if (request === honestyRequest) line.textContent = 'Local model · hardware status unavailable' }
 }

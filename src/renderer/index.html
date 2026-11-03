@@ -9,9 +9,12 @@
 </head>
 <body>
   <div id="app">
-    <aside id="history">
+    <aside id="history" aria-label="Chats and navigation">
+      <div class="brand"><span class="brand-mark">f</span><strong>forge<span> / </span></strong><span class="brand-caption">IDEAS INTO REALITY</span></div>
+      <button class="command-trigger" id="commands"><i data-icon="search"></i><span>Find anything</span><kbd>Ctrl K</kbd></button>
       <button class="new-chat" id="new-chat"><i data-icon="plus"></i><span>New chat</span><kbd>Ctrl N</kbd></button>
-      <input id="chat-search" type="search" placeholder="Search chats…" autocomplete="off" />
+      <input id="chat-search" type="search" aria-label="Search chats" placeholder="Filter your chats…" autocomplete="off" />
+      <div class="nav-eyebrow">YOUR BUILDS</div>
       <div id="chat-list"></div>
       <button class="usage-badge" id="usage-badge" title="Token usage"><span class="u-main">0 tokens</span><span class="u-sub">no usage yet</span></button>
       <button class="side-btn" id="models-btn"><i data-icon="cube"></i>Models</button>
@@ -21,30 +24,41 @@
     <main id="chat">
       <header id="chat-head">
         <button class="icon-btn" id="hist-toggle" title="Show or hide chat history (Ctrl B)" aria-label="Toggle chat history"><i data-icon="sidebar"></i></button>
-        <span id="chat-title" title="Click to rename">New chat</span>
+        <button id="chat-title" title="Click to rename">New chat</button>
         <span class="grow"></span>
         <span class="chip" id="rate" hidden title="Generation speed"></span>
         <span class="chip" id="ctx" hidden title="How much of the model's memory this chat uses"></span>
+        <button class="head-btn" id="brief-toggle" aria-expanded="false" aria-controls="build-brief"><i data-icon="cube"></i>Build brief</button>
         <button class="head-btn" id="ws-toggle" title="Show the files, editor and terminal (Ctrl J)"><i data-icon="code"></i>Workspace</button>
         <button class="icon-btn" id="more" title="More" aria-label="More"><i data-icon="dots"></i></button>
       </header>
       <div id="thread-wrap"><div id="thread-scroll"><div id="thread"></div></div><button id="to-bottom" hidden title="Jump to the latest message" aria-label="Jump to the latest message"><i data-icon="arrowdown"></i></button></div>
       <div id="composer-wrap">
         <div id="composer">
-          <textarea id="prompt" rows="1" placeholder="Ask Forge to build or change something…"></textarea>
+          <textarea id="prompt" rows="1" aria-label="Describe what to build" placeholder="Describe your idea. We’ll build it together."></textarea>
           <div class="bar">
             <button class="pill" id="project" title="The folder the agent works in">Choose folder</button>
-            <select id="mode" title="How much the agent may do without asking">
+            <select aria-label="Agent autonomy" id="mode" title="How much the agent may do without asking">
               <option value="ask-all">Ask before edits</option>
               <option value="auto-edit">Auto-edit</option>
               <option value="full-auto">Full auto</option>
             </select>
-            <select id="model" title="Model"></select>
+            <select aria-label="AI model" id="model" title="Model"></select>
             <span class="grow"></span>
             <button id="send" title="Send" aria-label="Send"><i data-icon="arrowup"></i></button>
           </div>
         </div>
+        <div class="composer-note"><span id="model-honesty">Checking model availability…</span><span>Enter to send <span aria-hidden="true">↵</span></span></div>
       </div>
+      <aside id="build-brief" aria-label="What we’re building">
+        <div class="brief-top"><span class="eyebrow">THE BUILD BRIEF</span><button id="brief-close" class="icon-btn" aria-label="Close build brief"><i data-icon="x"></i></button></div>
+        <div class="project-object"><div class="object-icon"><i data-icon="cube"></i></div><h2 id="brief-name">Your next idea</h2><p id="brief-folder"></p><p id="brief-goal"></p></div>
+        <div id="brief-status" role="status">Ready when you are</div>
+        <section class="brief-section" id="agent-plan-section" hidden><h3>The plan</h3><p class="brief-muted">Updated by Forge as it works. Add your direction below for the next message.</p><ol id="agent-plan"></ol></section>
+        <section class="brief-section"><div class="brief-section-head"><h3>Your priorities</h3><span id="priority-count">0 included</span></div><p class="brief-muted">Steer the next message. Uncheck to skip; move a priority earlier with ↑.</p><ol id="priorities"></ol><form id="priority-form"><input id="priority-input" aria-label="New build priority" placeholder="Keep it simple, add dark mode…" maxlength="240"/><button class="icon-btn" type="submit" aria-label="Add priority"><i data-icon="plus"></i></button></form></section>
+        <section class="brief-section"><h3 id="brief-files-title">Taking shape</h3><div id="brief-files"></div><button id="brief-preview" class="btn" hidden><i data-icon="globe"></i>Live preview in browser</button></section>
+        <div class="brief-foot"><i data-icon="folder"></i>Your project lives on your computer.</div>
+      </aside>
     </main>
 
     <aside id="workspace">
@@ -54,8 +68,9 @@
   </div>
   <div id="menu" class="menu" hidden></div>
   <div id="toasts"></div>
-  <dialog id="settings"></dialog>
-  <dialog id="library"></dialog>
+  <dialog id="palette" aria-label="Find anything"><div class="palette-search"><i data-icon="search"></i><input id="command-search" role="combobox" aria-label="Search actions, chats, and models" aria-controls="command-results" aria-expanded="true" aria-autocomplete="list" placeholder="Where do you want to go?" autocomplete="off"/><kbd>Esc</kbd></div><div id="command-results" role="listbox" aria-label="Commands"></div><div class="palette-foot"><span>↑ ↓ navigate · Enter to open</span><span id="command-count"></span></div></dialog>
+  <dialog id="settings" aria-label="Settings"></dialog>
+  <dialog id="library" aria-label="Model library"></dialog>
   <script type="module" src="./main.ts"></script>
 </body>
 </html>

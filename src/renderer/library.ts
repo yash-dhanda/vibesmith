@@ -63,6 +63,7 @@ function pullBar(p: PullEvent): HTMLElement {
   const cancel = h('button', 'icon-btn sm')
   cancel.append(icon('x', 'sm'))
   cancel.title = 'Cancel download'
+  cancel.setAttribute('aria-label', `Cancel download of ${p.name}`)
   cancel.onclick = () => window.forge.modelsCancel(p.name)
   w.append(bar, txt, cancel)
   return w
@@ -118,9 +119,14 @@ async function renderEngine() {
   const card = h('div', 'engine')
   if (st.state === 'ready-external' || st.state === 'ready-managed') {
     const l = h('div', 'engine-line')
-    l.append(h('span', 'badge ok', 'Engine running'), h('span', 'muted', `Ollama ${st.version ?? ''}${st.state === 'ready-managed' ? ' · managed by Forge' : ''}`))
+    l.append(h('span', 'badge ok', 'Engine running'), h('span', 'muted', `Ollama ${st.version ?? ''}${st.remote ? ' · on another computer' : st.state === 'ready-managed' ? ' · managed by Forge' : ''}`))
     card.append(l)
     if (st.cpuOnly) card.append(h('div', 'engine-warn', 'The model is running on the CPU, not the graphics card, so it will be several times slower. Install the GPU build of Ollama.'))
+  } else if (st.state === 'remote-down') {
+    card.append(h('div', 'engine-title', 'The engine on your other computer isn’t reachable'), h('div', 'muted', 'Check that computer is on and the address is correct.'))
+    const settings = h('button', 'btn', 'Check the address')
+    settings.onclick = () => { $<HTMLDialogElement>('library').close(); import('./settings').then(m => m.openSettings('models')) }
+    card.append(settings)
   } else if (st.installing || engineProgress) {
     const p = engineProgress ?? { phase: 'lookup', done: 0, total: 0 }
     card.append(h('div', 'engine-title', 'Setting up the AI engine'))
@@ -371,7 +377,7 @@ export async function openLibrary(opts: { welcome?: boolean; tab?: Tab } = {}) {
   }
   dlg.replaceChildren(wrap)
   if (!dlg.open) dlg.showModal()
-  ;(document.activeElement as HTMLElement | null)?.blur()
+  close.focus()
   body.replaceChildren(...Array.from({ length: 3 }, () => h('div', 'skel skel-row')))
   await refresh()
 }

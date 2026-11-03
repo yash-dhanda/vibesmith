@@ -32,6 +32,7 @@ function row(title: string, desc: string, ...controls: HTMLElement[]) {
   if (desc) t.append(h('div', 'st-d', desc))
   const c = h('div', 'ctl')
   c.append(...controls)
+  for (const control of c.querySelectorAll('input, select')) control.setAttribute('aria-label', title)
   r.append(t, c)
   return r
 }
@@ -104,7 +105,44 @@ async function general(into: HTMLElement) {
 async function models(into: HTMLElement) {
   const [ol, keys] = await Promise.all([window.forge.ollamaStatus(), window.forge.keysStatus()])
 
-  const local = group('Local models', 'Run on this computer through Ollama: free and private.')
+  if (typeof window.forge.engineHostGet === 'function') {
+    const host = await window.forge.engineHostGet()
+    const location = group('Where models run', 'Use this computer or an AI engine on another computer on your network.')
+    const address = document.createElement('input')
+    address.type = 'text'
+    address.value = host.host
+    address.placeholder = '192.168.1.20:11434'
+    const memory = document.createElement('input')
+    memory.type = 'number'
+    memory.min = '1'
+    memory.max = '1024'
+    memory.value = String(host.vramGB)
+    const result = h('div', 'hint')
+    result.setAttribute('role', 'status')
+    const test = h('button', 'btn', 'Test connection') as HTMLButtonElement
+    test.onclick = async () => {
+      test.disabled = true
+      try { const checked = await window.forge.engineHostTest(address.value); result.textContent = checked.ok ? `Connected · ${checked.models} models available` : 'Engine didn’t respond. Check the address.' }
+      catch (e) { result.textContent = cleanErr(e) }
+      finally { test.disabled = false }
+    }
+    const use = h('button', 'btn primary', 'Use this address') as HTMLButtonElement
+    use.onclick = async () => {
+      use.disabled = true
+      try { await window.forge.engineHostSet(address.value, Number(memory.value)); await loadModels(); result.textContent = 'Saved. Models now run on that computer.' }
+      catch (e) { result.textContent = cleanErr(e) }
+      finally { use.disabled = false }
+    }
+    const here = h('button', 'btn', 'Use this computer')
+    here.onclick = async () => {
+      try { await window.forge.engineHostSet(''); address.value = ''; await loadModels(); result.textContent = 'Models now use this computer.' }
+      catch (e) { result.textContent = cleanErr(e) }
+    }
+    location.box.append(row('Engine address', host.host ? 'Currently using another computer.' : 'Currently using this computer.', address), row('Remote GPU memory (GB)', 'Used to estimate which models will fit.', memory), row('Connection', '', test, use, here), result)
+    into.append(location.g)
+  }
+
+  const local = group('AI models', 'Ollama models run on the computer selected above. No per-token fees.')
   const lib = h('button', 'btn primary', 'Open the model library')
   lib.onclick = () => {
     $<HTMLDialogElement>('settings').close()
@@ -236,7 +274,7 @@ function shortcuts(into: HTMLElement) {
   const g = group()
   for (const [k, v] of [
     ['Ctrl N', 'New chat'],
-    ['Ctrl K', 'Search chats'],
+    ['Ctrl K', 'Find actions, chats and models'],
     ['Ctrl L', 'Focus the message box'],
     ['Ctrl B', 'Show or hide chat history'],
     ['Ctrl J', 'Show or hide the workspace (files, editor, terminal)'],
@@ -328,7 +366,7 @@ export async function openSettings(page: Page = 'general') {
   wrap.append(nav, main)
   dlg.replaceChildren(wrap)
   if (!dlg.open) dlg.showModal()
-  ;(document.activeElement as HTMLElement | null)?.blur() // no stray focus ring on the first button
+  close.focus()
   await show(page)
 }
 
