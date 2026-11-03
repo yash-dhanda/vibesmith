@@ -30,6 +30,15 @@ export function cleanEnv(env: NodeJS.ProcessEnv = process.env, extra: Record<str
   return { ...out, ...extra }
 }
 
+// The agents' output is not ours to trust: a line that breaks a parser must cost one line, not the whole app.
+export const safeParse = (parse: Parser, line: string): TeamEvent[] => {
+  try {
+    return parse(line)
+  } catch {
+    return []
+  }
+}
+
 // Collects normalised events into a RunResult (usage added up, first error kept, done recorded). Shared by every way of running an agent.
 export function makeSink(agent: AgentName, onEvent?: (e: TeamEvent) => void) {
   const events: TeamEvent[] = []
@@ -102,7 +111,7 @@ export function runCli(agent: AgentName, bin: string, args: string[], parse: Par
       while ((i = buf.indexOf('\n')) !== -1) {
         const line = buf.slice(0, i).trim()
         buf = buf.slice(i + 1)
-        if (line) for (const e of parse(line)) push(e)
+        if (line) safeParse(parse, line).forEach(push)
       }
     })
     child.stderr.on('data', (d: Buffer) => {
@@ -118,7 +127,7 @@ export function runCli(agent: AgentName, bin: string, args: string[], parse: Par
       finish()
     })
     child.on('close', (code) => {
-      if (buf.trim()) for (const e of parse(buf.trim())) push(e)
+      if (buf.trim()) safeParse(parse, buf.trim()).forEach(push)
       if (code !== 0 && !res.error) push({ type: 'error', agent, kind: classifyError(tail), message: (tail.trim() || `exited with code ${code}`).slice(-500) })
       if (!sink.done) push({ type: 'done', agent, ok: false, text: '' })
       finish()

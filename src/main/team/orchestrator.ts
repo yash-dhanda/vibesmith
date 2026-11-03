@@ -650,7 +650,7 @@ export class TeamOrchestrator {
     const live = this.liveOf(run)
     if (live.paused || run.status !== 'running') return
     const why = this.overBudget(run)
-    if (why) return void this.hitBudget(run, why)
+    if (why) return void this.hitBudget(run, why).catch(() => {})
 
     const settled = (t: Task) => t.status === 'done' || t.status === 'cancelled'
     for (const t of run.tasks) {
@@ -672,7 +672,7 @@ export class TeamOrchestrator {
 
     if (live.running.size) return
     const open = run.tasks.filter((t) => !settled(t))
-    if (!open.length && run.tasks.some((t) => t.status === 'done')) return void this.finish(run)
+    if (!open.length && run.tasks.some((t) => t.status === 'done')) return void this.finish(run).catch(() => {})
     if (!open.length) return void this.setStatus(run, 'done', 'Nothing was done.')
     if (open.some((t) => t.status === 'queued' && t.deps.every((d) => settled(run.tasks.find((x) => x.id === d)!)))) return // ready, about to start
     // nothing can move: failures or blocked tasks need the user

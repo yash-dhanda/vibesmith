@@ -53,6 +53,13 @@ export function sanitizeConfig(raw: unknown): Partial<TeamConfig> {
 
 export type TeamMemory = NonNullable<ReturnType<TeamOrchestrator['memorySnapshot']>>
 
+// Team mode puts each agent on its own git branch. An empty folder gets a repository silently; a folder with files must already have one.
+export async function ensureRepo(project: string) {
+  if (await isRepo(project)) return
+  if (readdirSync(project).length) throw new Error('Team mode needs a git repository so each agent can work on its own branch. Run "git init" in this folder first.')
+  await initRepo(project)
+}
+
 const ACTIVE = ['planning', 'running', 'paused', 'verifying', 'awaiting_approval', 'interrupted']
 
 export function createTeamService(o: { userData: string; mcpScript: string; emit: (ev: RunEvent) => void; projectNotes: (project: string) => { brief: string; rules: string } }) {
@@ -90,10 +97,7 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
     async start(project: string, goal: string, config?: Partial<TeamConfig>) {
       if (!goal.trim()) throw new Error('Describe what the team should build.')
       if (orch.list().some((r) => r.project === project && ACTIVE.includes(r.status))) throw new Error('This project already has a team run in progress. Finish, apply or cancel it first.')
-      if (!(await isRepo(project))) {
-        if (readdirSync(project).length) throw new Error('Team mode needs a git repository so each agent can work on its own branch. Run "git init" in this folder first.')
-        await initRepo(project)
-      }
+      await ensureRepo(project)
       return summarize(await orch.start(project, goal, { ...settings.get(project), ...config, budget: { ...settings.get(project).budget, ...config?.budget } }))
     },
     list: () => orch.list().map(summarize),

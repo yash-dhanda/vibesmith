@@ -23,7 +23,7 @@ export function makeCodexParser(cwd?: string): Parser {
     else if (m.type === 'item.started' && it?.type === 'command_execution') out.push({ type: 'tool', agent: 'codex', id: it.id, kind: 'command', name: 'shell', summary: unwrapShell(String(it.command ?? '')).slice(0, 200) })
     else if (m.type === 'item.completed' && it?.type === 'command_execution') out.push({ type: 'tool_result', agent: 'codex', id: it.id, ok: it.exit_code === 0, text: String(it.aggregated_output ?? '').slice(0, 4000) })
     else if (m.type === 'item.started' && it?.type === 'file_change') {
-      const paths = (it.changes ?? []).map((c: { path: string; kind: string }) => `${c.kind} ${rel(c.path)}`).join(', ')
+      const paths = (Array.isArray(it.changes) ? it.changes : []).map((c: { path: string; kind: string }) => `${c.kind} ${rel(c.path)}`).join(', ')
       out.push({ type: 'tool', agent: 'codex', id: it.id, kind: 'edit', name: 'apply_patch', summary: paths.slice(0, 200) })
     } else if (m.type === 'item.completed' && it?.type === 'file_change') out.push({ type: 'tool_result', agent: 'codex', id: it.id, ok: it.status === 'completed', text: '' })
     else if (m.type === 'item.started' && (it?.type === 'mcp_tool_call' || it?.type === 'web_search')) out.push({ type: 'tool', agent: 'codex', id: it.id, kind: it.type === 'web_search' ? 'read' : 'other', name: it.type === 'web_search' ? 'web_search' : `${it.server}.${it.tool}`, summary: String(it.query ?? JSON.stringify(it.arguments ?? {})).slice(0, 200) })

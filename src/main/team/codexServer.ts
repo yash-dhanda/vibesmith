@@ -98,8 +98,8 @@ export function runCodexServer(o: CodexServerOpts, bin = 'codex'): Promise<RunRe
         if (started) out.push({ type: 'tool', agent: 'codex', id: it.id, kind: 'command', name: 'shell', summary: unwrapShell(String(it.command ?? '')).slice(0, 200) })
         else out.push({ type: 'tool_result', agent: 'codex', id: it.id, ok: it.exitCode === 0, text: String(it.aggregatedOutput ?? '').slice(0, 4000) })
       } else if (it.type === 'fileChange') {
-        for (const c of it.changes ?? []) if (c?.path && c.diff) out.push({ type: 'code', agent: 'codex', id: `${it.id}:${c.path}`, path: rel(String(c.path)), text: String(c.diff), kind: 'diff', done: !started })
-        if (started) out.push({ type: 'tool', agent: 'codex', id: it.id, kind: 'edit', name: 'apply_patch', summary: (it.changes ?? []).map((c: any) => `${c.kind?.type ?? c.kind} ${rel(String(c.path))}`).join(', ').slice(0, 200) })
+        for (const c of Array.isArray(it.changes) ? it.changes : []) if (c?.path && c.diff) out.push({ type: 'code', agent: 'codex', id: `${it.id}:${c.path}`, path: rel(String(c.path)), text: String(c.diff), kind: 'diff', done: !started })
+        if (started) out.push({ type: 'tool', agent: 'codex', id: it.id, kind: 'edit', name: 'apply_patch', summary: (Array.isArray(it.changes) ? it.changes : []).map((c: any) => `${c.kind?.type ?? c.kind} ${rel(String(c.path))}`).join(', ').slice(0, 200) })
         else out.push({ type: 'tool_result', agent: 'codex', id: it.id, ok: it.status === 'completed', text: '' })
       } else if (it.type === 'mcpToolCall' || it.type === 'webSearch') {
         const name = it.type === 'webSearch' ? 'web_search' : `${it.server}.${it.tool}`

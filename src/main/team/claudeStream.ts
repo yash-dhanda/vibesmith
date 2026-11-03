@@ -57,12 +57,13 @@ export function makeClaudeParser(cwd?: string): Parser {
     if (m.type === 'system' && m.subtype === 'init' && m.session_id) out.push({ type: 'session', agent: 'claude', sessionId: m.session_id })
     else if (m.type === 'assistant') {
       if (m.message?.model === '<synthetic>') return [] // Claude Code's own error message; the result line carries it
-      for (const b of m.message?.content ?? []) {
-        if (b.type === 'text' && b.text) out.push({ type: 'text', agent: 'claude', text: b.text })
-        else if (b.type === 'tool_use') out.push({ type: 'tool', agent: 'claude', id: b.id, kind: KIND[b.name] ?? 'other', name: b.name, summary: summary(b.name, b.input, rel) })
+      const blocks = Array.isArray(m.message?.content) ? m.message.content : []
+      for (const b of blocks) {
+        if (b?.type === 'text' && b.text) out.push({ type: 'text', agent: 'claude', text: b.text })
+        else if (b?.type === 'tool_use') out.push({ type: 'tool', agent: 'claude', id: b.id, kind: KIND[b.name] ?? 'other', name: b.name, summary: summary(b.name, b.input, rel) })
       }
     } else if (m.type === 'user') {
-      for (const b of m.message?.content ?? []) if (b?.type === 'tool_result') out.push({ type: 'tool_result', agent: 'claude', id: b.tool_use_id, ok: !b.is_error, text: flat(b.content).slice(0, 4000) })
+      for (const b of Array.isArray(m.message?.content) ? m.message.content : []) if (b?.type === 'tool_result') out.push({ type: 'tool_result', agent: 'claude', id: b.tool_use_id, ok: !b.is_error, text: flat(b.content).slice(0, 4000) })
     } else if (m.type === 'result') {
       const u = m.usage ?? {}
       const cached = u.cache_read_input_tokens ?? 0

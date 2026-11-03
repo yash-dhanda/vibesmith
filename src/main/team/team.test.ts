@@ -160,7 +160,7 @@ describe('resolveCommand (Windows launch)', () => {
   })
 })
 
-import { mkdtempSync } from 'node:fs'
+import { existsSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { TeamSettingsStore } from './settings'
@@ -208,5 +208,36 @@ describe('plan-only sign-in', () => {
     expect(judgeCodexAuth('Logged in using ChatGPT').ok).toBe(true)
     expect(judgeCodexAuth('Logged in using an API key')).toMatchObject({ ok: false, fix: expect.stringMatching(/ChatGPT/) })
     expect(judgeCodexAuth('Not logged in').ok).toBe(false)
+  })
+})
+
+import { execFileSync } from 'node:child_process'
+import { writeFileSync } from 'node:fs'
+import { ensureRepo } from './service'
+describe('parsers survive hostile output', () => {
+  const claude = makeClaudeParser('/p')
+  const codex = makeCodexParser('/p')
+  const junk = ['', 'null', '[]', '42', '"str"', '{}', '{"type":null}', '{"type":"assistant"}', '{"type":"assistant","message":null}', '{"type":"assistant","message":{"content":"text"}}', '{"type":"assistant","message":{"content":[null,1,{"type":"tool_use"}]}}', '{"type":"user","message":{"content":[{"type":"tool_result","content":{"a":1}}]}}', '{"type":"result","usage":null}', '{"type":"result","usage":{"input_tokens":"x"},"result":{"a":1}}', '{"type":"stream_event","event":null}', '{"type":"stream_event","event":{"type":"content_block_delta","index":9,"delta":{"type":"input_json_delta","partial_json":5}}}', '{"type":"item.started","item":null}', '{"type":"item.started","item":{"type":"file_change","changes":"nope"}}', '{"type":"item.completed","item":{"type":"command_execution","command":5}}', '{"type":"turn.failed","error":null}', '{"type":"turn.completed","usage":"x"}', '\u0000\u0001']
+  it('never throws, whatever a line contains', () => {
+    for (const l of junk) {
+      expect(() => claude(l), l).not.toThrow()
+      expect(() => codex(l), l).not.toThrow()
+    }
+  })
+})
+describe('safeParse and ensureRepo', () => {
+  it('turns a parser that throws into no events', async () => {
+    const { safeParse } = await import('./process')
+    expect(safeParse(() => { throw new Error('boom') }, 'x')).toEqual([])
+  })
+  it('creates a repo in an empty folder and refuses a folder with files and no repo', async () => {
+    const empty = mkdtempSync(join(tmpdir(), 'forge-er-'))
+    await ensureRepo(empty)
+    expect(existsSync(join(empty, '.git'))).toBe(true)
+    await ensureRepo(empty) // already a repo: fine
+    const full = mkdtempSync(join(tmpdir(), 'forge-er-'))
+    writeFileSync(join(full, 'a.txt'), 'x')
+    await expect(ensureRepo(full)).rejects.toThrow(/git init/)
+    void execFileSync
   })
 })
