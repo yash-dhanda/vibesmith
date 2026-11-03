@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, write
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { checkCodex, codexModels } from '../main/team/health'
+import { checkClaude, checkCodex, codexModels } from '../main/team/health'
 import { TeamOrchestrator } from '../main/team/orchestrator'
 import { realRunner } from '../main/team/runner'
 import { TeamStore } from '../main/team/store'
@@ -22,6 +22,8 @@ describe.skipIf(!process.env.TEAM_LIVE)('team live', () => {
   it('builds a small module end to end with Codex as the whole team', async () => {
     const codex = await checkCodex()
     expect(codex.ok).toBe(true)
+    const both = process.env.TEAM_BOTH === '1'
+    if (both) expect((await checkClaude()).ok).toBe(true)
     const proj = mkdtempSync(join(tmpdir(), 'forge-live-p-'))
     sh(proj, 'init', '-q')
     writeFileSync(join(proj, 'README.md'), '# demo\n')
@@ -41,11 +43,11 @@ describe.skipIf(!process.env.TEAM_LIVE)('team live', () => {
     }
     const models = await codexModels()
     const orch = new TeamOrchestrator({
-      store: new TeamStore(join(teamDir, 'runs')), teamDir, runner: realRunner, available: async () => ['codex'], codexModels: async () => models, emit: show,
+      store: new TeamStore(join(teamDir, 'runs')), teamDir, runner: realRunner, available: async () => (both ? ['claude', 'codex'] : ['codex']), codexModels: async () => models, emit: show,
       mcpScript: resolve('out/main/team-mcp.js'),
     })
     try {
-      const run = await orch.start(proj, 'Create slug.js exporting slugify(text) (lowercase, spaces and punctuation become single dashes, no leading/trailing dashes) and test.js that checks it with node:assert and exits non-zero on failure. Two small tasks: the module, then the tests.', { verify: 'node test.js', maxVerifyRounds: 1, maxFixRounds: 1, codexMode: process.env.TEAM_CODEX_MODE === 'app-server' ? 'app-server' : 'exec' })
+      const run = await orch.start(proj, process.env.TEAM_GOAL ?? 'Create slug.js exporting slugify(text) (lowercase, spaces and punctuation become single dashes, no leading/trailing dashes) and test.js that checks it with node:assert and exits non-zero on failure. Two small tasks: the module, then the tests.', { verify: 'node test.js', maxVerifyRounds: 1, maxFixRounds: 1, codexMode: process.env.TEAM_CODEX_MODE === 'app-server' ? 'app-server' : 'exec' })
       let r = orch.get(run.id)!
       for (let i = 0; i < 900 && !['awaiting_approval', 'failed', 'paused', 'cancelled'].includes(r.status); i++) {
         await new Promise((res) => setTimeout(res, 1000))
@@ -54,7 +56,7 @@ describe.skipIf(!process.env.TEAM_LIVE)('team live', () => {
         if (p) orch.answerApproval(run.id, p.id, true, 'ok')
       }
       line(`\nFINAL STATUS: ${r.status} ${r.pausedReason ?? ''}`)
-      line(`usage: codex runs=${r.usage.codex.runs} tokens=${r.usage.codex.input + r.usage.codex.output}`)
+      line(`usage: codex runs=${r.usage.codex.runs} tokens=${r.usage.codex.input + r.usage.codex.output}; claude runs=${r.usage.claude.runs} tokens=${r.usage.claude.input + r.usage.claude.output} ~$${r.usage.claude.costUsd.toFixed(2)}`)
       expect(r.status).toBe('awaiting_approval')
       expect(r.final?.verifyOk).toBe(true)
       line('\n' + r.final!.report)

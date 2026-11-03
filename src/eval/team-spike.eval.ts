@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { runClaude } from '../main/team/claude'
+import { claudeMcpConfig } from '../main/team/link'
 import { runCodex } from '../main/team/codex'
 import { runCodexServer, type ServerHandle } from '../main/team/codexServer'
 import type { TeamEvent } from '../main/team/events'
@@ -126,5 +127,33 @@ describe.skipIf(!process.env.TEAM_SPIKE)('team spike', () => {
     line(`approvals asked: ${asked.length} ${asked.join(' | ')}`)
     expect(c.error?.kind ?? 'none').not.toBe('protocol')
     hub.stop()
+  }, 240_000)
+
+  it('Claude Code reaches the team MCP server and routes permission prompts to Forge', async () => {
+    const claude = (await checkTeamTools())[0]
+    if (!claude.ok) return line(`SKIPPED: ${claude.detail}`)
+    const calls: { op: string; args: any }[] = []
+    const hub = new TeamHub(async (op, args) => {
+      calls.push({ op, args })
+      if (op === 'inbox') return [{ from: 'codex', kind: 'finding', body: 'the secret word is KUMQUAT' }]
+      if (op === 'permission') return JSON.stringify(/curl|\/etc\//.test(JSON.stringify(args.input)) ? { behavior: 'deny', message: 'Forge: network not allowed' } : { behavior: 'allow', updatedInput: args.input })
+      return 'ok'
+    })
+    const sock = await hub.start()
+    const dir = mkdtempSync(join(tmpdir(), 'forge-team-cl-'))
+    execFileSync('git', ['init', '-q'], { cwd: dir })
+    const link = { sock, token: hub.token, runId: 'r1', taskId: 't1', agent: 'claude' as const, script: resolve('out/main/team-mcp.js'), node: process.execPath }
+    const cfgDir = mkdtempSync(join(tmpdir(), 'forge-mcp-'))
+    const mcpConfig = join(cfgDir, 'mcp.json')
+    writeFileSync(mcpConfig, claudeMcpConfig(link), { mode: 0o600 })
+    line('\n== claude + team MCP server + permission tool ==')
+    const r = await runClaude({ cwd: dir, write: true, mcpConfig, team: link, onEvent: show, prompt: 'Do these in order. 1) Call the team_inbox tool and read it. 2) Call team_post with to "codex", kind "finding", and a body repeating the secret word. 3) Use the Read tool on the file /etc/hostname and tell me what happened (say if you were refused). 4) Run the shell command `ls`. 5) Call team_handoff with notes "claude done". Finish by replying with the secret word.' })
+    hub.stop()
+    line(`hub saw: ${calls.map((c) => c.op + (c.op === 'permission' ? `(${c.args.tool_name}:${String(c.args.input?.command ?? '').slice(0, 30)})` : '')).join(', ')}`)
+    expect(r.ok, r.error?.message).toBe(true)
+    const ops = calls.map((c) => c.op)
+    expect(ops).toEqual(expect.arrayContaining(['inbox', 'post', 'handoff']))
+    expect(calls.some((c) => c.op === 'permission' && /\/etc\/hostname/.test(JSON.stringify(c.args.input)))).toBe(true)
+    expect(r.text).toMatch(/KUMQUAT/i)
   }, 240_000)
 })
