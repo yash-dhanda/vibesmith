@@ -4,8 +4,9 @@ import { md, folderName, formatTokens } from './format'
 import { icon } from './icons'
 import { $, cleanErr, h, toast } from './ui'
 import { replayRun } from './teamReplay'
+import { normaliseTeamEvents, reduceTeamView, type LoggedTeamEvent } from './teamReducer'
 
-type Logged = { t: number; ev: RunEvent }
+type Logged = LoggedTeamEvent
 type Summary = RunSummary
 const root = $('team-root')
 const app = $('app')
@@ -155,40 +156,11 @@ function renderRunList() {
 async function openRun(id: string, fixture?: { run: Run; events: Logged[]; memory?: TeamMemory }) {
   root.replaceChildren(h('div', 'team-run-loading skel'))
   const loaded = fixture ?? await (async () => { const [saved, events] = await Promise.all([window.forge.teamGet(id), window.forge.teamEvents(id)]); if (!saved) throw new Error('This team run no longer exists.'); return { run: saved, events } })()
-  run = structuredClone(loaded.run); log = []; liveFiles.clear(); sharedMemory = fixture?.memory ?? null; undoResult = ''
-  for (const item of loaded.events) appendLogged(structuredClone(item))
+  run = structuredClone(loaded.run); sharedMemory = fixture?.memory ?? null; undoResult = ''
+  const normal = normaliseTeamEvents(loaded.events); log = normal.log; liveFiles = normal.liveFiles
   if (!['planning', 'running', 'paused', 'interrupted'].includes(run.status)) liveFiles.clear()
   renderRun(); startClock()
   if (!fixture) void refreshMemory()
-}
-
-function appendLogged(item: Logged) {
-  const event = item.ev
-  if (event.type === 'live') { liveFiles.set(event.taskId, event.files); return }
-  if (event.type !== 'agent') { log.push(item); return }
-  const next = event.ev
-  const sameAgentEvent = (entry: Logged) => entry.ev.type === 'agent' && entry.ev.taskId === event.taskId && entry.ev.phase === event.phase && entry.ev.ev.agent === next.agent
-  const lastIndex = (matches: (entry: Logged) => boolean) => { for (let i = log.length - 1; i >= 0; i--) if (matches(log[i])) return i; return -1 }
-  if (next.type === 'delta') {
-    const index = lastIndex(entry => sameAgentEvent(entry) && entry.ev.type === 'agent' && entry.ev.ev.type === 'delta' && entry.ev.ev.channel === next.channel && entry.ev.ev.id === next.id)
-    if (index >= 0) {
-      const previous = log[index].ev
-      if (previous.type === 'agent' && previous.ev.type === 'delta') previous.ev.text += next.text
-      log[index].t = item.t
-      return
-    }
-  } else if (next.type === 'code') {
-    const index = lastIndex(entry => entry.ev.type === 'agent' && entry.ev.ev.type === 'code' && entry.ev.ev.agent === next.agent && entry.ev.ev.id === next.id)
-    if (index >= 0) { log[index] = item; return }
-  } else if (next.type === 'prompt') {
-    const index = lastIndex(entry => sameAgentEvent(entry) && entry.ev.type === 'agent' && entry.ev.ev.type === 'prompt')
-    if (index >= 0) { log[index] = item; return }
-  } else if (next.type === 'text') {
-    log = log.filter(entry => !(sameAgentEvent(entry) && entry.ev.type === 'agent' && entry.ev.ev.type === 'delta' && entry.ev.ev.channel === 'text'))
-  } else if (next.type === 'tool_result') {
-    log = log.filter(entry => !(sameAgentEvent(entry) && entry.ev.type === 'agent' && entry.ev.ev.type === 'delta' && entry.ev.ev.channel === 'output' && entry.ev.ev.id === next.id))
-  }
-  log.push(item)
 }
 
 function startClock() { stopClock(); elapsedTimer = setInterval(() => { const el = document.getElementById('team-elapsed'); if (el && run) el.textContent = fmtTime(Math.floor((Date.now() - run.createdAt) / 1000)) }, 1000) }
@@ -490,14 +462,8 @@ async function undoApplied() {
 
 function reduceEvent(event: RunEvent, t = Date.now()) {
   if (!run || event.runId !== run.id) return
-  appendLogged({ t, ev: structuredClone(event) })
-  if (event.type === 'run') { run.status = event.status; run.pausedReason = event.reason }
-  else if (event.type === 'plan') { run.plan.summary = event.summary; run.tasks = event.tasks }
-  else if (event.type === 'task') { const i = run.tasks.findIndex(x => x.id === event.task.id); if (i >= 0) run.tasks[i] = event.task; else run.tasks.push(event.task); if (event.task.status !== 'running') liveFiles.delete(event.task.id); scheduleMemoryRefresh() }
-  else if (event.type === 'message') { if (!run.messages.some(x => x.id === event.message.id)) run.messages.push(event.message); scheduleMemoryRefresh() }
-  else if (event.type === 'approval') { const i = run.approvals.findIndex(x => x.id === event.approval.id); if (i >= 0) run.approvals[i] = event.approval; else run.approvals.push(event.approval) }
-  else if (event.type === 'usage') run.usage = event.usage
-  else if (event.type === 'final') { run.final = event.final; run.status = 'awaiting_approval'; liveFiles.clear() }
+  const state = reduceTeamView({ run, log, liveFiles }, event, t); run = state.run; log = state.log; liveFiles = state.liveFiles
+  if (event.type === 'task' || event.type === 'message') scheduleMemoryRefresh()
   if (refreshTimer) clearTimeout(refreshTimer); refreshTimer = setTimeout(renderRun, event.type === 'agent' || event.type === 'live' ? 80 : 0)
 }
 
