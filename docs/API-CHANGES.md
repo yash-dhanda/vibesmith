@@ -180,3 +180,5 @@ Typing and growing files are not written to the log; finished text, tool results
 - `TeamConfig.reviewPlan: true` (default off) makes a run stop after planning: status `paused` with `pausedReason` "Review the plan...", and one pending approval of `kind: 'plan'`. Nothing has started yet.
 - `teamUpdatePlan(id, edits)` with `edits: [{ id, title?, goal?, agent?, acceptance?, deps?, skip? }]` changes tasks of an unstarted plan (reword, reassign, change checks or dependencies, skip with `skip: true`, un-skip with `false`). Returns `{ ok, message }`; refused if it would create a dependency circle, leave no task, use an unavailable agent, or if work has started. Each success emits a new `plan` event.
 - Answer the `plan` approval with `teamAnswer(id, approvalId, true)` to start, or `false` to cancel the run. This saves plan usage when the plan is wrong: the agents have only planned so far.
+
+**teamDiagnostics()**: returns plain text for bug reports: platform and versions, whether each agent is ready (and the fix), Codex models, plan allowance used, and the last 5 runs with their status. Contains no secrets or file contents. Offer it as "Copy diagnostics".

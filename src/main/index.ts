@@ -645,6 +645,7 @@ ipcMain.handle('team:update-plan', (_e, id: unknown, edits: unknown) => {
   })
   return teamSvc().orch.updatePlan(teamId(id), list as never)
 })
+ipcMain.handle('team:diagnostics', () => teamSvc().diagnostics())
 ipcMain.handle('team:undo', (_e, id: unknown) => teamSvc().orch.undoApply(teamId(id)))
 ipcMain.handle('team:delete', (_e, id: unknown) => teamSvc().orch.deleteRun(teamId(id)))
 ipcMain.handle('team:settings-get', () => {

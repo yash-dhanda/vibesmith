@@ -102,6 +102,21 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
       return summarize(await orch.start(project, goal, { ...settings.get(project), ...config, budget: { ...settings.get(project).budget, ...config?.budget } }))
     },
     list: () => orch.list().map(summarize),
+    // A plain-text summary to paste into a bug report: versions, sign-ins, plan allowance, recent runs. No secrets, no file contents.
+    async diagnostics(): Promise<string> {
+      const [agents, models, limits] = await Promise.all([health(true), codexModels(), codexLimits()])
+      const pct = (n?: number) => (n === undefined ? '?' : `${Math.round(n)}%`)
+      const lines = [
+        `Forge team mode diagnostics`,
+        `platform: ${process.platform} ${process.arch}, electron ${process.versions.electron}, node ${process.versions.node}`,
+        ...agents.map((a) => `${a.agent}: ${a.ok ? 'ready' : 'NOT READY'} ${a.version ?? ''} - ${a.detail}${a.fix ? ` (fix: ${a.fix})` : ''}`),
+        `codex models: ${models.join(', ') || '(none)'}`,
+        limits ? `codex plan allowance: ${pct(limits.primaryPct)} of the 5-hour window, ${pct(limits.secondaryPct)} of the week (${limits.plan ?? 'plan unknown'})` : 'codex plan allowance: unknown',
+        `recent runs:`,
+        ...orch.list().slice(0, 5).map((r) => `- ${r.id} ${r.status}${r.pausedReason ? ` (${r.pausedReason.slice(0, 120)})` : ''}: ${r.tasks.filter((t) => t.status === 'done').length}/${r.tasks.length} tasks done, ${r.usage.claude.runs} Claude runs, ${r.usage.codex.runs} Codex runs`),
+      ]
+      return lines.join('\n')
+    },
     settings: { get: (project: string) => settings.get(project), set: (project: string, cfg: unknown) => settings.set(project, sanitizeConfig(cfg)) },
   }
 }
