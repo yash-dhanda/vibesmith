@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { getRoot, inRoot, resolveIn, setRoot } from './project'
 import { isPreviewable } from './preview'
 import { PreviewServer } from './previewServer'
+import { rewindChat } from './rewind'
 import { isRemote } from './ollamaHost'
 import { BriefStore, type BriefEdit } from './briefStore'
 import { applyUserPlan, planFromTranscript, planNote, type PlanState } from './agent/plan'
@@ -406,6 +407,25 @@ ipcMain.handle('agent:change-detail', async (_e, chatId: string, id: string, pat
   const binary = (before ?? '').includes('\0') || (after ?? '').includes('\0')
   const cut = (t: string | null) => (binary ? '' : (t ?? '').slice(0, DETAIL_MAX))
   return { before: cut(before), after: cut(after), existedBefore: before !== null, existsNow: after !== null, binary, truncated: !binary && ((before ?? '').length > DETAIL_MAX || (after ?? '').length > DETAIL_MAX) }
+})
+
+// "Edit and resend" / "Try again": take the chat back to just before the user's Nth message (0-based), optionally putting
+// the files back too. The caller then sends the (edited) text with agentSend as usual.
+ipcMain.handle('chats:rewind', async (_e, chatId: string, userIndex: number, restoreFiles: boolean) => {
+  const s = sessionFor(chatId)
+  if (!s) throw new Error('that chat could not be loaded')
+  if (s.run) throw new Error('This chat is still working. Wait for it, or press stop.')
+  const r = rewindChat(s.chat, Number(userIndex))
+  if (!r) throw new Error('that message no longer exists')
+  let files: string[] = []
+  if (restoreFiles && r.restore && s.chat.project) files = await undoTo(s.chat.project, r.restore)
+  s.plan = null
+  s.steer = []
+  s.chat.messages.push({ role: 'user', content: restoreFiles ? '[The user took the chat back and restored the files. Re-read a file before editing it.]' : '[The user took the chat back. Files may still hold changes from the earlier attempt: re-read a file before editing it.]' })
+  s.dirty = true
+  flush(s)
+  changed()
+  return { text: r.text, files, transcript: compact(s.chat.transcript) }
 })
 
 ipcMain.handle('agent:undo-file', async (_e, chatId: string, id: string, path: string) => {

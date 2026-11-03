@@ -18,6 +18,7 @@ const api = {
   chatsViewing: (id: string | null) => ipcRenderer.send('chats:viewing', id),
   chatsOpen: (id: string): Promise<OpenedChat> => ipcRenderer.invoke('chats:open', id),
   chatsRename: (id: string, title: string): Promise<void> => ipcRenderer.invoke('chats:rename', id, title),
+  chatsRewind: (id: string, userIndex: number, restoreFiles: boolean): Promise<{ text: string; files: string[]; transcript: TranscriptItem[] }> => ipcRenderer.invoke('chats:rewind', id, userIndex, restoreFiles),
   chatsDelete: (id: string): Promise<void> => ipcRenderer.invoke('chats:delete', id),
   onChatsChanged: (cb: () => void) => ipcRenderer.on('chats:changed', () => cb()),
   onChatsFocus: (cb: (id: string) => void) => ipcRenderer.on('chats:focus', (_e, id: string) => cb(id)),
