@@ -692,6 +692,7 @@ export class TeamOrchestrator {
   }
   private interrupted(run: Run, task: Task) {
     task.status = this.stopKind(run) === 'pause' ? 'interrupted' : 'cancelled'
+    if (task.status === 'interrupted' && task.phase && task.phase !== 'work') task.resumeFrom = task.phase
     task.phase = null
     this.touch(run, task)
   }
@@ -709,9 +710,13 @@ export class TeamOrchestrator {
     const build = task.kind === 'build'
     const cwd = build ? await this.ensureWorktree(run, task) : run.integrationWorktree
 
-    // ---- the work, with retries for the failures a retry can fix
-    let res: RunResult | null = null
-    for (;;) {
+    // ---- the work, with retries for the failures a retry can fix. A task interrupted after its work (in review, a fix or the merge)
+    // goes straight back there: the agent's work is already in its folder.
+    const resumeFrom = task.resumeFrom
+    task.resumeFrom = undefined
+    const workDone = build && !!resumeFrom && !!task.base && !!task.summary
+    let res: RunResult | null = workDone ? ({ ok: true, text: task.summary, usage: { input: 0, output: 0, cached: 0, costUsd: 0 }, events: [] } as RunResult) : null
+    for (; !workDone;) {
       const { inbox, steer } = this.drainInbox(run, task.agent)
       const prompt = workPrompt(run, task, contextFor(run, task, { inbox, steer, brief: notes.brief, rules: notes.rules, past }))
       res = await this.agentRun(run, task, task.agent, 'work', prompt, build, cwd, task.sessions[task.agent])
@@ -731,8 +736,8 @@ export class TeamOrchestrator {
       if (task.attempts > 2 || kind === 'limit') return this.failTask(run, task, `${task.agent}: ${msg}`)
       this.touch(run, task)
     }
-    task.summary = res.text
-    if (!task.handoff) task.handoff = res.text.slice(0, 1500)
+    task.summary = res!.text
+    if (!task.handoff) task.handoff = res!.text.slice(0, 1500)
 
     if (!build) return this.complete(run, task, `Research done: ${task.title}`)
 
@@ -783,6 +788,7 @@ export class TeamOrchestrator {
     await live.merge.run(async () => {
       task.phase = 'merge'
       this.touch(run, task)
+      await abortMerge(run.integrationWorktree) // a merge left half-done by an interruption starts over
       const m = await mergeBranch(run.integrationWorktree, task.branch!, `${task.id}: ${task.title}`)
       if (m.ok) return
       task.phase = 'conflict'
@@ -900,6 +906,13 @@ export class TeamOrchestrator {
             ft.status = fx.ok ? 'done' : 'failed'
             ft.summary = fx.text
             this.touch(run, ft)
+            if (cmd) {
+              // the fix changed the code: the project's check has to be run again on the result
+              const v2 = await runVerify(cmd, wt, live.ctl.signal)
+              if (live.ctl.signal.aborted) return
+              verify = { ok: v2.ok, command: cmd, output: v2.output }
+              this.out(run, { type: 'verify', runId: run.id, command: cmd, ok: v2.ok, output: v2.output.slice(-4000) })
+            }
           }
         }
       }
@@ -914,7 +927,9 @@ export class TeamOrchestrator {
       this.save(run)
       this.out(run, { type: 'approval', runId: run.id, approval: a })
     } catch (e) {
-      this.fail(run, (e as Error).message)
+      // the work is all on the team branch: keep it, and let the user try the last steps again
+      live.paused = true
+      this.setStatus(run, 'paused', `The last steps failed: ${(e as Error).message.slice(0, 200)}. Resume to try again.`)
     } finally {
       live.finishing = false
     }

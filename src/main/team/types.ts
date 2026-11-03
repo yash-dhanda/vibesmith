@@ -35,6 +35,7 @@ export type Task = {
   usage: Usage
   diff?: string // the task's change as the reviewer saw it (capped), kept for the diff view after the worktree is gone
   proposedBy?: string
+  resumeFrom?: TaskPhase // where an interrupted task stopped, so resuming does not redo finished work
   error?: string
   startedAt?: number
   endedAt?: number

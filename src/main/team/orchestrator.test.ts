@@ -268,6 +268,41 @@ describe('team orchestrator', () => {
     expect(['awaiting_approval', 'paused', 'failed']).toContain(r.status)
   })
 
+  it('resumes a task interrupted during review without redoing its work', async () => {
+    const x = h({ delayMs: 250, plan: { tasks: [T('a', { agent: 'codex' })] } })
+    const run = await x.orch.start(x.proj, 'review interrupted')
+    await until(x.orch, run.id, (r) => r.tasks[0]?.phase === 'review')
+    x.orch.pause(run.id, true)
+    await until(x.orch, run.id, (r) => r.tasks[0].status === 'interrupted')
+    expect(x.orch.get(run.id)!.tasks[0].resumeFrom).toBe('review')
+    await x.orch.resume(run.id)
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect(r.tasks[0].status).toBe('done')
+    expect(x.calls.filter((c) => c.kind === 'work')).toHaveLength(1) // the work was not run a second time
+    expect(x.calls.filter((c) => c.kind === 'review').length).toBeGreaterThanOrEqual(2) // the review was
+    expect(existsSync(join(r.integrationWorktree, 't1.txt'))).toBe(true)
+  })
+
+  it('runs the project check again after a fix from the final review', async () => {
+    let finals = 0
+    const x = h({ plan: { tasks: [T('a')] }, verifyFix: () => {} })
+    // the final review fails once; the check passes only once t1-fixed.txt exists (made by the fix)
+    const base = (x as any)
+    const orig = (x.orch as any).d.runner
+    ;(x.orch as any).d.runner = async (agent: AgentName, o: AgentCall) => {
+      if (/The team finished this goal/.test(o.prompt)) return ok(finals++ === 0 ? '- missing thing\nVERDICT: FAIL' : 'VERDICT: PASS', agent, 'final')
+      if (/A reviewer checked your work on task t2|Fix problems/.test(o.prompt) || /A reviewer checked your work/.test(o.prompt)) writeFileSync(join(o.cwd, 'fixed.txt'), 'x')
+      return orig(agent, o)
+    }
+    void base
+    const verify = `node -e "process.exit(require('fs').existsSync('fixed.txt')?0:1)"`
+    const run = await x.orch.start(x.proj, 'final review fixes', { verify, maxVerifyRounds: 0 })
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    const checks = x.events.filter((e) => e.type === 'verify')
+    expect(checks.map((c: any) => c.ok)).toEqual([false, true]) // failed first, then re-run after the fix and passed
+    expect(r.final?.verifyOk).toBe(true)
+  })
+
   it('stops at the budget and asks before spending more', async () => {
     const x = h({ plan: { tasks: [T('a'), T('b', { deps: ['a'] }), T('c', { deps: ['b'] })] } })
     const run = await x.orch.start(x.proj, 'budget', { budget: { maxAgentRuns: 3 } })
