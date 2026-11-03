@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { getRoot, inRoot, resolveIn, setRoot } from './project'
 import { isPreviewable } from './preview'
+import { PreviewServer } from './previewServer'
 import { runVerify } from './agent/commands'
 import { runAgent, SYSTEM_PROMPT, type AgentEvent, type Mode } from './agent/loop'
 import { ToolBox } from './agent/tools'
@@ -109,8 +110,15 @@ function scheduleSave(s: Session) {
   s.saveTimer ??= setTimeout(() => flush(s), 2000)
 }
 
+const previews = new Map<string, PreviewServer>()
+function stopPreview(chatId: string) {
+  previews.get(chatId)?.stop()
+  previews.delete(chatId)
+}
+
 function emit(s: Session, ev: AgentEvent) {
   s.chat.transcript.push(ev)
+  if (ev.type === 'tool_result' && ev.ok) previews.get(s.chat.id)?.reload()
   win?.webContents.send('agent:event', { chatId: s.chat.id, ev })
   if (ev.type === 'usage' && s.run) {
     usage.record(s.run.model, { input: ev.input, output: ev.output, genMs: ev.tps > 0 ? (ev.output / ev.tps) * 1000 : 0 })
@@ -173,6 +181,7 @@ ipcMain.handle('chats:rename', (_e, id: string, title: string) => {
 })
 
 ipcMain.handle('chats:delete', (_e, id: string) => {
+  stopPreview(id)
   if (sessions.get(id)?.run) throw new Error('Stop this chat first.')
   store.delete(id)
   sessions.delete(id)
@@ -202,6 +211,17 @@ ipcMain.handle('open:path', async (_e, chatId: string, rel: string) => {
   const err = await shell.openPath(abs)
   if (err) throw new Error(err)
 })
+ipcMain.handle('preview:start', async (_e, chatId: string) => {
+  let p = previews.get(chatId)
+  if (!p) previews.set(chatId, (p = new PreviewServer(chatRoot(chatId))))
+  try {
+    return { url: await p.start() }
+  } catch (e) {
+    stopPreview(chatId)
+    throw e
+  }
+})
+ipcMain.on('preview:stop', (_e, chatId: string) => stopPreview(chatId))
 ipcMain.handle('open:folder', async (_e, chatId: string) => {
   const err = await shell.openPath(chatRoot(chatId))
   if (err) throw new Error(err)
@@ -414,6 +434,7 @@ app.whenReady().then(() => {
 })
 
 app.on('before-quit', () => {
+  for (const id of [...previews.keys()]) stopPreview(id)
   saveAll()
   library?.stop()
 })
