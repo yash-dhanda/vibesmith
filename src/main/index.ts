@@ -632,7 +632,7 @@ ipcMain.handle('team:pause', (_e, id: unknown, hard?: unknown) => teamSvc().orch
 ipcMain.handle('team:resume', (_e, id: unknown) => teamSvc().orch.resume(teamId(id)))
 ipcMain.handle('team:cancel', (_e, id: unknown) => teamSvc().orch.cancel(teamId(id)))
 ipcMain.handle('team:answer', (_e, id: unknown, approvalId: unknown, allow: unknown, note?: unknown) => teamSvc().orch.answerApproval(teamId(id), teamId(approvalId), allow === true, typeof note === 'string' ? note.slice(0, 500) : undefined))
-ipcMain.handle('team:steer', (_e, id: unknown, text: unknown, to?: unknown) => teamSvc().orch.steer(teamId(id), String(text ?? ''), to === 'claude' || to === 'codex' ? to : 'all'))
+ipcMain.handle('team:steer', (_e, id: unknown, text: unknown, to?: unknown) => teamSvc().orch.steer(teamId(id), String(text ?? ''), to === 'claude' || to === 'codex' || to === 'local' ? to : 'all'))
 ipcMain.handle('team:retry-task', (_e, id: unknown, taskId: unknown) => teamSvc().orch.retryTask(teamId(id), teamId(taskId)))
 ipcMain.handle('team:skip-task', (_e, id: unknown, taskId: unknown) => teamSvc().orch.skipTask(teamId(id), teamId(taskId)))
 ipcMain.handle('team:extend-budget', (_e, id: unknown) => teamSvc().orch.extendBudget(teamId(id)))
@@ -641,7 +641,7 @@ ipcMain.handle('team:memory', (_e, id: unknown) => teamSvc().orch.memorySnapshot
 ipcMain.handle('team:update-plan', (_e, id: unknown, edits: unknown) => {
   const list = (Array.isArray(edits) ? edits : []).slice(0, 30).map((x) => {
     const o = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>
-    return { id: teamId(o.id), title: typeof o.title === 'string' ? o.title : undefined, goal: typeof o.goal === 'string' ? o.goal : undefined, agent: o.agent === 'claude' || o.agent === 'codex' ? o.agent : undefined, acceptance: Array.isArray(o.acceptance) ? o.acceptance.map(String) : undefined, deps: Array.isArray(o.deps) ? o.deps.map(String) : undefined, skip: typeof o.skip === 'boolean' ? o.skip : undefined } as const
+    return { id: teamId(o.id), title: typeof o.title === 'string' ? o.title : undefined, goal: typeof o.goal === 'string' ? o.goal : undefined, agent: o.agent === 'claude' || o.agent === 'codex' || o.agent === 'local' ? o.agent : undefined, acceptance: Array.isArray(o.acceptance) ? o.acceptance.map(String) : undefined, deps: Array.isArray(o.deps) ? o.deps.map(String) : undefined, skip: typeof o.skip === 'boolean' ? o.skip : undefined } as const
   })
   return teamSvc().orch.updatePlan(teamId(id), list as never)
 })

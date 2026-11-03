@@ -647,6 +647,7 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; 
 .health-row.missing { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 45%, transparent); }
 .agent-orb { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; }
 .agent-orb.claude { background: #d9784f; box-shadow: 0 0 0 3px color-mix(in srgb, #d9784f 16%, transparent); }
+.agent-orb.local { background: #7a9fd6; box-shadow: 0 0 0 3px color-mix(in srgb, #7a9fd6 16%, transparent); }
 .agent-orb.codex { background: #73a68a; box-shadow: 0 0 0 3px color-mix(in srgb, #73a68a 16%, transparent); }
 .team-advanced { border-top: 1px solid var(--hair); margin: 14px -3px 0; padding-top: 11px; }
 .team-advanced summary { display: flex; align-items: center; gap: 8px; color: var(--muted); cursor: pointer; padding: 7px; width: max-content; font-size: 12px; }
@@ -707,6 +708,7 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; 
 .task-number { font: 10px var(--mono); color: var(--faint); }
 .agent-badge { border-radius: 4px; padding: 2px 6px; font-size: 9px; }
 .agent-badge.claude { color: #e3916e; background: color-mix(in srgb, #d9784f 13%, transparent); }
+.agent-badge.local { color: #9bb8e3; background: color-mix(in srgb, #7a9fd6 13%, transparent); }
 .agent-badge.codex { color: #86b99b; background: color-mix(in srgb, #73a68a 13%, transparent); }
 .task-state { margin-left: auto; color: var(--muted); font-size: 9px; text-transform: capitalize; }
 .task-deps, .task-error { color: var(--muted); font-size: 10px; line-height: 1.5; }
@@ -716,7 +718,7 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; 
 .task-actions { margin-top: 12px; }
 .task-skeleton { height: 148px; }
 .team-story { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(290px, .7fr); gap: 14px; align-items: start; }
-.team-lanes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; min-width: 0; }
+.team-lanes { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; min-width: 0; }
 .agent-lane { min-width: 0; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); overflow: hidden; }
 .agent-lane > header { display: flex; align-items: center; gap: 9px; padding: 12px 14px; border-bottom: 1px solid var(--hair); font-weight: 600; font-size: 12px; }
 .lane-live { margin-left: auto; color: var(--muted); font-size: 8px; letter-spacing: .12em; }

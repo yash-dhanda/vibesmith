@@ -68,6 +68,7 @@ export type Budget = { maxTokens?: number; maxMinutes?: number; maxAgentRuns?: n
 export type TeamConfig = {
   planner: AgentName | 'auto'
   codexModel: string
+  localModel?: string // the Ollama model the local agent uses; empty = the best installed one
   claudeModel?: string
   claudeEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   maxParallelPerAgent: number
@@ -104,7 +105,7 @@ export type Run = {
   decisions: Decision[]
   errors: ErrorRecord[]
   approvals: Approval[]
-  usage: Record<AgentName, Usage>
+  usage: Record<'claude' | 'codex', Usage> & { local?: Usage } // `local` is missing on runs saved before the local agent existed
   config: TeamConfig
   limits?: Partial<Record<AgentName, { primaryPct: number; primaryResetsAt?: number; secondaryPct?: number; secondaryResetsAt?: number }>>
   final?: RunFinal
@@ -124,5 +125,5 @@ export type RunEvent =
   | { type: 'message'; runId: string; message: Message }
   | { type: 'approval'; runId: string; approval: Approval }
   | { type: 'verify'; runId: string; command: string; ok: boolean; output: string }
-  | { type: 'usage'; runId: string; usage: Record<AgentName, Usage> }
+  | { type: 'usage'; runId: string; usage: Run['usage'] }
   | { type: 'final'; runId: string; final: RunFinal }

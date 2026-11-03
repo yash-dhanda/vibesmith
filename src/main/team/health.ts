@@ -2,6 +2,8 @@ import { execFile, spawn } from 'node:child_process'
 import { resolveCommand } from './bin'
 import { cleanEnv } from './process'
 import type { AgentName } from './events'
+import { sortByQuality } from '../catalog'
+import { ollamaStatus } from '../ollama'
 
 export type Health = { agent: AgentName; ok: boolean; detail: string; fix?: string; version?: string }
 
@@ -64,7 +66,20 @@ export async function codexModels(bin = 'codex'): Promise<string[]> {
   }
 }
 
-export const checkTeamTools = () => Promise.all([checkClaude(), checkCodex()])
+// The local agent runs on Ollama: free, offline, and uses no subscription. It is ready when the server is up and has a model that is not an embedding model.
+export async function localModels(): Promise<string[]> {
+  const s = await ollamaStatus()
+  return sortByQuality(s.models.filter((m) => !/embed/i.test(m)))
+}
+export async function checkLocal(): Promise<Health> {
+  const s = await ollamaStatus()
+  if (!s.up) return { agent: 'local', ok: false, detail: 'Ollama is not running.', fix: 'Start it with `ollama serve`, then pull a model, for example `ollama pull qwen3:8b`.' }
+  const models = s.models.filter((m) => !/embed/i.test(m))
+  if (!models.length) return { agent: 'local', ok: false, detail: 'Ollama has no model yet.', fix: 'Pull one, for example `ollama pull qwen3:8b`.' }
+  return { agent: 'local', ok: true, detail: `${models.length} model${models.length === 1 ? '' : 's'} on this computer` }
+}
+
+export const checkTeamTools = () => Promise.all([checkClaude(), checkCodex(), checkLocal()])
 
 export type LimitInfo = { primaryPct: number; primaryResetsAt?: number; secondaryPct?: number; secondaryResetsAt?: number; plan?: string }
 

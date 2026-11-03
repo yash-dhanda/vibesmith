@@ -184,3 +184,10 @@ Typing and growing files are not written to the log; finished text, tool results
 **teamDiagnostics()**: returns plain text for bug reports: platform and versions, whether each agent is ready (and the fix), Codex models, plan allowance used, and the last 5 runs with their status. Contains no secrets or file contents. Offer it as "Copy diagnostics".
 
 **UI for the plan-usage hooks (Claude wrote this in `src/renderer/team.ts` while Codex was out of allowance):** `finalReview` third state "Automatic", `reviewPlan` setting, plan approval card with edit/reassign/skip (`teamUpdatePlan`), ChatGPT allowance row in the health box (warns at 80%), "Copy diagnostics", `onTeamFocus` opens the run. Replay scenario `planreview`.
+
+**Local model as a third team agent (Ollama)**
+- `AgentName` is now `'claude' | 'codex' | 'local'` everywhere (tasks, messages, events, steering, plan edits). The local agent runs Forge's own chat agent loop on an Ollama model, inside the task's worktree. Free: no subscription, no tokens billed.
+- `teamHealth()` returns a third `agents` entry (`agent: 'local'`, ready when Ollama is up with a model) and `localModels: string[]` (best first). `TeamConfig.localModel` picks one (empty = best installed). `TeamConfig.planner` may be `'local'`.
+- `Run.usage.local` is optional (runs saved before this have none). `teamSteer(..., 'local')` is accepted but the local agent reads steering only at its next turn.
+- Behaviour: Claude/Codex are preferred for planning, conflict resolution, check fixes and final review; the local agent is given simple tasks (the planner is told), runs one task at a time, and is reviewed by the strongest other agent. A task reviewed or fixed by `local` works the same way, but it has no team mailbox: its closing summary is its hand-over.
+- UI: a third lane ("Local model"), a badge, a "Local model" select in the advanced settings and in the plan editor.

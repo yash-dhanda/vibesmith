@@ -5,12 +5,14 @@ import { runClaude } from './claude'
 import { runCodex } from './codex'
 import { runCodexServer } from './codexServer'
 import { claudeMcpConfig } from './link'
+import { runLocal } from './local'
 import type { AgentRunner } from './orchestrator'
 import type { RunResult } from './process'
 
 // The real agents. The Claude MCP config holds the hub secret, so it goes in a private temp file that is removed after the run.
 export const realRunner: AgentRunner = async (agent, o): Promise<RunResult> => {
   const common = { cwd: o.cwd, prompt: o.prompt, signal: o.signal, onEvent: o.onEvent, write: o.write, resume: o.resume }
+  if (agent === 'local') return runLocal({ cwd: o.cwd, prompt: o.prompt, model: o.model ?? '', write: o.write, signal: o.signal, onEvent: o.onEvent })
   if (agent === 'codex') {
     const model = o.model ?? ''
     if (o.codexMode === 'app-server') {

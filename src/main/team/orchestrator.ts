@@ -3,7 +3,7 @@ import { readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createCheckpoint, git, undoTo } from '../checkpoint'
 import { detectVerify, runVerify } from '../agent/commands'
-import type { AgentName, ErrorKind, TeamEvent } from './events'
+import { AGENTS, isAgent, type AgentName, type ErrorKind, type TeamEvent } from './events'
 import { addTaskWorktree, abortMerge, applyResult, changedSince, commitAll, createRunBranch, diffText, finishMerge, head, mergeBranch, pruneWorktrees, removeWorktree, snapshotCommit, snapshotTreeWithoutSecrets } from './git'
 import { TeamHub, type HubCtx } from './hub'
 import { PERMISSION_TOOL, type TeamLink } from './link'
@@ -11,7 +11,7 @@ import { redact, redactEvent } from './redact'
 import type { ApprovalAsk, ServerHandle } from './codexServer'
 import { errorSignature, ProjectMemoryStore, rank, routeAgent } from './memory'
 import { decideCommand, decideTool } from './policy'
-import { buildReport, conflictPrompt, contextFor, finalReviewPrompt, fixPrompt, parsePlan, parseVerdict, planPrompt, reviewPrompt, verifyFixPrompt, workPrompt } from './prompts'
+import { buildReport, conflictPrompt, contextFor, finalReviewPrompt, fixPrompt, forLocal, parsePlan, parseVerdict, planPrompt, reviewPrompt, verifyFixPrompt, workPrompt } from './prompts'
 import type { RunResult } from './process'
 import { TeamStore } from './store'
 import { DEFAULT_CONFIG, emptyUsage, type Approval, type ApprovalKind, type Message, type MessageKind, type Run, type RunEvent, type RunStatus, type Task, type TaskPhase, type TeamConfig } from './types'
@@ -32,6 +32,7 @@ export type Deps = {
   runner: AgentRunner
   available: () => Promise<AgentName[]> // which agents are installed and signed in
   codexModels: () => Promise<string[]>
+  localModels?: () => Promise<string[]>
   emit: (ev: RunEvent) => void
   projectNotes?: (project: string) => { brief: string; rules: string }
   limits?: () => Promise<Partial<Record<AgentName, { primaryPct: number; primaryResetsAt?: number; secondaryPct?: number; secondaryResetsAt?: number }>>> // plan allowance used, when an agent can say
@@ -62,7 +63,9 @@ type Live = {
   handles: Map<string, { agent: AgentName; h: ServerHandle }> // running agents that can be steered mid-turn
 }
 
-const other = (a: AgentName): AgentName => (a === 'claude' ? 'codex' : 'claude')
+// Who does a job: the strongest agent that is ready (Claude, then Codex, then the local model), optionally not the one that wrote the work.
+const PREFER: AgentName[] = ['claude', 'codex', 'local']
+const strongest = (avail: AgentName[], not?: AgentName): AgentName => PREFER.find((a) => a !== not && avail.includes(a)) ?? PREFER.find((a) => avail.includes(a)) ?? avail[0]
 const id = (p: string) => `${p}${randomUUID().slice(0, 8)}`
 const MAX_PROPOSALS = 6
 const MAX_MESSAGES = 1500 // the oldest fall off; decisions and handoffs are kept on the run and the project memory
@@ -123,18 +126,19 @@ export class TeamOrchestrator {
     const config: TeamConfig = { ...DEFAULT_CONFIG, ...cfg, budget: { ...DEFAULT_CONFIG.budget, ...cfg.budget } }
     const ready = await this.d.available()
     const { agents: available, skipped } = await this.usable(config.maxLimitPercent)
-    if (!ready.length) throw new Error('Neither Claude Code nor Codex is ready. Sign in to at least one of them first.')
+    if (!ready.length) throw new Error('No agent is ready. Sign in to Claude Code or Codex, or start Ollama with a model, first.')
     if (!available.length) throw new Error(`${skipped.join(' ')} Wait for the allowance to reset, or raise the limit in the team settings.`)
     if (available.includes('codex') && !config.codexModel) {
       const m = await this.d.codexModels()
       config.codexModel = m.find((x) => /luna/.test(x)) ?? m.find((x) => /terra/.test(x)) ?? m[0] ?? ''
     }
+    if (available.includes('local') && !config.localModel) config.localModel = (await this.d.localModels?.().catch(() => []))?.[0] ?? ''
     const runId = `r${Date.now().toString(36)}${randomUUID().slice(0, 4)}`
     const baseCommit = await snapshotCommit(project)
     const integrationBranch = `forge/${runId}`
     const integrationWorktree = join(this.d.teamDir, 'wt', runId, 'integration')
     await createRunBranch(project, integrationBranch, baseCommit, integrationWorktree)
-    const run: Run = { id: runId, project, goal: goal.trim(), status: 'planning', createdAt: Date.now(), updatedAt: Date.now(), baseCommit, integrationBranch, integrationWorktree, plan: { summary: '', plannedBy: null }, tasks: [], messages: [], decisions: [], errors: [], approvals: [], usage: { claude: emptyUsage(), codex: emptyUsage() }, config }
+    const run: Run = { id: runId, project, goal: goal.trim(), status: 'planning', createdAt: Date.now(), updatedAt: Date.now(), baseCommit, integrationBranch, integrationWorktree, plan: { summary: '', plannedBy: null }, tasks: [], messages: [], decisions: [], errors: [], approvals: [], usage: { claude: emptyUsage(), codex: emptyUsage(), local: emptyUsage() }, config }
     this.runs.set(runId, run)
     this.saveNow(run)
     for (const note of skipped) this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: note })
@@ -304,7 +308,7 @@ export class TeamOrchestrator {
       if (!t) return { ok: false, message: `Unknown task ${e.id}.` }
       if (typeof e.title === 'string' && e.title.trim()) t.title = e.title.trim().slice(0, 120)
       if (typeof e.goal === 'string' && e.goal.trim()) t.goal = e.goal.trim().slice(0, 2000)
-      if (e.agent === 'claude' || e.agent === 'codex') {
+      if (isAgent(e.agent)) {
         if (!this.liveOf(run).available.includes(e.agent)) return { ok: false, message: `${e.agent} is not available for this run.` }
         t.agent = e.agent
       }
@@ -417,7 +421,7 @@ export class TeamOrchestrator {
   }
   private liveOf(run: Run): Live {
     let l = this.live.get(run.id)
-    if (!l) this.live.set(run.id, (l = this.newLive(['claude', 'codex'])))
+    if (!l) this.live.set(run.id, (l = this.newLive(AGENTS)))
     return l
   }
   // The run file is rewritten as things change. Doing that on every message and tool call makes long runs quadratic, so ordinary
@@ -589,11 +593,12 @@ export class TeamOrchestrator {
   // The one place an agent is run: wires events, usage, session handles and the budget.
   private async agentRun(run: Run, task: Task, agent: AgentName, phase: TaskPhase | 'plan' | 'final-review', prompt: string, write: boolean, cwd: string, resume?: string): Promise<RunResult> {
     const live = this.liveOf(run)
+    if (agent === 'local') prompt = forLocal(prompt)
     this.out(run, { type: 'agent', runId: run.id, taskId: task.id, phase, ev: { type: 'prompt', agent, text: prompt.slice(0, 16_000) } })
     const stopWatching = write ? this.watch(run, task, cwd, task.base ?? run.baseCommit) : null
     const call = async (resumeId: string | undefined) => this.d.runner(agent, {
       cwd, prompt, write, resume: resumeId, signal: live.ctl.signal, taskId: task.id, link: await this.linkFor(run, task, agent),
-      model: agent === 'codex' ? run.config.codexModel : run.config.claudeModel,
+      model: agent === 'codex' ? run.config.codexModel : agent === 'local' ? run.config.localModel : run.config.claudeModel,
       effort: agent === 'claude' ? run.config.claudeEffort : undefined,
       codexMode: run.config.codexMode,
       onEvent: (ev) => {
@@ -617,7 +622,7 @@ export class TeamOrchestrator {
       res = await call(undefined)
     }
     stopWatching?.()
-    for (const u of [run.usage[agent], task.usage]) {
+    for (const u of [(run.usage[agent] ??= emptyUsage()), task.usage]) {
       u.input += res.usage.input
       u.output += res.usage.output
       u.cached += res.usage.cached
@@ -654,7 +659,7 @@ export class TeamOrchestrator {
   private async plan(run: Run) {
     const live = this.liveOf(run)
     const notes = this.d.projectNotes?.(run.project) ?? { brief: '', rules: '' }
-    const order: AgentName[] = run.config.planner === 'auto' ? (live.available.includes('claude') ? ['claude', 'codex'] : ['codex', 'claude']) : [run.config.planner, other(run.config.planner)]
+    const order: AgentName[] = run.config.planner === 'auto' ? PREFER : [run.config.planner, ...PREFER.filter((a) => a !== run.config.planner)]
     const planners = order.filter((a) => live.available.includes(a))
     const virtual = (): Task => ({ id: 'plan', title: 'Planning', goal: run.goal, acceptance: [], deps: [], agent: planners[0], kind: 'research', files: [], status: 'running', phase: null, attempts: 0, fixRounds: 0, reviews: [], sessions: {}, branch: null, worktree: null, summary: '', handoff: '', changed: [], usage: emptyUsage() })
     let lastErr = 'no planner'
@@ -707,7 +712,7 @@ export class TeamOrchestrator {
       if (t.status !== 'queued' || live.running.has(t.id)) continue
       if (!t.deps.every((d) => settled(run.tasks.find((x) => x.id === d)!))) continue
       if (!live.available.includes(t.agent)) t.agent = live.available[0] ?? t.agent
-      if (perAgent(t.agent) >= run.config.maxParallelPerAgent) continue
+      if (perAgent(t.agent) >= (t.agent === 'local' ? 1 : run.config.maxParallelPerAgent)) continue // one local model at a time: two would fight over the GPU
       const p = this.execute(run, t).catch((e) => this.failTask(run, t, (e as Error).message)).finally(() => (live.running.delete(t.id), this.pump(run)))
       live.running.set(t.id, p)
     }
@@ -819,7 +824,7 @@ export class TeamOrchestrator {
 
     // ---- review gate: the other agent reads the diff and says pass or fail; fail goes back to the author
     if (run.config.review === 'cross') {
-      const reviewer = live.available.includes(other(task.agent)) ? other(task.agent) : task.agent
+      const reviewer = strongest(live.available, task.agent)
       for (let round = 1; ; round++) {
         task.phase = 'review'
         this.touch(run, task)
@@ -863,7 +868,7 @@ export class TeamOrchestrator {
       if (m.ok) return
       task.phase = 'conflict'
       this.touch(run, task)
-      const resolver: AgentName = live.available.includes('claude') ? 'claude' : 'codex'
+      const resolver = strongest(live.available)
       this.post(run, { from: 'orchestrator', to: resolver, kind: 'note', taskId: task.id, body: `Merge conflict in ${m.conflicts.join(', ')}; ${resolver} is resolving it.` })
       const rr = await this.agentRun(run, task, resolver, 'conflict', conflictPrompt(task, m.conflicts), true, run.integrationWorktree)
       const fin = rr.ok ? await finishMerge(run.integrationWorktree) : { ok: false, left: m.conflicts }
@@ -931,7 +936,7 @@ export class TeamOrchestrator {
           const sig = errorSignature(v.output)
           run.errors.push({ id: id('e'), signature: sig, text: v.output.slice(-400), at: Date.now() })
           if (round >= run.config.maxVerifyRounds) break
-          const fixer: AgentName = live.available.includes('claude') ? 'claude' : 'codex'
+          const fixer = strongest(live.available)
           const t = this.addTask(run, { title: `Fix failing checks (attempt ${round + 1})`, goal: `Make \`${cmd}\` pass.`, agent: fixer, kind: 'build' })
           t.status = 'running'
           t.phase = 'fix'
@@ -956,7 +961,7 @@ export class TeamOrchestrator {
       const total = await changedSince(wt, run.baseCommit).catch(() => [])
       const parts = run.tasks.filter((t) => t.status === 'done' && t.kind === 'build').length
       if (run.config.finalReview && (run.config.finalReview === true || parts >= 3) && run.config.review === 'cross' && total.length) {
-        const reviewer: AgentName = live.available.includes('claude') ? 'claude' : 'codex'
+        const reviewer = strongest(live.available)
         const t = this.virtualTask(run, 'final', 'Final review', reviewer)
         const rr = await this.agentRun(run, t, reviewer, 'final-review', finalReviewPrompt(run, await diffText(wt, run.baseCommit)), false, wt)
         if (live.ctl.signal.aborted) return
@@ -965,7 +970,7 @@ export class TeamOrchestrator {
           notes.push(`${reviewer}: ${v.verdict.toUpperCase()} — ${v.issues.replace(/\s+/g, ' ').slice(0, 500)}`)
           this.post(run, { from: reviewer, to: 'user', kind: 'review', body: `Final review: ${v.verdict.toUpperCase()}. ${v.issues.slice(0, 600)}` })
           if (v.verdict === 'fail') {
-            const author: AgentName = other(reviewer) && live.available.includes(other(reviewer)) ? other(reviewer) : reviewer
+            const author = strongest(live.available, reviewer)
             const ft = this.addTask(run, { title: 'Fix problems from the final review', goal: v.issues, agent: author, kind: 'build' })
             ft.status = 'running'
             ft.phase = 'fix'
@@ -1043,7 +1048,7 @@ export class TeamOrchestrator {
     const str = (v: unknown, n = 2000) => String(v ?? '').slice(0, n)
     switch (op) {
       case 'post': {
-        const to = args.to === 'claude' || args.to === 'codex' || args.to === 'user' ? args.to : 'all'
+        const to = isAgent(args.to) || args.to === 'user' ? args.to : 'all'
         const kind: MessageKind = ['finding', 'question', 'review', 'decision', 'note'].includes(args.kind) ? args.kind : 'note'
         this.post(run, { from: ctx.agent, to, kind, taskId: ctx.taskId, body: str(args.body) })
         return 'posted'
@@ -1092,7 +1097,7 @@ export class TeamOrchestrator {
         if (task?.proposedBy) return 'A subtask cannot propose more subtasks.'
         if (run.tasks.filter((t) => t.proposedBy).length >= MAX_PROPOSALS || run.tasks.length >= (run.config.budget.maxTasks ?? 12)) return 'The team already has as many tasks as allowed.'
         const avail = this.liveOf(run).available
-        const agent: AgentName = args.agent === 'claude' || args.agent === 'codex' ? (avail.includes(args.agent) ? args.agent : avail[0]) : routeAgent('build', avail, this.memory(run).load().stats)
+        const agent: AgentName = isAgent(args.agent) ? (avail.includes(args.agent) ? args.agent : avail[0]) : routeAgent('build', avail, this.memory(run).load().stats)
         const t = this.addTask(run, { title: str(args.title, 120), goal: str(args.goal, 2000), agent, kind: 'build', acceptance: Array.isArray(args.acceptance) ? args.acceptance.map((x: unknown) => str(x, 300)).slice(0, 4) : [], proposedBy: ctx.taskId })
         this.post(run, { from: ctx.agent, to: 'all', kind: 'note', taskId: ctx.taskId, body: `Added task ${t.id} "${t.title}" for ${agent}.` })
         setTimeout(() => this.pump(run), 0)

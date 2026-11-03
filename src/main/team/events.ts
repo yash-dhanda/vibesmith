@@ -1,5 +1,7 @@
-// What every agent CLI (Claude Code, Codex) is reduced to, so the rest of Forge never sees a vendor format.
-export type AgentName = 'claude' | 'codex'
+// What every agent (Claude Code, Codex, a local Ollama model) is reduced to, so the rest of Forge never sees a vendor format.
+export type AgentName = 'claude' | 'codex' | 'local'
+export const AGENTS: AgentName[] = ['claude', 'codex', 'local']
+export const isAgent = (v: unknown): v is AgentName => v === 'claude' || v === 'codex' || v === 'local'
 export type ErrorKind = 'auth' | 'model' | 'limit' | 'timeout' | 'aborted' | 'missing' | 'protocol' | 'busy' | 'other'
 
 export type TeamEvent =

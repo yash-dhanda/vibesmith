@@ -39,7 +39,7 @@ function harness(script: Script, over: { available?: AgentName[]; cfg?: object }
   const proj = project()
   const teamDir = mkdtempSync(join(tmpdir(), 'forge-orch-t-'))
   const events: RunEvent[] = []
-  const calls: { agent: AgentName; kind: string; task: string; cwd: string; resume?: string }[] = []
+  const calls: { agent: AgentName; kind: string; task: string; cwd: string; resume?: string; model?: string }[] = []
   const counts = new Map<string, number>()
   const steers: string[] = []
   let active = 0, maxActive = 0
@@ -53,7 +53,7 @@ function harness(script: Script, over: { available?: AgentName[]; cfg?: object }
     else if (/produced conflicts/.test(p)) (kind = 'conflict'), (task = find(/Merging task (t\d+)/))
     else if (/project's check failed/.test(p)) kind = 'verifyfix'
     else if (/The team finished this goal/.test(p)) kind = 'final'
-    calls.push({ agent, kind, task, cwd: o.cwd, resume: o.resume })
+    calls.push({ agent, kind, task, cwd: o.cwd, resume: o.resume, model: o.model })
     const n = (counts.set(`${kind}:${task}`, (counts.get(`${kind}:${task}`) ?? 0) + 1), counts.get(`${kind}:${task}`)!)
     const failure = script.fail?.(agent, kind as never, task, n, o.resume)
     if (failure) return failure
@@ -99,7 +99,7 @@ function harness(script: Script, over: { available?: AgentName[]; cfg?: object }
     }
   }
   const store = new TeamStore(join(teamDir, 'runs'))
-  const orch = new TeamOrchestrator({ store, teamDir, runner, available: async () => over.available ?? ['claude', 'codex'], codexModels: async () => ['gpt-x-luna'], emit: (e) => events.push(e), sleep: async () => {} })
+  const orch = new TeamOrchestrator({ store, teamDir, runner, available: async () => over.available ?? ['claude', 'codex'], codexModels: async () => ['gpt-x-luna'], localModels: async () => ['qwen-x'], emit: (e) => events.push(e), sleep: async () => {} })
   return { proj, orch, events, calls, store, teamDir, steers, maxActive: () => maxActive }
 }
 
@@ -227,6 +227,35 @@ describe('team orchestrator', () => {
     expect(r.errors.length).toBeGreaterThan(0)
     expect(x.events.some((e) => e.type === 'verify' && !e.ok)).toBe(true)
     expect(x.events.some((e) => e.type === 'verify' && e.ok)).toBe(true)
+  })
+
+  it('lets the local model join: it gets its model, works one task at a time, and is reviewed by someone else', async () => {
+    const x = h({ delayMs: 30, plan: { tasks: [T('a', { agent: 'claude' }), T('b', { agent: 'local' }), T('c', { agent: 'local' })] } }, { available: ['claude', 'codex', 'local'] })
+    const run = await x.orch.start(x.proj, 'three agents')
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect(r.tasks.map((t) => t.agent)).toEqual(['claude', 'local', 'local'])
+    expect(r.config.localModel).toBe('qwen-x')
+    expect(x.calls.filter((c) => c.agent === 'local').every((c) => c.model === 'qwen-x')).toBe(true)
+    for (const c of x.calls.filter((c) => c.kind === 'review')) expect(c.agent).not.toBe(x.calls.find((a) => a.kind === 'work' && a.task === c.task)!.agent)
+    expect(x.calls.filter((c) => c.kind === 'review' && c.task !== 't1').every((c) => c.agent === 'claude')).toBe(true) // the strongest other agent reviews the local one
+    expect(r.usage.local?.runs).toBeGreaterThan(0)
+    // two local tasks never overlap: find the work calls of t2 and t3 in order and check no other work started between a local pair
+    const locals = r.tasks.filter((t) => t.agent === 'local')
+    expect(locals.every((t) => t.startedAt && t.endedAt)).toBe(true)
+    const [p, q] = locals.sort((a, b) => a.startedAt! - b.startedAt!)
+    expect(q.startedAt!).toBeGreaterThanOrEqual(p.startedAt!)
+  })
+
+  it('plans with Claude when the local model is also ready, and works with only the local model if it is alone', async () => {
+    const x = h({ plan: { tasks: [T('a', { agent: 'claude' })] } }, { available: ['claude', 'local'] })
+    const run = await x.orch.start(x.proj, 'mixed')
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect(x.calls.find((c) => c.kind === 'plan')!.agent).toBe('claude')
+    const y = h({ plan: { tasks: [T('a', { agent: 'claude' })] } }, { available: ['local'] })
+    const run2 = await y.orch.start(y.proj, 'alone')
+    const r2 = await until(y.orch, run2.id, (r) => r.status === 'awaiting_approval')
+    expect(new Set(y.calls.map((c) => c.agent))).toEqual(new Set(['local']))
+    expect(r2.tasks[0].agent).toBe('local')
   })
 
   it('uses the one available agent for planning, work and review', async () => {

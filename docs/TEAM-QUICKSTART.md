@@ -1,6 +1,6 @@
 # Team mode: quick start
 
-Claude Code and Codex working on one goal, inside Forge, on your two subscriptions (no API keys, no per-token billing).
+Claude Code, Codex and a local Ollama model working on one goal, inside Forge, on your two subscriptions (no API keys, no per-token billing).
 
 ## Before the first run
 1. Sign in once in a terminal, with your accounts (not API keys):

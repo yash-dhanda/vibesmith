@@ -1,8 +1,8 @@
 import { join } from 'node:path'
 import { initRepo, isRepo } from '../checkpoint'
 import { readdirSync } from 'node:fs'
-import type { AgentName } from './events'
-import { checkTeamTools, codexLimits, codexModels, type Health, type LimitInfo } from './health'
+import { isAgent, type AgentName } from './events'
+import { checkTeamTools, codexLimits, codexModels, localModels, type Health, type LimitInfo } from './health'
 import { TeamOrchestrator } from './orchestrator'
 import { realRunner } from './runner'
 import { TeamSettingsStore } from './settings'
@@ -21,7 +21,8 @@ export function sanitizeConfig(raw: unknown): Partial<TeamConfig> {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
   const num = (v: unknown, lo: number, hi: number) => (typeof v === 'number' && isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : undefined)
   const out: Partial<TeamConfig> = {}
-  if (r.planner === 'auto' || r.planner === 'claude' || r.planner === 'codex') out.planner = r.planner
+  if (r.planner === 'auto' || isAgent(r.planner)) out.planner = r.planner
+  if (typeof r.localModel === 'string' && /^[\w.:/-]{1,80}$/.test(r.localModel)) out.localModel = r.localModel
   if (typeof r.codexModel === 'string' && /^[\w.:-]{1,60}$/.test(r.codexModel)) out.codexModel = r.codexModel
   if (r.claudeEffort === 'low' || r.claudeEffort === 'medium' || r.claudeEffort === 'high' || r.claudeEffort === 'xhigh' || r.claudeEffort === 'max') out.claudeEffort = r.claudeEffort
   if (typeof r.claudeModel === 'string' && /^[\w.:\[\]-]{1,60}$/.test(r.claudeModel)) out.claudeModel = r.claudeModel
@@ -80,6 +81,7 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
     runner: realRunner,
     available: async () => (await health(true)).filter((h) => h.ok).map((h) => h.agent as AgentName),
     codexModels: () => codexModels(),
+    localModels: () => localModels(),
     limits: async () => {
       const codex = await codexLimits()
       return codex ? { codex } : {}
@@ -94,7 +96,7 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
 
   return {
     orch,
-    health: async () => ({ agents: await health(true), codexModels: await codexModels(), limits: { codex: (await codexLimits()) ?? undefined } as { codex?: LimitInfo } }),
+    health: async () => ({ agents: await health(true), codexModels: await codexModels(), localModels: await localModels(), limits: { codex: (await codexLimits()) ?? undefined } as { codex?: LimitInfo } }),
     async start(project: string, goal: string, config?: Partial<TeamConfig>) {
       if (!goal.trim()) throw new Error('Describe what the team should build.')
       if (orch.list().some((r) => r.project === project && ACTIVE.includes(r.status))) throw new Error('This project already has a team run in progress. Finish, apply or cancel it first.')
@@ -111,6 +113,7 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
         `platform: ${process.platform} ${process.arch}, electron ${process.versions.electron}, node ${process.versions.node}`,
         ...agents.map((a) => `${a.agent}: ${a.ok ? 'ready' : 'NOT READY'} ${a.version ?? ''} - ${a.detail}${a.fix ? ` (fix: ${a.fix})` : ''}`),
         `codex models: ${models.join(', ') || '(none)'}`,
+        `local models (Ollama): ${(await localModels().catch(() => [])).join(', ') || '(none)'}`,
         limits ? `codex plan allowance: ${pct(limits.primaryPct)} of the 5-hour window, ${pct(limits.secondaryPct)} of the week (${limits.plan ?? 'plan unknown'})` : 'codex plan allowance: unknown',
         `recent runs:`,
         ...orch.list().slice(0, 5).map((r) => `- ${r.id} ${r.status}${r.pausedReason ? ` (${r.pausedReason.slice(0, 120)})` : ''}: ${r.tasks.filter((t) => t.status === 'done').length}/${r.tasks.length} tasks done, ${r.usage.claude.runs} Claude runs, ${r.usage.codex.runs} Codex runs`),
