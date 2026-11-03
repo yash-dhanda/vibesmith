@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Notification, shell } from 'electron'
 import type * as PtyModule from 'node-pty'
 import { homedir } from 'node:os'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -58,7 +58,7 @@ ipcMain.on('term:write', (_e, d: string) => term?.write(d))
 ipcMain.on('term:resize', (_e, cols: number, rows: number) => term?.resize(cols, rows))
 
 // ---- remembered folder: a new chat starts in the project you were just using ----
-type State = { lastProject?: string; notify?: boolean }
+type State = { lastProject?: string; notify?: boolean; noUndo?: string[] }
 const stateFile = () => join(app.getPath('userData'), 'state.json')
 const readState = (): State => {
   try {
@@ -238,14 +238,20 @@ ipcMain.handle('agent:send', async (e, p: { chatId: string; text: string; mode: 
   const verifyCmd = getVerify(root).effective
   if (p.mode === 'full-auto' && !verifyCmd) throw new Error("Full auto needs a verify command, because nothing else checks the model's work. Set one in Settings (gear icon).")
 
-  // Undo needs git. Ask before creating a repo in someone's folder. A PC without git simply runs without undo.
+  // Undo needs git. An empty folder gets it silently (nothing of the user's to disturb). A folder with files asks once,
+  // in plain words, and remembers a "no". A PC without git simply runs without undo.
   const git = await hasGit()
   if (git && !(await isRepo(root))) {
-    const r = await dialog.showMessageBox(BrowserWindow.fromWebContents(e.sender)!, {
-      type: 'question', buttons: ['Initialize git', 'Continue without undo'], defaultId: 0, cancelId: 1,
-      message: "This folder isn't a git repository.", detail: 'Forge uses git to snapshot your files before each run, so you can undo it. Initialize one here?',
-    })
-    if (r.response === 0) await initRepo(root)
+    if (readdirSync(root).length === 0) await initRepo(root)
+    else if (!(readState().noUndo ?? []).includes(root)) {
+      const r = await dialog.showMessageBox(BrowserWindow.fromWebContents(e.sender)!, {
+        type: 'question', buttons: ['Turn on undo', 'Not for this folder'], defaultId: 0, cancelId: 1,
+        message: 'Turn on undo for this folder?',
+        detail: 'Forge keeps a private snapshot of your files before each run so you can undo anything it changes. This adds a hidden .git folder here and does not touch your files.',
+      })
+      if (r.response === 0) await initRepo(root)
+      else writeState({ noUndo: [...(readState().noUndo ?? []), root] })
+    }
   }
 
   if (!s) {
