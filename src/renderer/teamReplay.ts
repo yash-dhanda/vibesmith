@@ -16,6 +16,9 @@ export function replayRun(state = 'running'): { run: Run; events: { t: number; e
     task('interface', 'Build the calm team workspace', 'codex', state === 'planning' ? 'queued' : 'running', state === 'planning' ? null : 'work', ['foundation']),
     task('verify', 'Connect and check the full flow', 'claude', 'queued', null, ['interface']),
   ]
+  if (state === 'stress') {
+    tasks.splice(0, tasks.length, ...Array.from({ length: 30 }, (_, i) => task(`task-${i + 1}`, `Build resilient part ${i + 1} with an unusually descriptive outcome`, i % 2 ? 'codex' : 'claude', i < 3 ? 'done' : i === 3 ? 'running' : 'queued', i === 3 ? 'work' : null, i ? [`task-${i}`] : [])))
+  }
   if (state === 'planning') tasks.splice(0)
   if (state === 'final' || state === 'applied') for (const item of tasks) { item.status = 'done'; item.phase = null; item.summary = 'Completed and reviewed.' }
   const status = state === 'final' || state === 'approval' ? 'awaiting_approval' : state === 'applied' ? 'done' : state === 'paused' ? 'paused' : state === 'interrupted' ? 'interrupted' : state === 'planning' ? 'planning' : 'running'
@@ -33,6 +36,16 @@ export function replayRun(state = 'running'): { run: Run; events: { t: number; e
     final: state === 'final' || state === 'applied' ? { report: '## Ready to apply\n\nThe team built the shared workspace, reviewed every task, and passed the project check.\n\n- Added the task board and two live lanes\n- Kept approvals visible and keyboard reachable\n- Verified the result with `npm test`', files: [{ path: 'src/team.ts', status: 'added', added: 210, removed: 0 }, { path: 'src/styles.css', status: 'modified', added: 94, removed: 12 }], verifyOk: true, verifyOutput: '17 test files passed', reviewNotes: ['Cross-review passed'] } : undefined,
     applied: state === 'applied', appliedCheckpoint: state === 'applied' ? 'replay-checkpoint' : undefined,
   }
+  if (state === 'authpause') { run.status = 'paused'; run.pausedReason = 'Claude Code is not signed in. Run: claude auth login, then resume the team.' }
+  if (state === 'limitpause' || state === 'budget') { run.status = 'paused'; run.pausedReason = 'This run reached its plan allowance. Allow 50% more to continue.'; run.approvals = [{ id: 'budget-1', kind: 'budget', title: 'The team needs more room to finish', detail: 'The current token budget is used. Allow 50% more, or stop here.', status: 'pending', at: now }] }
+  if (state === 'reviewoverride') { run.status = 'paused'; run.approvals = [{ id: 'review-1', kind: 'review_override', title: 'Merge despite a review concern?', detail: 'Claude found a keyboard-navigation issue. Merge anyway only if you accept that risk.', taskId: 'interface', agent: 'codex', status: 'pending', at: now }] }
+  if (state === 'permission') { run.status = 'paused'; run.approvals = [{ id: 'permission-1', kind: 'permission', title: 'Allow a long-running project command that may rewrite generated files?', detail: 'Codex wants to run npm run generate -- --all. It can update generated source files in the isolated task folder.', taskId: 'interface', agent: 'codex', status: 'pending', at: now }] }
+  if (state === 'failed' || state === 'blocked') { run.status = state === 'failed' ? 'failed' : 'paused'; const failed = run.tasks[1]; failed.status = state; failed.error = state === 'failed' ? 'The renderer check failed after two attempts.' : 'This task is waiting on a dependency that did not finish.'; run.pausedReason = failed.error }
+  if (state === 'conflict') { run.status = 'paused'; const conflict = run.tasks[1]; conflict.status = 'blocked'; conflict.phase = 'conflict'; conflict.error = 'Two tasks changed the same lines. Choose Retry after reviewing the conflict, or Skip this task.'; run.pausedReason = conflict.error }
+  if (state === 'verifyfail') { run.status = 'running'; run.tasks.push(task('fix-verify', 'Fix the failing project check', 'codex', 'running', 'fix', ['interface'])) }
+  if (state === 'cancelled') { run.status = 'cancelled'; run.pausedReason = 'You cancelled this run. No changes reached your project.' }
+  if (state === 'planningfail') { run.status = 'failed'; run.tasks = []; run.pausedReason = 'The team could not create a plan because the project could not be read.' }
+  if (state === 'applyfail') { run.status = 'awaiting_approval'; run.final = { report: '## Ready, but the project moved\n\nThe result is complete. Applying it will re-check the project first.', files: [{ path: 'hello.js', status: 'added', added: 1, removed: 0 }], verifyOk: true, verifyOutput: 'Passed', reviewNotes: ['The final reviewer found no blocking issues.'] } }
   if (state === 'planning') run.messages = []
   const events: { t: number; ev: RunEvent }[] = [
     { t: now - 132_000, ev: { type: 'agent', runId: run.id, taskId: 'foundation', phase: 'work', ev: { type: 'prompt', agent: 'claude', text: 'Goal: Build a shared planning space.\n\nTask: Shape the shared data model.\n\nAcceptance: keep every state restart-safe and keyboard reachable.\n\nShared context: Codex will build the interface after this handoff.' } } },
@@ -57,6 +70,16 @@ export function replayRun(state = 'running'): { run: Run; events: { t: number; e
     handoffs: [{ taskId: 'foundation', title: 'Shape the shared data model', agent: 'claude', handoff: 'The data model is ready. Keep the controls usable with a keyboard.' }],
     errors: [{ id: 'e1', taskId: 'foundation', signature: 'worker failed to load', text: 'The diff worker initially failed to load.', fix: 'Use the bundled local Monaco worker.', at: now - 90_000 }],
     project: { decisions: [{ id: 'pd1', text: 'Use warm neutrals and ember for intent.', by: 'user', at: now - 86_400_000 }], errors: [], stats: { 'claude:research': { ok: 4, fail: 0 }, 'codex:build': { ok: 7, fail: 1 } } },
+  }
+  if (state === 'verifyfail') events.push({ t: now - 2_000, ev: { type: 'verify', runId: run.id, command: 'npm test', ok: false, output: '1 test failed: expected the button to be keyboard reachable.\nA fix task has started.' } })
+  if (state === 'stress') {
+    const longLine = 'unbroken_'.repeat(3000) + ' 🌍 مرحبا שלום 👩🏽‍💻'
+    run.messages.push({ id: 'stress-message', from: 'user', to: 'all', kind: 'steer', body: longLine, at: now, readBy: [] })
+    for (let i = 0; i < 20_000; i++) events.push({ t: now + i, ev: { type: 'agent', runId: run.id, taskId: i % 2 ? 'task-4' : 'task-3', phase: 'work', ev: { type: 'delta', agent: i % 2 ? 'codex' : 'claude', channel: 'text', id: `stream-${i % 2}`, text: i % 37 ? 'x' : '🙂' } } })
+    for (let i = 0; i < 300; i++) events.push({ t: now + 21_000 + i, ev: { type: 'agent', runId: run.id, taskId: i % 2 ? 'task-4' : 'task-3', phase: 'work', ev: { type: 'tool', agent: i % 2 ? 'codex' : 'claude', id: `tool-${i}`, kind: i % 3 ? 'read' : 'command', name: 'Tool', summary: `Stress tool row ${i}` } } })
+    const lines = Array.from({ length: 5000 }, (_, i) => `export const line${i} = ${i}`).join('\n')
+    for (let i = 1; i <= 50; i++) events.push({ t: now + 22_000 + i, ev: { type: 'agent', runId: run.id, taskId: 'task-4', phase: 'work', ev: { type: 'code', agent: 'codex', id: 'huge-code', path: 'src/huge.ts', text: lines.slice(0, Math.floor(lines.length * i / 50)), kind: 'content', done: i === 50 } } })
+    events.push({ t: now + 23_000, ev: { type: 'agent', runId: run.id, taskId: 'task-4', phase: 'work', ev: { type: 'delta', agent: 'codex', channel: 'output', id: 'huge-output', text: 'output line\n'.repeat(20_000) } } })
   }
   if (state === 'settled') events.push(
     { t: now - 5_000, ev: { type: 'agent', runId: run.id, taskId: 'interface', phase: 'work', ev: { type: 'tool_result', agent: 'codex', id: 'live-command', ok: true, text: 'Renderer bundle passed.' } } },

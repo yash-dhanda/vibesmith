@@ -650,6 +650,7 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; 
 .team-advanced { border-top: 1px solid var(--hair); margin: 14px -3px 0; padding-top: 11px; }
 .team-advanced summary { display: flex; align-items: center; gap: 8px; color: var(--muted); cursor: pointer; padding: 7px; width: max-content; font-size: 12px; }
 .team-config-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 13px 7px; }
+.team-config-error { min-height: 18px; padding: 0 7px 7px; color: var(--err); font-size: 11px; }.team-setting-actions { display: flex; gap: 7px; padding: 0 7px 7px; }
 .team-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; color: var(--muted); font-size: 11px; }
 .team-field input, .team-field select { width: 100%; min-width: 0; border: 1px solid var(--border); background: var(--bg); border-radius: 7px; padding: 7px 9px; }
 .team-field small { color: var(--faint); }
@@ -657,6 +658,7 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; 
 .team-project { max-width: 270px; }
 .team-start { padding: 9px 17px; }
 .team-runs { margin-top: 70px; max-width: 760px; }
+.team-run-tools { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-bottom: 8px; }.team-run-tools input, .team-run-tools select { min-width: 0; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); padding: 7px 9px; font-size: 11px; }
 .team-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-weight: 620; font-size: 12px; margin-bottom: 11px; }
 .team-section-head > span { color: var(--muted); font-weight: 400; font-size: 10px; }
 .team-run-row { display: flex; align-items: center; gap: 6px; border-top: 1px solid var(--hair); }
@@ -765,4 +767,4 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; 
 @media (prefers-reduced-motion: reduce) { .typing-cursor { animation: none; } }
 @media (max-width: 1180px) { .team-story { grid-template-columns: minmax(0, 1fr); }.team-side-story { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }.team-run { width: min(100% - 32px, 1100px); } }
 @media (max-width: 900px) { #app.team-mode { grid-template-columns: minmax(0, 1fr); } #app.team-mode #history { display: none; } .team-entry { width: calc(100% - 32px); padding-top: 38px; }.team-run-header { grid-template-columns: auto minmax(0, 1fr) auto; }.team-run-header > .status-pill, .team-run-header > .team-elapsed { display: none; }.team-controls { grid-column: 2 / -1; justify-content: flex-start; }.team-usage-strip { grid-column: 2 / -1; }.team-lanes { grid-template-columns: minmax(0, 1fr); }.team-approval-card { grid-template-columns: minmax(0, 1fr); }.team-side-story { grid-template-columns: minmax(0, 1fr); } }
-@media (max-width: 600px) { .team-head { padding-inline: 12px; }.team-head #team-back { font-size: 0; }.team-head #team-back .ic { display: block; }.team-health, .team-config-grid { grid-template-columns: minmax(0, 1fr); }.team-intro h1 { font-size: 38px; }.team-run { width: calc(100% - 20px); }.team-run-header { grid-template-columns: auto minmax(0, 1fr); }.team-controls, .team-usage-strip { grid-column: 1 / -1; }.team-board { grid-template-columns: minmax(0, 1fr); }.team-final { padding: 18px; }.team-final-actions { flex-direction: column; }.team-applied { grid-template-columns: minmax(0, 1fr); }.team-applied > .btn { grid-column: 1; grid-row: auto; margin-top: 8px; } }
+@media (max-width: 600px) { .team-head { padding-inline: 12px; }.team-head #team-back { font-size: 0; }.team-head #team-back .ic { display: block; }.team-health, .team-config-grid, .team-run-tools { grid-template-columns: minmax(0, 1fr); }.team-intro h1 { font-size: 38px; }.team-run { width: calc(100% - 20px); }.team-run-header { grid-template-columns: auto minmax(0, 1fr); }.team-controls, .team-usage-strip { grid-column: 1 / -1; }.team-board { grid-template-columns: minmax(0, 1fr); }.team-final { padding: 18px; }.team-final-actions { flex-direction: column; }.team-applied { grid-template-columns: minmax(0, 1fr); }.team-applied > .btn { grid-column: 1; grid-row: auto; margin-top: 8px; } }

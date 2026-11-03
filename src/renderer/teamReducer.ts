@@ -76,3 +76,17 @@ export function normaliseTeamEvents(events: LoggedTeamEvent[]) {
   }
   return { log, liveFiles }
 }
+
+export async function normaliseTeamEventsAsync(events: LoggedTeamEvent[], batchSize = 500) {
+  let log: LoggedTeamEvent[] = []
+  const liveFiles = new Map<string, Task['changed']>()
+  const ordered = events.map((entry, index) => ({ ...entry, index })).sort((a, b) => a.t - b.t || a.index - b.index)
+  for (let start = 0; start < ordered.length; start += batchSize) {
+    for (const item of ordered.slice(start, start + batchSize)) {
+      if (item.ev.type === 'live') liveFiles.set(item.ev.taskId, item.ev.files)
+      else log = append(log, { t: item.t, ev: structuredClone(item.ev) })
+    }
+    if (start + batchSize < ordered.length) await new Promise<void>(resolve => setTimeout(resolve, 0))
+  }
+  return { log, liveFiles }
+}

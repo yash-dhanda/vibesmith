@@ -4,7 +4,7 @@ import { md, folderName, formatTokens } from './format'
 import { icon } from './icons'
 import { $, cleanErr, h, toast } from './ui'
 import { replayRun } from './teamReplay'
-import { normaliseTeamEvents, reduceTeamView, type LoggedTeamEvent } from './teamReducer'
+import { normaliseTeamEventsAsync, reduceTeamView, type LoggedTeamEvent } from './teamReducer'
 
 type Logged = LoggedTeamEvent
 type Summary = RunSummary
@@ -16,12 +16,17 @@ let summaries: Summary[] = []
 let elapsedTimer: ReturnType<typeof setInterval> | null = null
 let currentProject = ''
 let replay = false
+let replayScenario = 'entry'
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
 let memoryTimer: ReturnType<typeof setTimeout> | null = null
 let sharedMemory: TeamMemory | null = null
 let memoryLoading = false
 let liveFiles = new Map<string, Task['changed']>()
 let undoResult = ''
+let runFilter = 'all'
+let runSearch = ''
+let steerDraft = ''
+let steerTarget: 'all' | 'claude' | 'codex' = 'all'
 
 const apiReady = () => typeof window.forge.teamStart === 'function'
 const fmtTime = (seconds: number) => seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`
@@ -65,7 +70,7 @@ async function showEntry() {
     root.replaceChildren(unavailable); return
   }
   replay = localStorage.getItem('forge.teamReplay') === '1' || new URLSearchParams(location.search).has('team-replay')
-  const replayState = localStorage.getItem('forge.teamReplayState') ?? 'entry'
+  const replayState = localStorage.getItem('forge.teamReplayState') ?? 'entry'; replayScenario = replayState
   const replayHealth = replayState === 'unavailable'
     ? { agents: [{ agent: 'claude' as const, ok: false, detail: 'Claude Code is not signed in.', fix: 'Run: claude auth login' }, { agent: 'codex' as const, ok: true, detail: 'Ready' }], codexModels: ['qwen3:0.6b'] }
     : { agents: [{ agent: 'claude' as const, ok: true, detail: 'Ready' }, { agent: 'codex' as const, ok: true, detail: 'Ready' }], codexModels: ['qwen3:0.6b'] }
@@ -96,6 +101,9 @@ async function showEntry() {
   const planner = select([['auto', 'Choose for me'], ['claude', 'Claude'], ['codex', 'Codex']], defaults.planner ?? 'auto')
   const parallel = input('number', String(defaults.maxParallelPerAgent ?? 2)); parallel.min = '1'; parallel.max = '4'
   const review = select([['cross', 'Cross-review every task'], ['off', 'No cross-review']], defaults.review ?? 'cross')
+  const finalReview = select([['true', 'Check the combined result'], ['false', 'Skip the final review']], String(defaults.finalReview ?? true))
+  const fixRounds = input('number', String(defaults.maxFixRounds ?? 3)); fixRounds.min = '0'; fixRounds.max = '5'
+  const codexMode = select([['app-server', 'Live Codex session'], ['exec', 'Simple Codex run']], defaults.codexMode ?? 'app-server')
   const verify = input('text', defaults.verify === null ? '' : defaults.verify ?? ''); verify.placeholder = 'Detect from project'
   const codexModel = select(health.codexModels.map(m => [m, m] as [string, string]), defaults.codexModel ?? health.codexModels[0] ?? '')
   const claudeModel = input('text', defaults.claudeModel ?? ''); claudeModel.placeholder = 'Default Claude model'
@@ -103,10 +111,21 @@ async function showEntry() {
   const minutes = input('number', String(defaults.budget?.maxMinutes ?? 60)); minutes.min = '1'
   const tokens = input('number', String(defaults.budget?.maxTokens ?? 500000)); tokens.min = '1000'; tokens.step = '1000'
   const runs = input('number', String(defaults.budget?.maxAgentRuns ?? 20)); runs.min = '1'
+  const maxTasks = input('number', String(defaults.budget?.maxTasks ?? 12)); maxTasks.min = '1'; maxTasks.max = '30'
   const limit = input('number', String(defaults.maxLimitPercent ?? 90)); limit.min = '0'; limit.max = '100'
   const grid = h('div', 'team-config-grid')
-  grid.append(field('Planner', planner), field('Parallel tasks per agent', parallel), field('Review', review), field('Project check', verify), field('Codex model', codexModel), field('Claude model', claudeModel), field('Claude effort', effort), field('Time budget (minutes)', minutes), field('Token budget', tokens), field('Agent runs', runs), field('Pause at plan usage %', limit, '0 disables this limit.'))
-  advanced.append(summary, grid)
+  grid.append(field('Planner', planner, 'Chooses who splits the goal into tasks.'), field('Parallel tasks per agent', parallel, 'More tasks can finish sooner, but use more allowance.'), field('Task review', review), field('Final review', finalReview), field('Fix attempts per task', fixRounds), field('Project check', verify, 'Leave blank to detect it from the project.'), field('Codex connection', codexMode, 'Live sessions support streaming and immediate steering.'), field('Codex model', codexModel), field('Claude model', claudeModel), field('Claude effort', effort), field('Time budget (minutes)', minutes), field('Token budget', tokens), field('Agent runs', runs), field('Maximum tasks', maxTasks), field('Pause at plan usage %', limit, '0 disables this limit.'))
+  const validation = h('div', 'team-config-error'); validation.setAttribute('role', 'alert')
+  const numeric = [parallel, fixRounds, minutes, tokens, runs, maxTasks, limit]
+  const readConfig = (): Partial<TeamConfig> | null => {
+    if (numeric.some(item => !item.checkValidity() || !Number.isFinite(Number(item.value)))) { validation.textContent = 'Check the highlighted team settings.'; numeric.find(item => !item.checkValidity())?.focus(); return null }
+    validation.textContent = ''
+    return { planner: planner.value as TeamConfig['planner'], maxParallelPerAgent: Number(parallel.value), review: review.value as TeamConfig['review'], finalReview: finalReview.value === 'true', maxFixRounds: Number(fixRounds.value), codexMode: codexMode.value as TeamConfig['codexMode'], verify: verify.value.trim() || undefined, codexModel: codexModel.value, claudeModel: claudeModel.value.trim() || undefined, claudeEffort: effort.value as TeamConfig['claudeEffort'], maxLimitPercent: Number(limit.value), budget: { maxMinutes: Number(minutes.value), maxTokens: Number(tokens.value), maxAgentRuns: Number(runs.value), maxTasks: Number(maxTasks.value) } }
+  }
+  const reset = h('button', 'btn', 'Reset team defaults') as HTMLButtonElement; reset.type = 'button'; reset.onclick = () => { planner.value = 'auto'; parallel.value = '2'; review.value = 'cross'; finalReview.value = 'true'; fixRounds.value = '3'; verify.value = ''; codexMode.value = 'app-server'; claudeModel.value = ''; effort.value = 'high'; minutes.value = '60'; tokens.value = '500000'; runs.value = '20'; maxTasks.value = '12'; limit.value = '90'; validation.textContent = 'Defaults restored. They will save when you start a run.' }
+  const saveDefaults = h('button', 'btn', 'Save team defaults') as HTMLButtonElement; saveDefaults.type = 'button'; saveDefaults.onclick = () => void call(async () => { const config = readConfig(); if (!config || typeof window.forge.teamSettingsSet !== 'function') return; await window.forge.teamSettingsSet(config); validation.textContent = 'Team defaults saved for this project.' })
+  const settingActions = h('div', 'team-setting-actions'); settingActions.append(reset, saveDefaults)
+  advanced.append(summary, grid, validation, settingActions)
   const healthBox = h('div', 'team-health')
   for (const agent of health.agents) {
     const row = h('div', `health-row ${agent.ok ? 'ready' : 'missing'}`)
@@ -121,7 +140,7 @@ async function showEntry() {
   form.append(goal, healthBox, advanced, actions)
   form.onsubmit = async e => {
     e.preventDefault(); const text = goal.value.trim(); if (!text || start.disabled) return
-    const config: Partial<TeamConfig> = { planner: planner.value as TeamConfig['planner'], maxParallelPerAgent: Number(parallel.value), review: review.value as TeamConfig['review'], verify: verify.value.trim() || undefined, codexModel: codexModel.value, claudeModel: claudeModel.value.trim() || undefined, claudeEffort: effort.value as TeamConfig['claudeEffort'], maxLimitPercent: Number(limit.value), budget: { maxMinutes: Number(minutes.value), maxTokens: Number(tokens.value), maxAgentRuns: Number(runs.value) } }
+    const config = readConfig(); if (!config) return
     start.disabled = true; start.textContent = 'Preparing the team…'
     if (replay) { const fixture = replayRun('planning'); await openRun(fixture.run.id, fixture); return }
     try { if (typeof window.forge.teamSettingsSet === 'function') await window.forge.teamSettingsSet(config); const started = await window.forge.teamStart(text, config); await openRun(started.id) }
@@ -136,16 +155,26 @@ async function showEntry() {
 function renderRunList() {
   const section = h('section', 'team-runs')
   const head = h('div', 'team-section-head'); head.append(h('div', '', 'Previous team runs'), h('span', '', `${summaries.length}`)); section.append(head)
-  if (!summaries.length) { section.append(h('p', 'team-empty', 'Completed and interrupted runs will appear here, ready to reopen.')); return section }
-  for (const item of summaries) {
+  const tools = h('div', 'team-run-tools')
+  const search = input('search', runSearch); search.placeholder = 'Search goals'; search.setAttribute('aria-label', 'Search team runs')
+  const filter = select([['all', 'All runs'], ['active', 'In progress'], ['attention', 'Needs attention'], ['done', 'Finished']], runFilter); filter.setAttribute('aria-label', 'Filter team runs')
+  search.oninput = () => { runSearch = search.value; const next = renderRunList(); section.replaceWith(next); queueMicrotask(() => { const field = next.querySelector<HTMLInputElement>('input[type="search"]'); field?.focus(); field?.setSelectionRange(field.value.length, field.value.length) }) }
+  filter.onchange = () => { runFilter = filter.value; section.replaceWith(renderRunList()) }
+  tools.append(search, filter); section.append(tools)
+  const active = ['planning', 'running', 'verifying', 'paused', 'interrupted', 'awaiting_approval']
+  const visible = [...summaries].sort((a, b) => b.updatedAt - a.updatedAt).filter(item => item.goal.toLowerCase().includes(runSearch.trim().toLowerCase()) && (runFilter === 'all' || runFilter === 'active' && active.includes(item.status) || runFilter === 'attention' && ['failed', 'paused', 'interrupted'].includes(item.status) || runFilter === 'done' && ['done', 'cancelled'].includes(item.status)))
+  if (!summaries.length) { section.append(h('p', 'team-empty', 'No team runs yet. Describe a small goal above to start one.')); return section }
+  if (!visible.length) { section.append(h('p', 'team-empty', 'No team runs match this search and filter.')); return section }
+  for (const item of visible) {
     const row = h('article', 'team-run-row')
     const open = h('button', 'team-run-open'); open.onclick = () => void (replay ? openRun(item.id, replayRun('interrupted')) : openRun(item.id))
     const meta = h('span', 'team-run-meta'); meta.append(h('span', `status-pill ${item.status}`, statusLabel(item.status)), h('span', '', `${item.tasks.done}/${item.tasks.total} tasks`))
     open.append(h('strong', '', item.goal), meta)
     row.append(open)
+    if (typeof window.forge.teamExportReport === 'function' && ['awaiting_approval', 'done'].includes(item.status)) { const exportButton = h('button', 'icon-btn sm'); exportButton.append(icon('download', 'sm')); exportButton.title = 'Export report'; exportButton.setAttribute('aria-label', `Export report for ${item.goal}`); exportButton.onclick = () => void call(() => window.forge.teamExportReport(item.id)); row.append(exportButton) }
     if (typeof window.forge.teamDelete === 'function' && !['planning', 'running', 'verifying', 'paused', 'interrupted'].includes(item.status)) {
       const del = h('button', 'icon-btn sm'); del.append(icon('trash', 'sm')); del.title = 'Delete run'; del.setAttribute('aria-label', `Delete ${item.goal}`)
-      del.onclick = () => void call(async () => { if (await window.forge.teamDelete(item.id)) { summaries = summaries.filter(x => x.id !== item.id); section.replaceWith(renderRunList()) } })
+      del.onclick = () => void call(async () => { if (!window.confirm(`Delete this team run?\n\n${item.goal}\n\nIts saved report and unfinished Team work will be removed.`)) return; if (await window.forge.teamDelete(item.id)) { summaries = summaries.filter(x => x.id !== item.id); section.replaceWith(renderRunList()) } })
       row.append(del)
     }
     section.append(row)
@@ -157,7 +186,7 @@ async function openRun(id: string, fixture?: { run: Run; events: Logged[]; memor
   root.replaceChildren(h('div', 'team-run-loading skel'))
   const loaded = fixture ?? await (async () => { const [saved, events] = await Promise.all([window.forge.teamGet(id), window.forge.teamEvents(id)]); if (!saved) throw new Error('This team run no longer exists.'); return { run: saved, events } })()
   run = structuredClone(loaded.run); sharedMemory = fixture?.memory ?? null; undoResult = ''
-  const normal = normaliseTeamEvents(loaded.events); log = normal.log; liveFiles = normal.liveFiles
+  const normal = await normaliseTeamEventsAsync(loaded.events); log = normal.log; liveFiles = normal.liveFiles
   if (!['planning', 'running', 'paused', 'interrupted'].includes(run.status)) liveFiles.clear()
   renderRun(); startClock()
   if (!fixture) void refreshMemory()
@@ -168,6 +197,7 @@ function stopClock() { if (elapsedTimer) clearInterval(elapsedTimer); elapsedTim
 
 function renderRun() {
   if (!run) return
+  const scrollTop = root.scrollTop
   const page = h('div', 'team-run')
   page.append(renderRunHeader())
   if (run.pausedReason || run.status === 'interrupted') page.append(renderPauseBanner())
@@ -176,7 +206,7 @@ function renderRun() {
   if (run.status === 'awaiting_approval' && run.final) page.append(renderFinal())
   if (run.status === 'done' && run.applied) page.append(renderApplied())
   page.append(renderBoard(), renderStory())
-  root.replaceChildren(page)
+  root.replaceChildren(page); root.scrollTop = scrollTop
 }
 
 function renderRunHeader() {
@@ -220,13 +250,14 @@ function renderPauseBanner() {
   if (run!.status === 'done' || run!.status === 'cancelled') return banner
   const failed = run!.tasks.find(task => task.status === 'failed' || task.status === 'blocked' || task.status === 'interrupted')
   if (run!.status === 'failed' && failed) banner.append(actionButton('Retry failed task', 'arrowright', () => teamAction(() => window.forge.teamRetryTask(run!.id, failed.id)), 'primary'))
+  else if (run!.status === 'failed') return banner
   else if (/limit|budget|allowance/i.test(run!.pausedReason ?? '')) banner.append(actionButton('Allow 50% more', 'bolt', () => teamAction(() => window.forge.teamExtendBudget(run!.id)), 'primary'))
   else banner.append(actionButton('Resume team', 'arrowright', () => teamAction(() => window.forge.teamResume(run!.id)), 'primary'))
   return banner
 }
 
 function renderApprovals(items: Run['approvals']) {
-  const tray = h('section', 'approval-tray'); const title = h('div', 'team-section-head'); title.append(h('div', '', 'Waiting for you'), h('span', '', `${items.length} blocking`)); tray.append(title)
+  const tray = h('section', 'approval-tray'); tray.setAttribute('role', 'alert'); tray.setAttribute('aria-live', 'assertive'); const title = h('div', 'team-section-head'); title.append(h('div', '', 'Waiting for you'), h('span', '', `${items.length} blocking`)); tray.append(title)
   for (const approval of items) {
     const card = h('article', 'team-approval-card'); const copy = h('div', 'approval-copy')
     copy.append(h('span', 'approval-kind', approval.kind.replace('_', ' ')), h('h3', '', approval.title), h('p', '', approval.detail))
@@ -234,8 +265,8 @@ function renderApprovals(items: Run['approvals']) {
     const actions = h('div', 'approval-actions')
     const answer = async (allow: boolean) => { if (replay) { approval.status = allow ? 'allowed' : 'denied'; renderRun(); return } const accepted = await window.forge.teamAnswer(run!.id, approval.id, allow, note.value.trim() || undefined); if (!accepted) toast('The team is no longer waiting on this approval.'); await refreshRun() }
     if (approval.kind === 'budget') actions.append(actionButton('Allow 50% more', 'bolt', () => void teamAction(() => window.forge.teamExtendBudget(run!.id)), 'primary'))
-    else actions.append(actionButton('Allow', 'check', () => void answer(true), 'primary'))
-    actions.append(actionButton('Deny', 'x', () => void answer(false)))
+    else actions.append(actionButton(approval.kind === 'review_override' ? 'Merge anyway' : 'Allow', 'check', () => void answer(true), 'primary'))
+    actions.append(actionButton(approval.kind === 'review_override' ? 'Keep separate' : 'Deny', 'x', () => void answer(false)))
     card.append(copy, note, actions); tray.append(card)
   }
   return tray
@@ -271,7 +302,7 @@ function renderStory() {
   area.append(lanes, side); return area
 }
 function renderLane(agent: 'claude' | 'codex') {
-  const lane = h('section', `agent-lane ${agent}`); const header = h('header'); header.append(h('span', `agent-orb ${agent}`), h('div', '', agent === 'claude' ? 'Claude Code' : 'OpenAI Codex'), h('span', 'lane-live', 'LIVE')); lane.append(header)
+  const lane = h('section', `agent-lane ${agent}`); const header = h('header'); header.append(h('span', `agent-orb ${agent}`), h('div', '', agent === 'claude' ? 'Claude Code' : 'OpenAI Codex'), h('span', 'lane-live', ['planning', 'running', 'verifying'].includes(run!.status) ? 'LIVE' : 'HISTORY')); lane.append(header)
   const events = log.filter(x => x.ev.type === 'agent' && x.ev.ev.agent === agent)
   const body = h('div', 'lane-body')
   if (!events.length) body.append(h('p', 'team-empty', 'Waiting for a task…'))
@@ -395,11 +426,11 @@ function renderVerify() {
 }
 function renderSteer() {
   const form = h('form', 'team-steer'); const label = h('label', '', 'Tell the team'); const row = h('div')
-  const text = input('text'); text.placeholder = 'Add context or change direction…'; text.setAttribute('aria-label', 'Tell the team')
-  const to = select([['all', 'Everyone'], ['claude', 'Claude'], ['codex', 'Codex']], 'all'); to.setAttribute('aria-label', 'Send to')
+  const text = input('text', steerDraft); text.placeholder = 'Add context or change direction…'; text.setAttribute('aria-label', 'Tell the team'); text.oninput = () => { steerDraft = text.value }
+  const to = select([['all', 'Everyone'], ['claude', 'Claude'], ['codex', 'Codex']], steerTarget); to.setAttribute('aria-label', 'Send to'); to.onchange = () => { steerTarget = to.value as typeof steerTarget }
   const send = h('button', 'icon-btn'); send.append(icon('arrowup')); send.setAttribute('aria-label', 'Send to team')
   row.append(text, to, send); form.append(label, row)
-  form.onsubmit = e => { e.preventDefault(); const value = text.value.trim(); if (!value) return; if (replay) { run!.messages.push({ id: crypto.randomUUID(), from: 'user', to: to.value as 'all' | 'claude' | 'codex', kind: 'steer', body: value, at: Date.now(), readBy: [] }); text.value = ''; renderRun() } else void call(async () => { await window.forge.teamSteer(run!.id, value, to.value as 'all' | 'claude' | 'codex'); text.value = ''; await refreshRun() }) }
+  form.onsubmit = e => { e.preventDefault(); const value = text.value.trim(); if (!value) return; if (replay) { run!.messages.push({ id: crypto.randomUUID(), from: 'user', to: steerTarget, kind: 'steer', body: value, at: Date.now(), readBy: [] }); steerDraft = ''; renderRun() } else void call(async () => { await window.forge.teamSteer(run!.id, value, steerTarget); steerDraft = ''; await refreshRun() }) }
   return form
 }
 function renderDiffPanel() {
@@ -431,10 +462,12 @@ function renderFinal() {
   const report = h('div', 'team-final-report'); report.innerHTML = md(run!.final!.report); section.append(report)
   const files = h('div', 'team-final-files'); for (const file of run!.final!.files) files.append(h('div', '', `${file.status === 'added' ? 'New' : file.status === 'deleted' ? 'Removed' : 'Updated'} · ${file.path}`)); section.append(files)
   const verify = h('div', `final-verify ${run!.final!.verifyOk ? 'ok' : run!.final!.verifyOk === false ? 'bad' : ''}`); verify.append(icon(run!.final!.verifyOk ? 'check' : 'info'), h('span', '', run!.final!.verifyOk ? 'Project check passed' : run!.final!.verifyOk === false ? 'Project check failed' : 'No project check configured')); section.append(verify)
-  const note = h('p', 'team-final-note', `Nothing has changed in your project yet. If you don’t apply this result, the work stays on ${run!.integrationBranch}.`); section.append(note)
+  if (run!.final!.reviewNotes.length) { const notes = h('details', 'final-review-notes'); notes.append(h('summary', '', `Final review notes · ${run!.final!.reviewNotes.length}`), ...run!.final!.reviewNotes.map(item => h('p', '', item))); section.append(notes) }
+  if (undoResult) section.append(h('div', 'errcard final-action-result', undoResult))
+  const note = h('p', 'team-final-note', 'Nothing has changed in your project yet. If you don’t apply this result, Forge keeps a saved Team copy that you can reopen later.'); section.append(note)
   const actions = h('div', 'team-final-actions')
-  const apply = actionButton('Apply to my project', 'check', async () => { if (replay) { run!.status = 'done'; run!.applied = true; run!.appliedCheckpoint = 'replay-checkpoint'; toast('Applied · Undo is ready'); renderRun(); return } await call(async () => { const result = await window.forge.teamApply(run!.id); toast(result.checkpoint ? `${result.message} · Undo is ready` : result.message, 5000); await refreshRun() }) }, 'primary')
-  const reject = actionButton("Don't apply", 'x', () => { if (replay) { run!.status = 'done'; run!.applied = false; toast(`Not applied · work stays on ${run!.integrationBranch}`); renderRun(); return } void teamAction(() => window.forge.teamReject(run!.id)) })
+  const apply = actionButton('Apply to my project', 'check', async () => { if (replay) { if (replayScenario === 'applyfail') { undoResult = 'Could not apply: your project changed while the team was working. Review the project and try again.'; renderRun(); return } run!.status = 'done'; run!.applied = true; run!.appliedCheckpoint = 'replay-checkpoint'; toast('Applied · Undo is ready'); renderRun(); return } await call(async () => { const result = await window.forge.teamApply(run!.id); if (!result.ok) { undoResult = result.message; renderRun(); return } toast(result.checkpoint ? `${result.message} · Undo is ready` : result.message, 5000); await refreshRun() }) }, 'primary')
+  const reject = actionButton("Don't apply", 'x', () => { if (replay) { run!.status = 'done'; run!.applied = false; toast('Not applied · Forge kept a saved Team copy'); renderRun(); return } void teamAction(() => window.forge.teamReject(run!.id)) })
   actions.append(apply, reject); section.append(actions); return section
 }
 
@@ -464,7 +497,12 @@ function reduceEvent(event: RunEvent, t = Date.now()) {
   if (!run || event.runId !== run.id) return
   const state = reduceTeamView({ run, log, liveFiles }, event, t); run = state.run; log = state.log; liveFiles = state.liveFiles
   if (event.type === 'task' || event.type === 'message') scheduleMemoryRefresh()
-  if (refreshTimer) clearTimeout(refreshTimer); refreshTimer = setTimeout(renderRun, event.type === 'agent' || event.type === 'live' ? 80 : 0)
+  if (refreshTimer) clearTimeout(refreshTimer)
+  refreshTimer = setTimeout(() => {
+    if (event.type === 'agent') { const old = document.querySelector(`.agent-lane.${event.ev.agent}`); const body = old?.querySelector<HTMLElement>('.lane-body'); const top = body?.scrollTop ?? 0; const follow = body ? body.scrollHeight - body.scrollTop - body.clientHeight < 36 : true; const next = renderLane(event.ev.agent); old?.replaceWith(next); const nextBody = next.querySelector<HTMLElement>('.lane-body'); if (nextBody) nextBody.scrollTop = follow ? nextBody.scrollHeight : top }
+    else if (event.type === 'live') { const old = document.querySelector('.team-live-files'); old?.replaceWith(renderLiveFiles()) }
+    else renderRun()
+  }, event.type === 'agent' || event.type === 'live' ? 80 : 0)
 }
 
 export function initTeam(options: { project: () => string | null }) {
