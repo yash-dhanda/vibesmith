@@ -851,34 +851,30 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; 
 .stage-chip.working { color: var(--ed-fg); }
 .stage-chip.working i { animation: dot-pulse 1.4s ease-in-out infinite; }
 .stage-chip.typing { color: var(--ed-fg); background: color-mix(in srgb, var(--c) 18%, transparent); }
-.stage-tabs { display: flex; align-items: stretch; overflow-x: auto; scrollbar-width: none; min-height: 36px; background: var(--ed-bar); border-bottom: 1px solid var(--ed-line); }
-.stage-tabs:empty { display: none; }
-.stage-tab { --c: var(--a-claude); position: relative; flex: none; display: inline-flex; align-items: center; gap: 8px; max-width: 220px; padding: 0 14px; border: 0; border-right: 1px solid var(--ed-line); background: transparent; color: var(--ed-dim); font: 12px var(--mono); cursor: pointer; transition: color .2s, background .2s; }
-.stage-tab.codex { --c: var(--a-codex); } .stage-tab.local { --c: var(--a-local); }
-.stage-tab:hover { color: var(--ed-fg); }
-.stage-tab.current { color: var(--ed-fg); background: var(--ed-bg); }
-.stage-tab.current::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--c); }
-.stage-tab.arriving { animation: tab-in .45s cubic-bezier(.2, .9, .3, 1) both; }
-.stage-tab-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--c); flex: none; }
-.stage-tab.writing .stage-tab-dot { animation: dot-pulse 1s ease-in-out infinite; }
-.stage-tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.stage-tab-state { color: var(--ok); font-size: 11px; }
-.stage-tab.done .stage-tab-state { animation: check-pop .45s cubic-bezier(.2, 1.6, .4, 1); }
-.stage-view { flex: 1; min-height: 0; display: flex; }
-.stage-file { --agent: var(--a-claude); flex: 1; min-width: 0; min-height: 0; display: flex; }
-.stage-file.codex { --agent: var(--a-codex); } .stage-file.local { --agent: var(--a-local); }
-.stage-file[hidden] { display: none; }
-.stage-file.entering { animation: view-in .35s ease-out; }
-.stage-scroll { flex: 1; display: flex; align-items: flex-start; overflow: auto; font: 12.5px/1.7 var(--mono); tab-size: 2; scroll-behavior: smooth; }
-.stage-gutter, .stage-code { margin: 0; font: inherit; }
-.stage-gutter { position: sticky; left: 0; z-index: 1; flex: none; min-width: 3.4ch; padding: 16px 14px 48px 16px; text-align: right; color: var(--ed-dim); background: var(--ed-bg); user-select: none; }
-.stage-code { flex: 1; padding: 16px 28px 48px 8px; white-space: pre; color: var(--ed-fg); }
+.stage-view { position: relative; flex: 1; min-height: 0; display: flex; }
+.stage-scroll { --lh: 21px; flex: 1; display: flex; align-items: flex-start; overflow: auto; font: 12.5px/var(--lh) var(--mono); tab-size: 2; }
+.stage-scroll[hidden] { display: none; }
+.stage-gutter { position: sticky; left: 0; z-index: 2; flex: none; margin: 0; min-width: 3.4ch; min-height: 100%; padding: 16px 14px 56px 16px; font: inherit; text-align: right; color: var(--ed-dim); background: var(--ed-bg); user-select: none; }
+.stage-doc { flex: 1; min-width: 0; padding: 16px 28px 56px 8px; }
+.stage-block { --agent: var(--a-claude); position: relative; }
+.stage-block.codex { --agent: var(--a-codex); } .stage-block.local { --agent: var(--a-local); }
+.stage-block.arriving { animation: block-in .55s cubic-bezier(.2, .9, .3, 1) both; }
+.stage-bhead { display: flex; align-items: center; gap: 8px; height: var(--lh); color: var(--ed-dim); font-size: 11px; white-space: nowrap; }
+.stage-bhead::before { content: ''; position: absolute; left: -8px; top: 0; bottom: 0; width: 2px; border-radius: 2px; background: var(--agent); opacity: .85; }
+.stage-bdot { width: 7px; height: 7px; border-radius: 50%; background: var(--agent); flex: none; }
+.stage-block:not(.done) .stage-bdot { animation: dot-pulse 1s ease-in-out infinite; }
+.stage-bpath { overflow: hidden; text-overflow: ellipsis; }
+.stage-bwho { padding: 1px 7px; border-radius: 99px; color: var(--agent); background: color-mix(in srgb, var(--agent) 12%, transparent); font-size: 10.5px; }
+.stage-bstate { color: var(--ok); font-size: 11px; }
+.stage-block.done .stage-bstate { animation: check-pop .45s cubic-bezier(.2, 1.6, .4, 1); }
+.stage-code { margin: 0; font: inherit; white-space: pre; color: var(--ed-fg); }
 .stage-code code { font: inherit; }
 .stage-code code.settled { animation: settle-in .5s ease-out; }
 .stage-code .diff-add { color: var(--ok); } .stage-code .diff-remove { color: var(--err); } .stage-code .diff-hunk { color: var(--ed-dim); }
-.fresh { border-radius: 3px; animation: typed 1.1s ease-out forwards; }
+.stage-gap { height: var(--lh); }
+.fresh { border-radius: 3px; animation: typed 1.5s ease-out forwards; }
 .stage-cursor { position: relative; display: inline-block; width: 2px; height: 1.25em; margin-left: 1px; vertical-align: text-bottom; background: var(--agent); animation: cursor-blink 1s steps(2, start) infinite; }
-.stage-tag { position: absolute; left: -1px; bottom: 100%; margin-bottom: 2px; padding: 3px 7px; border-radius: 5px 5px 5px 0; background: var(--agent); color: var(--on-agent); font: 600 10px/1 var(--mono); letter-spacing: .02em; white-space: nowrap; animation: tag-in .3s ease-out; }
+.stage-tag { position: absolute; left: 3px; bottom: 100%; margin-bottom: 1px; padding: 3px 7px; border-radius: 5px 5px 5px 0; background: var(--agent); color: var(--on-agent); font: 600 10px/1 var(--mono); letter-spacing: .02em; white-space: nowrap; pointer-events: none; animation: tag-in .3s ease-out; box-shadow: 0 4px 12px -4px color-mix(in srgb, var(--agent) 60%, transparent); }
 .stage-status { display: flex; align-items: center; gap: 12px; height: 32px; padding: 0 14px; background: var(--ed-bar); border-top: 1px solid var(--ed-line); font: 11px var(--mono); color: var(--ed-dim); }
 .stage-where { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stage-follow { border: 0; padding: 3px 10px; border-radius: 99px; background: var(--accent); color: var(--on-agent); font: 600 10px var(--mono); cursor: pointer; }
@@ -891,13 +887,12 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; 
 .stage-orbit i.codex { background: var(--a-codex); --r: 120deg; } .stage-orbit i.local { background: var(--a-local); --r: 240deg; }
 .stage-idle.working .stage-orbit { animation: orbit-spin 2.8s linear infinite; }
 @keyframes scan { 0% { background-position: -40% 0; } 100% { background-position: 140% 0; } }
-@keyframes tab-in { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: none; } }
-@keyframes view-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes block-in { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: none; } }
 @keyframes tag-in { from { opacity: 0; transform: translateY(4px) scale(.9); } to { opacity: 1; transform: none; } }
-@keyframes typed { 0% { background: color-mix(in srgb, var(--agent) 24%, transparent); color: var(--agent); } 100% { background: transparent; color: inherit; } }
+@keyframes typed { 0% { background: color-mix(in srgb, var(--agent) 42%, transparent); color: var(--agent); } 100% { background: transparent; color: inherit; } }
 @keyframes settle-in { from { opacity: .4; } }
 @keyframes orbit-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .stage-editor.active .stage-title::after, .stage-chip.working i, .stage-tab.arriving, .stage-tab.writing .stage-tab-dot, .stage-file.entering, .fresh, .stage-cursor, .stage-tag, .stage-idle.working .stage-orbit, .stage-code code.settled { animation: none; } .stage-scroll { scroll-behavior: auto; } }
+@media (prefers-reduced-motion: reduce) { .stage-editor.active .stage-title::after, .stage-chip.working i, .stage-block.arriving, .stage-block:not(.done) .stage-bdot, .fresh, .stage-cursor, .stage-tag, .stage-idle.working .stage-orbit, .stage-code code.settled { animation: none; } }
 @keyframes check-pop { from { transform: scale(0) rotate(-40deg); } to { transform: none; } }
 
 /* light theme: surfaces are paper that sits ABOVE the page (the dark theme's recessed panels turned muddy grey-beige) */
