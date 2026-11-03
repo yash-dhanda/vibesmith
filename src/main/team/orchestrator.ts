@@ -7,6 +7,7 @@ import type { AgentName, ErrorKind, TeamEvent } from './events'
 import { addTaskWorktree, abortMerge, applyResult, changedSince, commitAll, createRunBranch, diffText, finishMerge, head, mergeBranch, pruneWorktrees, removeWorktree, snapshotCommit, snapshotTreeWithoutSecrets } from './git'
 import { TeamHub, type HubCtx } from './hub'
 import { PERMISSION_TOOL, type TeamLink } from './link'
+import { redact, redactEvent } from './redact'
 import type { ApprovalAsk, ServerHandle } from './codexServer'
 import { errorSignature, ProjectMemoryStore, rank, routeAgent } from './memory'
 import { decideCommand, decideTool } from './policy'
@@ -388,6 +389,7 @@ export class TeamOrchestrator {
     for (const e of all) this.d.emit(e)
   }
   private out(run: Run, ev: RunEvent) {
+    ev = redactEvent(ev)
     const live = ev.type === 'agent' && (ev.ev.type === 'delta' || ev.ev.type === 'code')
     if (live || ev.type === 'live') {
       const a = ev.type === 'agent' ? ev.ev : null
@@ -476,7 +478,7 @@ export class TeamOrchestrator {
   private sleep = (ms: number) => (this.d.sleep ? this.d.sleep(ms) : new Promise<void>((r) => setTimeout(r, ms)))
 
   private post(run: Run, m: { from: Message['from']; to: Message['to']; kind: MessageKind; body: string; taskId?: string }) {
-    const msg: Message = { id: id('m'), at: Date.now(), readBy: [], ...m }
+    const msg: Message = { id: id('m'), at: Date.now(), readBy: [], ...m, body: redact(m.body) }
     run.messages.push(msg)
     if (run.messages.length > MAX_MESSAGES) run.messages.splice(0, run.messages.length - MAX_MESSAGES)
     this.save(run)
@@ -524,8 +526,8 @@ export class TeamOrchestrator {
     const live = this.liveOf(run)
     this.out(run, { type: 'agent', runId: run.id, taskId: task.id, phase, ev: { type: 'prompt', agent, text: prompt.slice(0, 16_000) } })
     const stopWatching = write ? this.watch(run, task, cwd, task.base ?? run.baseCommit) : null
-    const res = await this.d.runner(agent, {
-      cwd, prompt, write, resume, signal: live.ctl.signal, taskId: task.id, link: await this.linkFor(run, task, agent),
+    const call = async (resumeId: string | undefined) => this.d.runner(agent, {
+      cwd, prompt, write, resume: resumeId, signal: live.ctl.signal, taskId: task.id, link: await this.linkFor(run, task, agent),
       model: agent === 'codex' ? run.config.codexModel : run.config.claudeModel,
       effort: agent === 'claude' ? run.config.claudeEffort : undefined,
       codexMode: run.config.codexMode,
@@ -543,6 +545,12 @@ export class TeamOrchestrator {
       },
       onHandle: (h) => (h ? live.handles.set(task.id, { agent, h }) : live.handles.delete(task.id)),
     })
+    let res = await call(resume)
+    // A saved session can be gone (cleaned up by the CLI, or from another machine): carry on without its memory rather than failing the task.
+    if (resume && !res.ok && !live.ctl.signal.aborted && /no conversation found|session.{0,40}not found|thread.{0,40}not found|could not find.{0,40}(session|thread)|no rollout found/i.test(res.error?.message ?? '')) {
+      this.out(run, { type: 'agent', runId: run.id, taskId: task.id, phase, ev: { type: 'note', agent, text: `${agent} could not resume its earlier session; starting fresh.` } })
+      res = await call(undefined)
+    }
     stopWatching?.()
     for (const u of [run.usage[agent], task.usage]) {
       u.input += res.usage.input

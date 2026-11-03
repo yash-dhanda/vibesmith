@@ -102,3 +102,21 @@ describe('sanitizeConfig', () => {
     expect(sanitizeConfig('nope')).toEqual({})
   })
 })
+
+import { redact, redactEvent } from './redact'
+describe('redact', () => {
+  it('masks keys, tokens and private keys but leaves ordinary code alone', () => {
+    expect(redact('key sk-ant-api03-abcdefghijklmnopqrstuvwx ok')).toBe('key [secret removed] ok')
+    expect(redact('ghp_' + 'a'.repeat(36))).toBe('[secret removed]')
+    expect(redact('AKIAABCDEFGHIJKLMNOP')).toBe('[secret removed]')
+    expect(redact('-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----')).toBe('[secret removed]')
+    expect(redact('const apiKey = "abcd1234efgh5678ijkl"')).toBe('const apiKey = "[secret removed]"')
+    expect(redact('const token = process.env.TOKEN_VALUE_HERE')).toBe('const token = process.env.TOKEN_VALUE_HERE')
+    expect(redact('API_KEY=')).toBe('API_KEY=')
+    expect(redact('password: "changeme"')).toBe('password: "changeme"')
+  })
+  it('masks inside nested events', () => {
+    const e = redactEvent({ type: 'agent', runId: 'r', taskId: 't', phase: 'work', ev: { type: 'tool_result', agent: 'codex', id: 'i', ok: true, text: 'xoxb-1234567890-abcdefghij' } } as never) as any
+    expect(e.ev.text).toBe('[secret removed]')
+  })
+})

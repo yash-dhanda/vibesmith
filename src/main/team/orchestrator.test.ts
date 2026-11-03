@@ -32,7 +32,7 @@ type Script = {
   limitsPct?: number // emitted by the work step, like Codex app-server's plan readout
   steerable?: boolean
   stream?: boolean // emit typing events and leave a file in the folder for a while
-  fail?: (agent: AgentName, kind: 'plan' | 'work' | 'review' | 'fix', task: string, n: number) => RunResult | null
+  fail?: (agent: AgentName, kind: 'plan' | 'work' | 'review' | 'fix', task: string, n: number, resume?: string) => RunResult | null
 }
 
 function harness(script: Script, over: { available?: AgentName[]; cfg?: object } = {}) {
@@ -55,7 +55,7 @@ function harness(script: Script, over: { available?: AgentName[]; cfg?: object }
     else if (/The team finished this goal/.test(p)) kind = 'final'
     calls.push({ agent, kind, task, cwd: o.cwd, resume: o.resume })
     const n = (counts.set(`${kind}:${task}`, (counts.get(`${kind}:${task}`) ?? 0) + 1), counts.get(`${kind}:${task}`)!)
-    const failure = script.fail?.(agent, kind as never, task, n)
+    const failure = script.fail?.(agent, kind as never, task, n, o.resume)
     if (failure) return failure
     active++
     maxActive = Math.max(maxActive, active)
@@ -354,6 +354,19 @@ describe('team orchestrator', () => {
     expect(mem.project.stats['codex:build']).toEqual({ ok: 1, fail: 0 })
     expect(await x.orch.liveDiff(run.id, 't1')).toContain('t1.txt') // after the merge it shows the team branch's change
     expect(await x.orch.liveDiff(run.id, 't1', 'nope.txt')).toBe('')
+  })
+
+  it('carries on without memory when a saved session has gone missing', async () => {
+    const x = h({
+      plan: { tasks: [T('a', { agent: 'codex' })] },
+      reviews: { t1: ['FAIL', 'PASS'] },
+      fail: (agent, kind, task, n, resume) => (kind === 'fix' && resume ? { ok: false, text: '', usage: { input: 0, output: 0, cached: 0, costUsd: 0 }, events: [], error: { kind: 'other', message: 'No conversation found with session ID: s-codex-t1' } } : null),
+    })
+    const run = await x.orch.start(x.proj, 'lost session')
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    const fixes = x.calls.filter((c) => c.kind === 'fix')
+    expect(fixes.map((f) => f.resume)).toEqual(['s-codex-t1', undefined]) // tried to resume, then started fresh
+    expect(r.tasks[0].status).toBe('done')
   })
 
   it('a task that hits an auth error blocks the run with the agent named', async () => {

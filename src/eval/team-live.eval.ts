@@ -60,7 +60,7 @@ describe.skipIf(!process.env.TEAM_LIVE)('team live', () => {
       mcpScript: resolve('out/main/team-mcp.js'),
     })
     try {
-      const run = await orch.start(proj, process.env.TEAM_GOAL ?? 'Create slug.js exporting slugify(text) (lowercase, spaces and punctuation become single dashes, no leading/trailing dashes) and test.js that checks it with node:assert and exits non-zero on failure. Two small tasks: the module, then the tests.', { verify: 'node test.js', maxVerifyRounds: 1, maxFixRounds: 1, ...(process.env.TEAM_QUICK ? { review: 'off' as const, finalReview: false } : {}), codexMode: process.env.TEAM_CODEX_MODE === 'exec' ? 'exec' : 'app-server' })
+      const run = await orch.start(proj, process.env.TEAM_GOAL ?? 'Create slug.js exporting slugify(text) (lowercase, spaces and punctuation become single dashes, no leading/trailing dashes) and test.js that checks it with node:assert and exits non-zero on failure. Two small tasks: the module, then the tests.', { verify: process.env.TEAM_VERIFY ?? 'node test.js', maxVerifyRounds: 1, maxFixRounds: 1, ...(process.env.TEAM_QUICK ? { review: 'off' as const, finalReview: false } : {}), codexMode: process.env.TEAM_CODEX_MODE === 'exec' ? 'exec' : 'app-server' })
       let r = orch.get(run.id)!
       for (let i = 0; i < 900 && !['awaiting_approval', 'failed', 'paused', 'cancelled'].includes(r.status); i++) {
         await new Promise((res) => setTimeout(res, 1000))
@@ -78,9 +78,12 @@ describe.skipIf(!process.env.TEAM_LIVE)('team live', () => {
       if (process.env.TEAM_FORCE_REVIEW_FAIL) expect(r.tasks.some((t) => t.fixRounds >= 1 && t.reviews.some((v) => v.verdict === 'fail') && t.reviews.at(-1)?.verdict === 'pass')).toBe(true)
       const applied = await orch.approveFinal(run.id)
       expect(applied.ok, applied.message).toBe(true)
-      expect(existsSync(join(proj, 'slug.js'))).toBe(true)
-      expect(readFileSync(join(proj, 'slug.js'), 'utf8')).toMatch(/slugify/)
-      execFileSync('node', ['test.js'], { cwd: proj })
+      if (!process.env.TEAM_GOAL) {
+        expect(existsSync(join(proj, 'slug.js'))).toBe(true)
+        expect(readFileSync(join(proj, 'slug.js'), 'utf8')).toMatch(/slugify/)
+        execFileSync('node', ['test.js'], { cwd: proj })
+      }
+      line('PROJECT FILES: ' + execFileSync('git', ['status', '--short'], { cwd: proj, encoding: 'utf8' }).replace(/\n/g, ' | '))
       expect(sh(proj, 'worktree', 'list').trim().split('\n')).toHaveLength(1)
     } finally {
       orch.shutdown()
