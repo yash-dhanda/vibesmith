@@ -13,6 +13,7 @@
       <div class="brand"><span class="brand-mark">f</span><strong>forge<span> / </span></strong><span class="brand-caption">IDEAS INTO REALITY</span></div>
       <button class="command-trigger" id="commands"><i data-icon="search"></i><span>Find anything</span><kbd>Ctrl K</kbd></button>
       <button class="new-chat" id="new-chat"><i data-icon="plus"></i><span>New chat</span><kbd>Ctrl N</kbd></button>
+      <button class="side-btn team-nav" id="team-nav" hidden><i data-icon="spark"></i><span>Team runs</span><span class="team-nav-dot" hidden></span></button>
       <input id="chat-search" type="search" aria-label="Search chats" placeholder="Filter your chats…" autocomplete="off" />
       <div class="nav-eyebrow">YOUR BUILDS</div>
       <div id="chat-list"></div>
@@ -35,6 +36,7 @@
       <div id="thread-wrap"><div id="thread-scroll"><div id="thread"></div></div><button id="to-bottom" hidden title="Jump to the latest message" aria-label="Jump to the latest message"><i data-icon="arrowdown"></i></button></div>
       <div id="composer-wrap">
         <div id="composer">
+          <div class="composer-modes" role="group" aria-label="Build mode"><button id="mode-chat" class="composer-mode active" type="button">Chat</button><button id="mode-team" class="composer-mode" type="button" hidden>Team</button></div>
           <textarea id="prompt" rows="1" aria-label="Describe what to build" placeholder="Describe your idea. We’ll build it together."></textarea>
           <div class="bar">
             <button class="pill" id="project" title="The folder the agent works in">Choose folder</button>
@@ -59,6 +61,16 @@
         <section class="brief-section"><h3 id="brief-files-title">Taking shape</h3><div id="brief-files"></div><button id="brief-preview" class="btn" hidden><i data-icon="globe"></i>Live preview in browser</button></section>
         <div class="brief-foot"><i data-icon="folder"></i>Your project lives on your computer.</div>
       </aside>
+    </main>
+
+    <main id="team-screen" hidden aria-label="Team Mode">
+      <header class="team-head">
+        <button class="icon-btn" id="team-hist-toggle" aria-label="Toggle navigation"><i data-icon="sidebar"></i></button>
+        <div class="team-brand"><span class="team-knot"><i data-icon="spark"></i></span><span>Team Mode</span></div>
+        <span class="grow"></span>
+        <button class="head-btn" id="team-back"><i data-icon="arrowright"></i>Back to chat</button>
+      </header>
+      <div id="team-root"></div>
     </main>
 
     <aside id="workspace">

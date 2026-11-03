@@ -2,6 +2,7 @@ import type { ForgeApi } from '../preload'
 import { initChat } from './chat'
 import { applyTheme, $, cleanErr, toast } from './ui'
 import { hydrateIcons } from './icons'
+import { initTeam, setTeamProject } from './team'
 import '@fontsource-variable/geist/index.css'
 import '@fontsource-variable/geist-mono/index.css'
 
@@ -32,9 +33,10 @@ applyTheme()
 initChat({
   onFileChanged: path => { if (workspace) workspace.agentChangedFile(path).catch(e => toast(cleanErr(e), 4000)) },
   onFilesRestored: paths => { if (workspace) workspace.filesRestored(paths).catch(e => toast(cleanErr(e), 4000)) },
-  onProject: async project => { root = project; if (workspace) await workspace.setProject(project) },
+  onProject: async project => { root = project; setTeamProject(project); if (workspace) await workspace.setProject(project) },
   openWorkspace,
 }).catch(e => toast(`Couldn’t load Forge: ${cleanErr(e)}`, 6000))
+initTeam({ project: () => root })
 $('ws-toggle').onclick = () => {
   if ($('app').classList.contains('ws-open')) workspace?.setWorkspace(false)
   else void openWorkspace()
