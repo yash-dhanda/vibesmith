@@ -7,6 +7,7 @@ export type CatalogItem = { id: string; name: string; sizeGB: number; q: number;
 export type InstalledModel = { name: string; sizeBytes: number; modified: string; params: string; quant: string; loaded: boolean }
 export type PullEvent = { name: string; status: string; completed: number; total: number; percent: number; bytesPerSec: number; done: boolean; error?: string; cancelled?: boolean }
 type KeyStatus = Record<'anthropic' | 'openai' | 'openrouter', boolean>
+export type ProjectBrief = { name: string; description: string; priorities: { id: string; text: string; included: boolean }[]; revision: number }
 export type OpenedChat = { id: string; title: string; project: string | null; missing: boolean; status: ChatStatus; transcript: TranscriptItem[] }
 
 const api = {
@@ -69,6 +70,9 @@ const api = {
   openPath: (chatId: string, rel: string): Promise<void> => ipcRenderer.invoke('open:path', chatId, rel),
   previewStart: (chatId: string): Promise<{ url: string }> => ipcRenderer.invoke('preview:start', chatId),
   previewStop: (chatId: string) => ipcRenderer.send('preview:stop', chatId),
+  projectBriefGet: (chatId: string): Promise<ProjectBrief> => ipcRenderer.invoke('project:brief-get', chatId),
+  projectBriefSet: (chatId: string, edit: { revision: number; name?: string; description?: string; priorities?: { id?: string; text: string; included?: boolean }[] }): Promise<ProjectBrief & { conflict: boolean }> => ipcRenderer.invoke('project:brief-set', chatId, edit),
+  onProjectBriefChanged: (cb: (m: { project: string; brief: ProjectBrief }) => void) => ipcRenderer.on('project:brief-changed', (_e, m) => cb(m)),
   openFolder: (chatId: string): Promise<void> => ipcRenderer.invoke('open:folder', chatId),
   // workspace (files, editor, terminal)
   list: (dir: string): Promise<{ name: string; dir: boolean }[]> => ipcRenderer.invoke('fs:list', dir),

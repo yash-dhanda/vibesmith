@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { getRoot, inRoot, resolveIn, setRoot } from './project'
 import { isPreviewable } from './preview'
 import { PreviewServer } from './previewServer'
+import { BriefStore, type BriefEdit } from './briefStore'
 import { applyUserPlan, planFromTranscript, planNote, type PlanState } from './agent/plan'
 import { runVerify } from './agent/commands'
 import { runAgent, SYSTEM_PROMPT, type AgentEvent, type Mode } from './agent/loop'
@@ -224,6 +225,16 @@ ipcMain.handle('preview:start', async (_e, chatId: string) => {
   }
 })
 ipcMain.on('preview:stop', (_e, chatId: string) => stopPreview(chatId))
+// The project's name, description and priorities, in the user's words. Shared by every chat in that folder.
+let briefs: BriefStore
+ipcMain.handle('project:brief-get', (_e, chatId: string) => (briefs ??= new BriefStore(join(app.getPath('userData'), 'briefs.json'))).get(chatRoot(chatId)))
+ipcMain.handle('project:brief-set', (_e, chatId: string, edit: BriefEdit) => {
+  briefs ??= new BriefStore(join(app.getPath('userData'), 'briefs.json'))
+  const root = chatRoot(chatId)
+  const r = briefs.set(root, edit ?? {})
+  if (!r.conflict) win?.webContents.send('project:brief-changed', { project: root, brief: r.brief })
+  return { ...r.brief, conflict: r.conflict }
+})
 ipcMain.handle('open:folder', async (_e, chatId: string) => {
   const err = await shell.openPath(chatRoot(chatId))
   if (err) throw new Error(err)
