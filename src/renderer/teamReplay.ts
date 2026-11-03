@@ -31,6 +31,7 @@ export function replayRun(state = 'running'): { run: Run; events: { t: number; e
     config: { planner: 'auto', codexModel: 'gpt-5.6-luna', claudeModel: 'sonnet', claudeEffort: 'high', maxParallelPerAgent: 2, maxFixRounds: 3, maxVerifyRounds: 2, review: 'cross', finalReview: true, allowSubtasks: true, budget: { maxTokens: 500000, maxMinutes: 60, maxAgentRuns: 20 }, codexMode: 'app-server', maxLimitPercent: 90 },
     final: state === 'final' ? { report: '## Ready to apply\n\nThe team built the shared workspace, reviewed every task, and passed the project check.\n\n- Added the task board and two live lanes\n- Kept approvals visible and keyboard reachable\n- Verified the result with `npm test`', files: [{ path: 'src/team.ts', status: 'added', added: 210, removed: 0 }, { path: 'src/styles.css', status: 'modified', added: 94, removed: 12 }], verifyOk: true, verifyOutput: '17 test files passed', reviewNotes: ['Cross-review passed'] } : undefined,
   }
+  if (state === 'planning') run.messages = []
   const events: { t: number; ev: RunEvent }[] = [
     { t: now - 120_000, ev: { type: 'agent', runId: run.id, taskId: 'foundation', phase: 'work', ev: { type: 'text', agent: 'claude', text: 'I’m mapping the states the interface needs to explain.' } } },
     { t: now - 105_000, ev: { type: 'agent', runId: run.id, taskId: 'foundation', phase: 'work', ev: { type: 'tool', agent: 'claude', id: 't1', kind: 'read', name: 'Read', summary: 'Reading the current renderer structure' } } },
@@ -38,5 +39,5 @@ export function replayRun(state = 'running'): { run: Run; events: { t: number; e
     { t: now - 31_000, ev: { type: 'agent', runId: run.id, taskId: 'interface', phase: 'work', ev: { type: 'tool', agent: 'codex', id: 't2', kind: 'edit', name: 'Edit', summary: 'Building the run controls and activity lanes' } } },
     { t: now - 8_000, ev: { type: 'verify', runId: run.id, command: 'npm test', ok: true, output: '17 test files passed\n176 tests passed' } },
   ]
-  return { run, events }
+  return { run, events: state === 'planning' ? [] : events }
 }
