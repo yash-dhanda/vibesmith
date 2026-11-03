@@ -435,3 +435,15 @@ describe('steering', () => {
     expect(seen[1].some((c) => c.includes('skipped "b"'))).toBe(true)
   })
 })
+
+describe('systemPromptFor', () => {
+  it('adds the project description and rules after the fixed prompt, and nothing when there are none', async () => {
+    const { systemPromptFor, SYSTEM_PROMPT } = await import('./loop')
+    expect(systemPromptFor()).toBe(SYSTEM_PROMPT)
+    const p = systemPromptFor({ name: 'Shop', description: 'a flower shop site', rules: 'Plain HTML only.' })
+    expect(p.startsWith(SYSTEM_PROMPT)).toBe(true)
+    expect(p).toContain('About this project ("Shop"), in the user\'s words: a flower shop site')
+    expect(p).toContain('Plain HTML only.')
+    expect(p.indexOf('Plain HTML only.')).toBeGreaterThan(p.indexOf('flower shop'))
+  })
+})

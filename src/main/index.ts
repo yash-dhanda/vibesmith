@@ -13,7 +13,7 @@ import { isRemote } from './ollamaHost'
 import { BriefStore, type BriefEdit } from './briefStore'
 import { applyUserPlan, planFromTranscript, planNote, type PlanState } from './agent/plan'
 import { runVerify } from './agent/commands'
-import { runAgent, SYSTEM_PROMPT, type AgentEvent, type Mode } from './agent/loop'
+import { runAgent, systemPromptFor, type AgentEvent, type Mode } from './agent/loop'
 import { ToolBox } from './agent/tools'
 import { changesSince, createCheckpoint, diffOf, fileAt, hasGit, initRepo, isRepo, undoFile, undoTo, type Change, type Checkpoint } from './checkpoint'
 import { summarizeChanges } from './agent/summarize'
@@ -253,11 +253,11 @@ ipcMain.handle('preview:start', async (_e, chatId: string) => {
 ipcMain.on('preview:stop', (_e, chatId: string) => stopPreview(chatId))
 // The project's name, description and priorities, in the user's words. Shared by every chat in that folder.
 let briefs: BriefStore
-ipcMain.handle('project:brief-get', (_e, chatId: string) => (briefs ??= new BriefStore(join(app.getPath('userData'), 'briefs.json'))).get(chatRoot(chatId)))
+const briefStore = () => (briefs ??= new BriefStore(join(app.getPath('userData'), 'briefs.json')))
+ipcMain.handle('project:brief-get', (_e, chatId: string) => briefStore().get(chatRoot(chatId)))
 ipcMain.handle('project:brief-set', (_e, chatId: string, edit: BriefEdit) => {
-  briefs ??= new BriefStore(join(app.getPath('userData'), 'briefs.json'))
   const root = chatRoot(chatId)
-  const r = briefs.set(root, edit ?? {})
+  const r = briefStore().set(root, edit ?? {})
   if (!r.conflict) win?.webContents.send('project:brief-changed', { project: root, brief: r.brief })
   return { ...r.brief, conflict: r.conflict }
 })
@@ -312,12 +312,14 @@ ipcMain.handle('agent:send', async (e, p: { chatId: string; text: string; attach
 
   if (!s) {
     const chat = store.create(root, p.chatId)
-    chat.messages.push({ role: 'system', content: SYSTEM_PROMPT })
+    chat.messages.push({ role: 'system', content: systemPromptFor(briefStore().get(root)) })
     s = { chat, tools: new ToolBox(root), run: null, dirty: false, saveTimer: null, plan: null, steer: [] }
     sessions.set(chat.id, s)
   }
   const session = s
   const { chat, tools } = session
+  // The project's description and rules can change between messages: the model always gets the current ones.
+  if (chat.messages[0]?.role === 'system') chat.messages[0] = { role: 'system', content: systemPromptFor(briefStore().get(root)) }
   if (!chat.transcript.length) chat.title = titleFrom(p.text)
   const info = found.map(({ id, name, kind, size }) => ({ id, name, kind, size }))
   chat.transcript.push({ type: 'user', text: p.text, ...(info.length ? { attachments: info } : {}) })

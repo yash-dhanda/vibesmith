@@ -6,8 +6,10 @@ import { randomUUID } from 'node:crypto'
 // Kept in the app's data folder (not in the project), keyed by the project's folder, so the user's repo stays clean.
 
 export type Priority = { id: string; text: string; included: boolean }
-export type Brief = { name: string; description: string; priorities: Priority[]; revision: number }
-export type BriefEdit = { name?: unknown; description?: unknown; priorities?: unknown; revision?: unknown }
+// `rules` are the user's standing instructions for this project, in their own words; Forge adds them to the agent's prompt.
+export type Brief = { name: string; description: string; rules: string; priorities: Priority[]; revision: number }
+export type BriefEdit = { name?: unknown; description?: unknown; rules?: unknown; priorities?: unknown; revision?: unknown }
+export const MAX_RULES = 3000
 
 const MAX_PRIORITIES = 20
 const text = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '')
@@ -24,7 +26,8 @@ export class BriefStore {
   }
 
   get(root: string): Brief {
-    return this.all()[root] ?? { name: basename(root), description: '', priorities: [], revision: 0 }
+    const b = this.all()[root]
+    return b ? { ...b, rules: b.rules ?? '' } : { name: basename(root), description: '', rules: '', priorities: [], revision: 0 }
   }
 
   // A stale revision is refused and the current brief comes back, so two windows cannot overwrite each other unseen.
@@ -45,6 +48,8 @@ export class BriefStore {
       // a field left out keeps its value; an empty name goes back to the folder's name
       name: edit.name === undefined ? cur.name : text(edit.name, 60) || basename(root),
       description: edit.description === undefined ? cur.description : text(edit.description, 400),
+      // rules keep their line breaks: they are often a short list
+      rules: edit.rules === undefined ? cur.rules : typeof edit.rules === 'string' ? edit.rules.replace(/\r\n/g, '\n').trim().slice(0, MAX_RULES) : cur.rules,
       priorities: Array.isArray(edit.priorities) ? priorities : cur.priorities,
       revision: cur.revision + 1,
     }

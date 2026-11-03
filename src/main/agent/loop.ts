@@ -43,6 +43,15 @@ export const SYSTEM_PROMPT = `You are Forge, a coding agent working inside the u
 When you are finished, reply with a short summary of what you did and how to run it, then stop calling tools.
 Only when you built something new and still need a value you cannot decide yourself (a name, a token, a choice that changes the result), end your summary with one short list of what you need. Create the files first, with sensible defaults, and mention the defaults. Never ask before creating files.`
 
+// The system prompt for one project: the fixed rules, then what the user said about the project. Their words are data for
+// the model to follow, never able to loosen the fixed rules above (approvals and the folder jail are enforced in code anyway).
+export function systemPromptFor(about: { name?: string; description?: string; rules?: string } = {}): string {
+  const parts = [SYSTEM_PROMPT]
+  if (about.description) parts.push(`About this project${about.name ? ` ("${about.name}")` : ''}, in the user's words: ${about.description}`)
+  if (about.rules) parts.push(`The user's standing rules for this project (follow them unless they conflict with the rules above):\n"""\n${about.rules}\n"""`)
+  return parts.join('\n\n')
+}
+
 const KIND: Record<string, 'read' | 'edit' | 'command'> = { list_dir: 'read', read_file: 'read', edit_file: 'edit', create_file: 'edit', search: 'read', update_plan: 'read', run_command: 'command' }
 
 // The one place autonomy is decided. Unknown tools never execute, so they never need approval.

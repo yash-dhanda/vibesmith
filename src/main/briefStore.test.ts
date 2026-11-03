@@ -8,7 +8,7 @@ const store = () => new BriefStore(join(mkdtempSync(join(tmpdir(), 'forge-brief-
 
 describe('BriefStore', () => {
   it('starts from the folder name', () => {
-    expect(store().get('/home/u/recipes')).toEqual({ name: 'recipes', description: '', priorities: [], revision: 0 })
+    expect(store().get('/home/u/recipes')).toEqual({ name: 'recipes', description: '', rules: '', priorities: [], revision: 0 })
   })
   it('saves, bumps the revision, cleans input and keeps priority ids', () => {
     const s = store()
@@ -20,6 +20,13 @@ describe('BriefStore', () => {
     const b = s.set('/p/x', { revision: 1, priorities: [{ id, text: 'dark mode!' }] })
     expect(b.brief.priorities[0].id).toBe(id)
     expect(b.brief.name).toBe('My app') // a field left out keeps its value
+  })
+  it('keeps rules with their line breaks, caps them, and leaves them alone when not sent', () => {
+    const s = store()
+    const a = s.set('/p/x', { revision: 0, rules: '  Always use plain JavaScript.\r\nNo frameworks.  ' })
+    expect(a.brief.rules).toBe('Always use plain JavaScript.\nNo frameworks.')
+    expect(s.set('/p/x', { revision: 1, name: 'n' }).brief.rules).toBe('Always use plain JavaScript.\nNo frameworks.')
+    expect(s.set('/p/x', { revision: 2, rules: 'x'.repeat(5000) }).brief.rules).toHaveLength(3000)
   })
   it('refuses a stale revision', () => {
     const s = store()

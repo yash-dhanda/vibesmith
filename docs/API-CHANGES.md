@@ -69,3 +69,8 @@ Claude appends every new `window.forge` call or event here. Additive only.
 - **`agentSend({ ..., attachments?: string[] })`** takes the attachment ids to put on this message. Text files are pasted into the message for the model; pictures are sent as pictures. `agentSend` rejects with "This model can't look at pictures…" when a picture is attached and the model is a local one without vision (cloud models are assumed to see). Show that message and offer the model picker.
 - **Transcript `user` items now may carry `attachments?: { id, name, kind, size }[]`** (use `attachmentsPreview` for thumbnails). Reopened chats replay them. Deleting the chat deletes its attachments.
 - Only the newest message with pictures re-sends them on later model calls (older ones keep their text), to keep long chats fast.
+
+## 2026-11-03 — roadmap #7: project rules (folded into the brief)
+
+- **No new calls.** The brief from roadmap #2 gains **`rules: string`** (standing instructions in the user's own words, up to 3000 chars, line breaks kept). Read it with `projectBriefGet`, save it with `projectBriefSet({ revision, rules })`; leaving `rules` out keeps it. Forge adds the project's description and rules to the agent's prompt on every message, so a change applies from the next message.
+- UI idea: a plain "How should Forge work on this project?" box in the brief with a few tap-to-add suggestions ("Keep it simple", "Use plain HTML, CSS and JavaScript", "Explain changes in plain language"). Rules sit in the app's data folder, not in the project, so a cloned repo cannot slip instructions in.
