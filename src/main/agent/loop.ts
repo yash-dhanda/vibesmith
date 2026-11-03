@@ -114,7 +114,12 @@ export async function runAgent(o: RunOpts): Promise<void> {
   let trimNoted = false
   let explore = false // after a repeat, the next call is sampled more freely to escape the loop
   const deadline = Date.now() + (o.maxMs ?? MAX_RUN_MS)
-  const done = (reason: 'finished' | 'unverified' | 'stopped' | 'stuck' | 'max_steps') => o.emit({ type: 'done', reason, steps })
+  let lastCheck: { command: string; ok: boolean } | null = null
+  const done = (reason: 'finished' | 'unverified' | 'stopped' | 'stuck' | 'max_steps') => {
+    // A model can end by claiming everything works. If the project's own check last said otherwise, say so plainly.
+    if (reason !== 'finished' && lastCheck && !lastCheck.ok) o.emit({ type: 'note', text: `The project check (${lastCheck.command}) was still failing when this stopped, so the work is not finished, whatever the last message says.` })
+    o.emit({ type: 'done', reason, steps })
+  }
 
   try {
     while (steps < max && Date.now() < deadline) {
@@ -159,6 +164,7 @@ export async function runAgent(o: RunOpts): Promise<void> {
         if (!o.verify || !edited) return done('finished')
         const v = await o.verify()
         if (o.signal.aborted) return done('stopped')
+        lastCheck = { command: v.command, ok: v.ok }
         o.emit({ type: 'verify', ...v })
         if (v.ok) return done('finished')
         // "Done" only counts if the project's check passes. Hand the real output back, twice at most.

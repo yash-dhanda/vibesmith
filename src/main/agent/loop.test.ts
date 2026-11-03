@@ -354,3 +354,36 @@ describe('stall guard', () => {
     expect(requestOf([{ role: 'user', content: 'make a bot' }, { role: 'assistant', content: 'x' }, { role: 'user', content: '[Forge: nudge]' }, { role: 'user', content: 'Verification failed. Command: npm test' }])).toBe('make a bot')
   })
 })
+
+describe('honest ending', () => {
+  const read: ToolCall[] = [{ name: 'read_file', args: { path: 'a.txt' } }]
+  const edit: ToolCall[] = [{ name: 'edit_file', args: { path: 'a.txt', old_text: 'hello', new_text: 'bye' } }]
+  // read, edit, then only words
+  const claimsSuccess = (): Provider => {
+    let i = 0
+    return { chat: async () => [{ content: '', toolCalls: read }, { content: '', toolCalls: edit }][i++] ?? { content: 'All tests pass successfully.', toolCalls: [] } }
+  }
+  const go = async (ok: boolean) => {
+    const events: AgentEvent[] = []
+    await runAgent({
+      messages: [{ role: 'user', content: 'go' }], mode: 'full-auto', provider: claimsSuccess(), tools: new ToolBox(dir), emit: (e) => events.push(e),
+      approve: async () => true, signal: new AbortController().signal, maxReviews: 0,
+      verify: async () => ({ command: 'npm test', ok, output: ok ? '' : 'FAIL: parseArgs is not defined' }),
+    })
+    return events
+  }
+
+  it('says so when a run stops while the project check is failing, whatever the model claimed', async () => {
+    const events = await go(false)
+    const note = events.find((e) => e.type === 'note') as { text: string } | undefined
+    expect(note?.text).toContain('npm test')
+    expect(note?.text).toContain('was still failing')
+    expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'unverified' })
+    expect(events.findIndex((e) => e.type === 'note')).toBeLessThan(events.length - 1) // before the final "done"
+  })
+  it('says nothing extra when the check passed', async () => {
+    const events = await go(true)
+    expect(events.some((e) => e.type === 'note')).toBe(false)
+    expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'finished' })
+  })
+})
