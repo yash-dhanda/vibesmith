@@ -4,7 +4,8 @@ import { extname } from 'node:path'
 import type { ToolCall } from './provider'
 
 // ---- loose edit matching: small models often drop or mangle indentation ----
-const norm = (l: string) => l.trim().replace(/\s+/g, ' ')
+// Also ignores a trailing semicolon: models add and drop them all the time.
+const norm = (l: string) => l.trim().replace(/\s+/g, ' ').replace(/;$/, '')
 const indentOf = (l: string) => /^\s*/.exec(l)![0]
 
 // Finds old_text ignoring whitespace differences, line by line. Returns every match as a char range.

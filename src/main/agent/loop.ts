@@ -18,14 +18,18 @@ export type AgentEvent =
   | { type: 'done'; reason: 'finished' | 'unverified' | 'stopped' | 'stuck' | 'max_steps'; steps: number }
   | { type: 'error'; message: string }
 
-export const SYSTEM_PROMPT = `You are Forge, a coding agent working inside the user's project folder. The user is not looking at code: they describe what they want and you build it.
+export const SYSTEM_PROMPT = `You are Forge, a coding agent working inside the user's project folder. The user describes what they want and you do the work yourself with the tools. Do not hand the work back, and do not ask for permission.
 
-When the user asks you to make, build or create something, do it with the tools: create the files in the project folder with create_file. Never paste a whole program into the chat instead of creating the files.
-After creating files, reply briefly: what you made and where, how to run it, and anything you still need from the user (names, settings, choices). Ask in one short list, then stop and wait for the answers. When they answer, change the files with edit_file.
-Secrets such as API keys and tokens: put placeholders in a .env file, tell the user which file to fill in, and never ask them to paste a secret into the chat.
+- Make something new: create the files with create_file. Never paste a whole program into the chat.
+- Change something that exists: read_file first, then edit_file with small exact edits.
+- If the user wants something written to a file, use create_file or edit_file. The answer belongs in the file, not in the chat.
+- After changing code, run the project's tests or build with run_command when one exists, and fix what fails. When a command or test fails, read the files named in its output.
+- Match the style of the existing code, for example CommonJS (module.exports, require) versus ES modules (export, import). Do not mix them in one project.
+- Do not invent file names or APIs: use list_dir, search and read_file to check.
+- Secrets such as API keys and tokens: put placeholders in a .env file and read them from the environment. Never ask the user to paste a secret into the chat.
 
-To change existing files: read_file first, then edit_file with small exact edits. After changing code, run the project's tests or build with run_command when one exists, and fix what fails.
-When a command or test fails, read the files named in its output before searching. Do not invent file names or APIs: list_dir and read_file to check. When the task is done, reply with a short summary and stop calling tools.`
+When you are finished, reply with a short summary of what you did and how to run it, then stop calling tools.
+Only when you built something new and still need a value you cannot decide yourself (a name, a token, a choice that changes the result), end your summary with one short list of what you need. Create the files first, with sensible defaults, and mention the defaults. Never ask before creating files.`
 
 const KIND: Record<string, 'read' | 'edit' | 'command'> = { list_dir: 'read', read_file: 'read', edit_file: 'edit', create_file: 'edit', search: 'read', run_command: 'command' }
 
@@ -40,6 +44,14 @@ export function needsApproval(tool: string, mode: Mode, args?: unknown): boolean
 }
 
 const MAX_VERIFY_FAILURES = 2
+
+// The advice depends on what is repeating: re-reading a file it already has is a different mistake from a failing edit.
+export function repeatNudge(tool: string, result: string): string {
+  if (tool === 'read_file' || tool === 'list_dir' || tool === 'search')
+    return '[Forge: you already have this result above. Stop re-reading. Use it: make the change with edit_file (copy old_text exactly from the content above) or create_file.]'
+  if (result.startsWith('ERROR:')) return '[Forge: this exact call failed the same way twice. Change your approach: re-read the file and copy the text exactly, or use a different tool.]'
+  return '[Forge: same command, same output. Change something before running it again, or explain what is blocking you.]'
+}
 const REFLECT = '[Forge: before you finish, check your work. Use read_file or search to confirm every change is in place and nothing was missed. If something is wrong, fix it. If it is all correct, reply with just "Done".]'
 const MAX_RUN_MS = 30 * 60_000
 
@@ -76,6 +88,7 @@ export async function runAgent(o: RunOpts): Promise<void> {
   let holdNext = false
   let lastInput = 0 // real prompt size of the previous model call, when the provider reports it
   let trimNoted = false
+  let explore = false // after a repeat, the next call is sampled more freely to escape the loop
   const deadline = Date.now() + (o.maxMs ?? MAX_RUN_MS)
   const done = (reason: 'finished' | 'unverified' | 'stopped' | 'stuck' | 'max_steps') => o.emit({ type: 'done', reason, steps })
 
@@ -94,7 +107,8 @@ export async function runAgent(o: RunOpts): Promise<void> {
       const reflecting = holdNext
       holdNext = false
       let held = ''
-      const turn = await o.provider.chat(o.messages, toolDefs, (text) => (reflecting ? (held += text) : o.emit({ type: 'delta', text })), o.signal)
+      const turn = await o.provider.chat(o.messages, toolDefs, (text) => (reflecting ? (held += text) : o.emit({ type: 'delta', text })), o.signal, { explore })
+      explore = false
       if (reflecting && (turn.toolCalls.length || held.trim().length > 60)) o.emit({ type: 'delta', text: held })
       const u = turn.usage ?? estimateUsage(o.messages, turn)
       if (!u.estimated) lastInput = u.input
@@ -139,8 +153,9 @@ export async function runAgent(o: RunOpts): Promise<void> {
         const prev = repeats.get(key)
         const n = prev && prev.result === text ? prev.n + 1 : 1
         repeats.set(key, { result: text, n })
-        // Second identical result: small models often just need to be told to change approach.
-        const shown = n === 2 ? text + '\n[Forge: you made this exact call twice and got the same result. Do something different: read the file the output points to with read_file, or explain what is blocking you.]' : text
+        // Second identical result: say what to change, and let the next call be sampled more freely.
+        const shown = n === 2 ? text + '\n' + repeatNudge(call.name, text) : text
+        if (n === 2) explore = true
 
         o.emit({ type: 'tool_result', id, text: shown, ok })
         o.messages.push({ role: 'tool', content: shown, toolName: call.name, toolCallId: call.id })

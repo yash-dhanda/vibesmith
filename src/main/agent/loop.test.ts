@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { setRoot } from '../project'
-import { needsApproval, runAgent, type AgentEvent, type Mode, type RunOpts } from './loop'
+import { needsApproval, repeatNudge, runAgent, type AgentEvent, type Mode, type RunOpts } from './loop'
 import type { Message, Provider, ToolCall } from './provider'
 import { ToolBox } from './tools'
 
@@ -99,7 +99,7 @@ describe('runAgent', () => {
     const { messages } = await run([search, search, search], 'ask-all', true)
     const toolMsgs = messages.filter((m) => m.role === 'tool').map((m) => m.content)
     expect(toolMsgs[0]).toBe('no matches')
-    expect(toolMsgs[1]).toMatch(/^no matches\n\[Forge: you made this exact call twice/)
+    expect(toolMsgs[1]).toMatch(/^no matches\n\[Forge: you already have this result above/)
   })
 
   it('does not call it stuck when the result changes between identical calls', async () => {
@@ -292,5 +292,27 @@ describe('long runs keep within the model memory', () => {
     expect(events.filter((e) => e.type === 'note')).toHaveLength(1)
     expect(Math.max(...sizes)).toBeLessThan(9000 * 3) // without trimming the 6th call would carry ~45k characters
     expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'finished' })
+  })
+})
+
+describe('breaking a repeat loop', () => {
+  it('nudges by kind of repeat and asks the provider to sample more freely on the next call, once', async () => {
+    const calls: boolean[] = []
+    const read: ToolCall[] = [{ name: 'read_file', args: { path: 'a.txt' } }]
+    const p: Provider = {
+      async chat(_m, _t, _o, _s, hints) {
+        calls.push(!!hints?.explore)
+        return calls.length <= 3 ? { content: '', toolCalls: read } : { content: 'ok', toolCalls: [] }
+      },
+    }
+    const events: AgentEvent[] = []
+    await runAgent({ messages: [], mode: 'ask-all', provider: p, tools: new ToolBox(dir), emit: (e) => events.push(e), approve: async () => true, signal: new AbortController().signal })
+    expect(calls).toEqual([false, false, true]) // the third call is the one after the second identical result
+    expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'stuck' })
+  })
+  it('repeatNudge picks advice that fits', () => {
+    expect(repeatNudge('read_file', 'x')).toMatch(/Stop re-reading/)
+    expect(repeatNudge('edit_file', 'ERROR: old_text not found')).toMatch(/failed the same way/)
+    expect(repeatNudge('run_command', 'out')).toMatch(/same command/)
   })
 })

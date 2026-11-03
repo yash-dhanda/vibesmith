@@ -14,7 +14,8 @@ export type Turn = { content: string; toolCalls: ToolCall[]; usage?: Usage }
 
 export interface Provider {
   // Streams text through onText; resolves with the full turn once the model stops.
-  chat(messages: Message[], tools: ToolDef[], onText: (t: string) => void, signal: AbortSignal): Promise<Turn>
+  // hints.explore asks for a more varied answer, used to break a loop where the model repeats itself.
+  chat(messages: Message[], tools: ToolDef[], onText: (t: string) => void, signal: AbortSignal, hints?: { explore?: boolean }): Promise<Turn>
 }
 
 const safeJson = (s: string): unknown => {
@@ -34,17 +35,17 @@ type OllamaLine = {
 }
 
 // Native /api/chat, not the OpenAI-compatible /v1: only the native API accepts num_ctx per request.
-export function ollama(opts: { model: string; host?: string; numCtx?: number; fetchFn?: (url: string, init: RequestInit) => Promise<Response> }): Provider {
+export function ollama(opts: { model: string; host?: string; numCtx?: number; temperature?: number; fetchFn?: (url: string, init: RequestInit) => Promise<Response> }): Provider {
   const host = opts.host ?? 'http://127.0.0.1:11434'
   const f = opts.fetchFn ?? fetch
   const numCtx = opts.numCtx ?? 8192
   return {
-    async chat(messages, tools, onText, signal) {
+    async chat(messages, tools, onText, signal, hints) {
       const body = {
         model: opts.model,
         stream: true,
         think: false,
-        options: { num_ctx: numCtx },
+        options: { num_ctx: numCtx, temperature: hints?.explore ? 0.9 : (opts.temperature ?? 0.3) }, // low: an agent needs the same answer to the same question, not variety
         tools: tools.map((t) => ({ type: 'function', function: t })),
         messages: messages.map((m) =>
           m.role === 'assistant'

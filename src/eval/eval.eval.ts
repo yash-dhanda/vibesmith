@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -14,6 +14,7 @@ import { TASKS } from './tasks'
 // Cloud keys come from your shell (ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY), never from the app's keychain.
 const MODEL = process.env.EVAL_MODEL ?? 'ollama:qwen3:8b'
 const ONLY = process.env.EVAL_ONLY?.split(',')
+const TRACE = !!process.env.EVAL_TRACE // print every step, to see why a task failed
 const ENV_KEYS: Record<CloudProvider, string> = { anthropic: 'ANTHROPIC_API_KEY', openai: 'OPENAI_API_KEY', openrouter: 'OPENROUTER_API_KEY' }
 
 type Result = { task: string; pass: boolean; reason: string; steps: number; seconds: number; stop: string }
@@ -38,7 +39,17 @@ describe(`eval ${MODEL}`, () => {
       const t0 = Date.now()
       await runAgent({
         messages, provider, tools: new ToolBox(dir), mode: 'full-auto', maxSteps: 25,
-        emit: (e) => events.push(e), approve: async () => true, signal: ctl.signal,
+        emit: (e) => {
+          events.push(e)
+          if (!TRACE) return
+          mkdirSync('eval-results', { recursive: true })
+          const out = (t: string) => appendFileSync('eval-results/trace.log', t)
+          if (e.type === 'tool') out(`  > ${e.name} ${JSON.stringify(e.args).slice(0, 200)}\n`)
+          if (e.type === 'tool_result') out(`    = ${e.text.replace(/\n/g, ' / ').slice(0, 260)}\n`)
+          if (e.type === 'delta') out(e.text)
+          if (e.type === 'turn_end') out('\n')
+          if (e.type === 'done') out(`[${task.name}: done ${e.reason}]\n\n`)
+        }, approve: async () => true, signal: ctl.signal,
         verify: verifyCmd ? () => runVerify(verifyCmd, dir, ctl.signal) : undefined,
       })
       clearTimeout(timer)

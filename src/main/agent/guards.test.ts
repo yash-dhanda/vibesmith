@@ -87,6 +87,14 @@ describe('ToolBox edit guards', () => {
     expect(read('a.js')).toBe('function f() {\n    if (y) {\n      stop()\n    }\n}\n')
   })
 
+  it('matches even when the model added or dropped trailing semicolons', async () => {
+    writeFileSync(join(dir, 'm.js'), 'console.log(6 * 7)\nconst a = 1;\n')
+    await box.run('read_file', { path: 'm.js' })
+    const r = await box.run('edit_file', { path: 'm.js', old_text: 'console.log(6 * 7);\nconst a = 1', new_text: "const math = require('./math');\nconsole.log(math.mul(6, 7));" })
+    expect(r).toMatch(/ignoring whitespace/)
+    expect(read('m.js')).toBe("const math = require('./math');\nconsole.log(math.mul(6, 7));\n")
+  })
+
   it('refuses a loose match that is ambiguous', async () => {
     writeFileSync(join(dir, 'a.txt'), '  a\n    a\n')
     await box.run('read_file', { path: 'a.txt' })
