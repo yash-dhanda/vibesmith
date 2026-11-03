@@ -639,7 +639,7 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; 
 .team-start-card > textarea { width: 100%; min-height: 112px; resize: vertical; border: 0; outline: 0; background: transparent; padding: 4px 5px; font-size: 18px; line-height: 1.6; }
 .team-start-card > textarea::placeholder { color: var(--faint); }
 .team-start-card:focus-within { border-color: color-mix(in srgb, var(--accent) 65%, var(--border)); }
-.team-health { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 14px 0; }
+.team-health { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 8px; margin: 14px 0; }
 .health-row { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: 8px; padding: 10px 11px; border-radius: 10px; background: var(--bg); color: var(--muted); font-size: 11px; }
 .health-row strong { color: var(--text); font-size: 12px; }
 .health-row > span:last-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -676,7 +676,7 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; 
 .team-run-header .back { transform: rotate(180deg); }
 .team-run-identity { min-width: 0; }
 .team-run-identity h1 { font-size: 22px; letter-spacing: -.03em; margin: 4px 0 0; overflow-wrap: anywhere; }
-.status-pill { display: inline-flex; align-items: center; width: max-content; border-radius: 999px; padding: 3px 9px; background: var(--panel-2); color: var(--muted); font-size: 10px; white-space: nowrap; text-transform: capitalize; }
+.status-pill { display: inline-flex; align-items: center; width: max-content; border-radius: 999px; padding: 3px 9px; background: var(--panel-2); color: var(--muted); font-size: 11px; white-space: nowrap;  }
 .status-pill.running, .status-pill.verifying { color: var(--accent); background: var(--accent-soft); }
 .status-pill.paused, .status-pill.interrupted, .status-pill.failed, .status-pill.awaiting_approval { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
 .status-pill.done { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
@@ -684,7 +684,7 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; 
 .team-controls { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .team-controls .danger { color: var(--err); }
 .team-usage-strip { grid-column: 2 / -1; display: flex; gap: 14px; flex-wrap: wrap; }
-.team-usage-item { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 10px; }
+.team-usage-item { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11.5px; }
 .team-usage-item strong { color: var(--text); font-size: 11px; }
 .limit-meter { padding-left: 8px; border-left: 1px solid var(--border); }
 .team-pause-banner { display: flex; align-items: center; gap: 12px; border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); background: color-mix(in srgb, var(--warn) 8%, transparent); border-radius: 12px; padding: 13px 15px; margin: 18px 0; }
@@ -713,7 +713,7 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; 
 .task-state { margin-left: auto; color: var(--muted); font-size: 9px; text-transform: capitalize; }
 .task-deps, .task-error { color: var(--muted); font-size: 10px; line-height: 1.5; }
 .task-error { color: var(--err); }
-.task-facts { display: flex; gap: 10px; flex-wrap: wrap; color: var(--muted); font-size: 9px; margin-top: 14px; }
+.task-facts { display: flex; gap: 10px; flex-wrap: wrap; color: var(--muted); font-size: 11px; margin-top: 14px; min-height: 14px; }
 .verdict.pass { color: var(--ok); }.verdict.fail { color: var(--err); }
 .task-actions { margin-top: 12px; }
 .task-skeleton { height: 148px; }
@@ -721,10 +721,10 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; 
 .team-lanes { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; min-width: 0; }
 .agent-lane { min-width: 0; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); overflow: hidden; }
 .agent-lane > header { display: flex; align-items: center; gap: 9px; padding: 12px 14px; border-bottom: 1px solid var(--hair); font-weight: 600; font-size: 12px; }
-.lane-live { margin-left: auto; color: var(--muted); font-size: 8px; letter-spacing: .12em; }
+.lane-live { margin-left: auto; color: var(--muted); font-size: 10px; letter-spacing: .12em; }
 .lane-body { max-height: 620px; overflow: auto; padding: 5px 12px 14px; }
 .activity-row { min-width: 0; padding: 11px 2px; border-bottom: 1px solid var(--hair); }
-.activity-meta { display: flex; gap: 7px; color: var(--faint); font-size: 9px; text-transform: capitalize; }
+.activity-meta { display: flex; justify-content: flex-end; color: var(--faint); font-size: 10px; }
 .activity-meta span:first-child { flex: 1; min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .activity-row p { font-size: 12px; line-height: 1.65; margin: 7px 0 0; overflow-wrap: anywhere; }
 .activity-tool { margin-top: 8px; padding: 8px 9px; border-radius: 7px; background: var(--bg); color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
@@ -759,7 +759,7 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; 
 .team-diff-host { height: 0; overflow: hidden; margin: 0 -13px -13px; }.team-diff-host.open { height: 450px; margin-top: 12px; border-top: 1px solid var(--border); }
 .team-diff-loading { height: 100%; }
 .team-final { margin: 22px 0; padding: 24px; border: 1px solid color-mix(in srgb, var(--ok) 40%, var(--border)); border-radius: 16px; background: color-mix(in srgb, var(--ok) 5%, var(--panel)); }
-.team-final h2 { max-width: 20ch; font-size: 25px; letter-spacing: -.035em; }
+.team-final h2 { max-width: 24ch; font-size: 26px; letter-spacing: -.035em; line-height: 1.2; margin: 6px 0 18px; }
 .team-final-report { max-width: 75ch; line-height: 1.7; }
 .team-final-files { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 6px; margin: 18px 0; }
 .team-final-files > div { padding: 8px 10px; border-radius: 7px; background: var(--bg); font: 10px var(--mono); overflow-wrap: anywhere; }
@@ -784,3 +784,15 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; 
 .plan-edit-row .plan-goal, .plan-edit-row .task-deps, .plan-edit-row .plan-checks { grid-column: 2 / -1; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
 .plan-skip { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; }
 .team-start-actions .btn[title] { margin-right: 6px; }
+
+.link-btn { display: inline-flex; align-items: center; height: 30px; border: 0; background: transparent; color: var(--muted); font-size: 11px; padding: 6px 8px; border-radius: 6px; text-decoration: underline; text-decoration-color: var(--border); text-underline-offset: 3px; }
+.link-btn:hover { color: var(--text); text-decoration-color: currentColor; }
+.team-progress { grid-column: 2 / -1; display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 11.5px; }
+.team-progress-bar { flex: 0 1 220px; width: 220px; height: 5px; border-radius: 99px; background: var(--panel-2); overflow: hidden; }
+.team-progress-bar i { display: block; height: 100%; border-radius: inherit; background: var(--ok); transition: width .4s ease; }
+.lane-divider { position: sticky; top: 0; z-index: 1; display: flex; align-items: baseline; gap: 8px; padding: 9px 2px 7px; margin-top: 6px; background: var(--panel); border-bottom: 1px solid var(--hair); font-size: 11px; color: var(--muted); }
+.lane-divider strong { color: var(--text); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lane-divider span { margin-left: auto; flex: none; font-size: 10px; letter-spacing: .04em; color: var(--faint); }
+.activity-row { padding: 8px 2px; }
+@media (prefers-reduced-motion: reduce) { .team-progress-bar i, .task-card { transition: none; } }
+@media (max-width: 600px) { .plan-edit-row { grid-template-columns: auto minmax(0, 1fr); } .plan-edit-row select, .plan-edit-row .plan-skip { grid-column: 2; justify-self: start; } }

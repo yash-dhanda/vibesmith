@@ -76,7 +76,7 @@ export async function checkLocal(): Promise<Health> {
   if (!s.up) return { agent: 'local', ok: false, detail: 'Ollama is not running.', fix: 'Start it with `ollama serve`, then pull a model, for example `ollama pull qwen3:8b`.' }
   const models = s.models.filter((m) => !/embed/i.test(m))
   if (!models.length) return { agent: 'local', ok: false, detail: 'Ollama has no model yet.', fix: 'Pull one, for example `ollama pull qwen3:8b`.' }
-  return { agent: 'local', ok: true, detail: `${models.length} model${models.length === 1 ? '' : 's'} on this computer` }
+  return { agent: 'local', ok: true, detail: `${models.length} model${models.length === 1 ? '' : 's'} installed` }
 }
 
 export const checkTeamTools = () => Promise.all([checkClaude(), checkCodex(), checkLocal()])

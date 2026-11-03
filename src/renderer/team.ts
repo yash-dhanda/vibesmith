@@ -28,6 +28,7 @@ let runSearch = ''
 let steerDraft = ''
 let steerTarget: 'all' | 'claude' | 'codex' | 'local' = 'all'
 const AGENT_NAME = { claude: 'Claude', codex: 'Codex', local: 'Local model' } as const
+const PHASE_LABEL: Record<string, string> = { work: 'Working', review: 'Reviewing', fix: 'Fixing', merge: 'Merging', conflict: 'Resolving a conflict', plan: 'Planning', 'final-review': 'Final review' }
 const AGENT_FULL = { claude: 'Claude Code', codex: 'OpenAI Codex', local: 'Local model' } as const
 
 const apiReady = () => typeof window.forge.teamStart === 'function'
@@ -75,7 +76,7 @@ async function showEntry() {
   const replayState = localStorage.getItem('forge.teamReplayState') ?? 'entry'; replayScenario = replayState
   const replayHealth = replayState === 'unavailable'
     ? { agents: [{ agent: 'claude' as const, ok: false, detail: 'Claude Code is not signed in.', fix: 'Run: claude auth login' }, { agent: 'codex' as const, ok: true, detail: 'Ready' }], codexModels: ['qwen3:0.6b'], localModels: ['qwen3:8b'], limits: {} }
-    : { agents: [{ agent: 'claude' as const, ok: true, detail: 'Ready' }, { agent: 'codex' as const, ok: true, detail: 'Ready' }, { agent: 'local' as const, ok: true, detail: '3 models on this computer' }], codexModels: ['qwen3:0.6b'], localModels: ['qwen3:8b'], limits: { codex: { primaryPct: 27, primaryResetsAt: Date.now() / 1000 + 9000, secondaryPct: 12 } } }
+    : { agents: [{ agent: 'claude' as const, ok: true, detail: 'Ready' }, { agent: 'codex' as const, ok: true, detail: 'Ready' }, { agent: 'local' as const, ok: true, detail: '3 models installed' }], codexModels: ['qwen3:0.6b'], localModels: ['qwen3:8b'], limits: { codex: { primaryPct: 27, primaryResetsAt: Date.now() / 1000 + 9000, secondaryPct: 12 } } }
   const replaySummary: Summary = { id: 'replay-team-run', goal: 'Build a shared planning space where two agents can work together', project: '/tmp/forge-team-replay', status: 'interrupted', createdAt: Date.now() - 3_600_000, updatedAt: Date.now() - 62_000, tasks: { total: 3, done: 1, running: 0, failed: 0 }, pendingApprovals: 0 }
   let loadError: unknown
   const loaded = await Promise.all([
@@ -93,7 +94,7 @@ async function showEntry() {
   summaries = list
   const page = h('div', 'team-entry')
   const intro = h('section', 'team-intro')
-  intro.append(h('div', 'eyebrow', 'TWO AGENTS · ONE RESULT'), h('h1', '', 'Build with a second set of eyes.'), h('p', 'team-lede', 'Claude Code and Codex divide the work, review each other, and bring one checked result back for your approval. Your project stays untouched until you apply it.'))
+  intro.append(h('div', 'eyebrow', 'YOUR AI TEAM · ONE RESULT'), h('h1', '', 'Build with a second set of eyes.'), h('p', 'team-lede', 'Claude Code, Codex and a model on your own computer divide the work, review each other, and bring one checked result back for your approval. Use any one, or any mix. Your project stays untouched until you apply it.'))
   const form = h('form', 'team-start-card')
   const goal = document.createElement('textarea'); goal.rows = 4; goal.placeholder = 'Describe what the team should build'; goal.setAttribute('aria-label', 'Team goal')
   const project = h('button', 'pill team-project') as HTMLButtonElement; project.type = 'button'; project.append(icon('folder', 'sm'), document.createTextNode(currentProject ? folderName(currentProject) : 'Choose project folder'))
@@ -147,7 +148,7 @@ async function showEntry() {
   const ready = health.agents.filter(a => a.ok)
   const start = h('button', 'btn primary team-start', ready.length ? `Start with ${ready.length > 1 ? 'the team' : AGENT_NAME[ready[0].agent]}` : 'No agent is ready') as HTMLButtonElement
   start.disabled = !ready.length
-  const diagnostics = h('button', 'btn', 'Copy diagnostics') as HTMLButtonElement; diagnostics.type = 'button'; diagnostics.title = 'Copies versions, agent status and recent runs for a bug report. No secrets or file contents.'
+  const diagnostics = h('button', 'link-btn', 'Copy diagnostics') as HTMLButtonElement; diagnostics.type = 'button'; diagnostics.title = 'Copies versions, agent status and recent runs for a bug report. No secrets or file contents.'
   diagnostics.onclick = () => void call(async () => { const text = replay ? 'Forge replay diagnostics' : await window.forge.teamDiagnostics(); await navigator.clipboard.writeText(text); toast('Diagnostics copied') })
   const actions = h('div', 'team-start-actions'); actions.append(project, diagnostics, h('span', 'grow'), start)
   form.append(goal, healthBox, advanced, actions)
@@ -213,7 +214,7 @@ function renderRun() {
   const scrollTop = root.scrollTop
   const page = h('div', 'team-run')
   page.append(renderRunHeader())
-  if (run.pausedReason || run.status === 'interrupted') page.append(renderPauseBanner())
+  if ((run.pausedReason || run.status === 'interrupted') && !run.approvals.some(a => a.kind === 'plan' && a.status === 'pending')) page.append(renderPauseBanner())
   const pending = run.approvals.filter(a => a.status === 'pending')
   if (pending.length) page.append(renderApprovals(pending))
   if (run.status === 'awaiting_approval' && run.final) page.append(renderFinal())
@@ -245,7 +246,14 @@ function renderRunHeader() {
     const limits = run!.limits?.[agent]; if (limits) item.append(h('span', 'limit-meter', `ChatGPT plan: ${Math.round(limits.primaryPct)}% of this window used`))
     usage.append(item)
   }
-  header.append(usage); return header
+  header.append(usage)
+  const counted = run!.tasks.filter(t => t.status !== 'cancelled'), done = counted.filter(t => t.status === 'done').length
+  if (counted.length) {
+    const progress = h('div', 'team-progress'); progress.setAttribute('role', 'progressbar'); progress.setAttribute('aria-valuemin', '0'); progress.setAttribute('aria-valuemax', String(counted.length)); progress.setAttribute('aria-valuenow', String(done))
+    const bar = h('span', 'team-progress-bar'); const fill = h('i'); fill.style.width = `${Math.round(done / counted.length * 100)}%`; bar.append(fill)
+    progress.append(bar, h('span', '', `${done} of ${counted.length} ${counted.length === 1 ? 'task' : 'tasks'} done`)); header.append(progress)
+  }
+  return header
 }
 
 function actionButton(label: string, name: Parameters<typeof icon>[0], runAction: () => void, cls = '') { const button = h('button', `btn ${cls}`); button.append(icon(name, 'sm'), document.createTextNode(label)); button.onclick = runAction; return button }
@@ -343,7 +351,7 @@ function renderTask(task: Task, index: number) {
   const top = h('div', 'task-top'); top.append(h('span', 'task-number', String(index + 1).padStart(2, '0')), h('span', `agent-badge ${task.agent}`, AGENT_NAME[task.agent]), h('span', `task-state ${task.status}`, task.phase ? `${task.phase} · ${task.status}` : task.status))
   card.append(top, h('h3', '', task.title))
   if (task.deps.length) card.append(h('p', 'task-deps', `After ${task.deps.map(id => run!.tasks.find(t => t.id === id)?.title ?? id).join(', ')}`))
-  const facts = h('div', 'task-facts'); facts.append(h('span', '', `${task.changed.length} files`), h('span', '', `${task.fixRounds} fix rounds`))
+  const facts = h('div', 'task-facts'); if (task.changed.length) facts.append(h('span', '', `${task.changed.length} ${task.changed.length === 1 ? 'file' : 'files'}`)); if (task.fixRounds) facts.append(h('span', '', `${task.fixRounds} fix ${task.fixRounds === 1 ? 'round' : 'rounds'}`))
   const verdict = task.reviews.at(-1); if (verdict) facts.append(h('span', `verdict ${verdict.verdict}`, `Review: ${verdict.verdict}`)); card.append(facts)
   if (task.error) card.append(h('p', 'task-error', task.error))
   if (task.status === 'failed' || task.status === 'blocked' || task.status === 'interrupted') {
@@ -365,10 +373,12 @@ function renderLane(agent: 'claude' | 'codex' | 'local') {
   const events = log.filter(x => x.ev.type === 'agent' && x.ev.ev.agent === agent)
   const body = h('div', 'lane-body')
   if (!events.length) body.append(h('p', 'team-empty', 'Waiting for a task…'))
+  let lastKey = ''
   for (const { t, ev } of events.slice(-40)) if (ev.type === 'agent') {
     const row = h('article', `activity-row ${ev.ev.type}`); const task = run!.tasks.find(x => x.id === ev.taskId)
-    const meta = h('div', 'activity-meta'); meta.append(h('span', '', task?.title ?? ev.taskId), h('span', '', ev.phase), h('time', '', new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })))
-    row.append(meta)
+    const key = `${ev.taskId}:${ev.phase}`
+    if (key !== lastKey) { lastKey = key; const divider = h('div', 'lane-divider'); divider.append(h('strong', '', task?.title ?? ev.taskId), h('span', '', `${PHASE_LABEL[ev.phase] ?? ev.phase} · ${new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`)); body.append(divider) }
+    row.title = new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     const event = ev.ev
     if (event.type === 'text') row.append(h('p', '', event.text))
     else if (event.type === 'delta') {
