@@ -4,6 +4,7 @@ import { md, folderName, formatTokens } from './format'
 import { icon } from './icons'
 import { $, cleanErr, h, toast } from './ui'
 import { replayRun } from './teamReplay'
+import { buildStage, pushCode, type StageCode } from './teamStage'
 import { normaliseTeamEventsAsync, reduceTeamView, type LoggedTeamEvent } from './teamReducer'
 
 type Logged = LoggedTeamEvent
@@ -29,8 +30,8 @@ let steerDraft = ''
 let steerTarget: 'all' | 'claude' | 'codex' | 'local' = 'all'
 const AGENT_NAME = { claude: 'Claude', codex: 'Codex', local: 'Local model' } as const
 let laneDetails = (() => { try { return localStorage.getItem('forge.teamLaneDetails') === '1' } catch { return false } })()
-// The lanes show what an agent says and the code it writes. Commands, step results, prompts and reasoning sit behind "Details".
-const laneVisible = (ev: RunEvent & { type: 'agent' }) => { const e = ev.ev; return laneDetails || e.type === 'text' || e.type === 'code' || e.type === 'error' || (e.type === 'delta' && e.channel === 'text') || (e.type === 'done' && !e.ok) }
+// The lanes show the code each agent is writing, live. Planning output, talk, commands, step results, prompts and reasoning sit behind "Details".
+const laneVisible = (ev: RunEvent & { type: 'agent' }) => { const e = ev.ev; return laneDetails || (ev.phase !== 'plan' && (e.type === 'code' || e.type === 'error' || (e.type === 'done' && !e.ok))) }
 const PHASE_LABEL: Record<string, string> = { work: 'Working', review: 'Reviewing', fix: 'Fixing', merge: 'Merging', conflict: 'Resolving a conflict', plan: 'Planning', 'final-review': 'Final review' }
 const AGENT_FULL = { claude: 'Claude Code', codex: 'OpenAI Codex', local: 'Local model' } as const
 
@@ -368,17 +369,34 @@ function renderTask(task: Task, index: number) {
 
 function renderStory() {
   const area = h('section', 'team-story')
-  const lanes = h('div', 'team-lanes'); const used = (a: 'claude' | 'codex' | 'local') => run!.tasks.some(t => t.agent === a) || log.some(x => x.ev.type === 'agent' && x.ev.ev.agent === a); for (const a of ['claude', 'codex', 'local'] as const) if (used(a)) lanes.append(renderLane(a)); if (!lanes.children.length) lanes.append(renderLane('claude'))
   const side = h('aside', 'team-side-story'); side.append(renderLiveFiles(), renderFeed(), renderMemory(), renderVerify(), renderSteer(), renderDiffPanel())
-  area.append(lanes, side); return area
+  area.append(renderLanes(), side); return area
+}
+const usedAgents = () => (['claude', 'codex', 'local'] as const).filter(a => run!.tasks.some(t => t.agent === a) || log.some(x => x.ev.type === 'agent' && x.ev.ev.agent === a))
+function makeDetailsToggle() {
+  const toggle = h('button', `lane-details ${laneDetails ? 'on' : ''}`, laneDetails ? 'Live view' : 'Details'); toggle.title = laneDetails ? 'Back to the live coding view' : 'Show commands, step results, prompts and reasoning'; toggle.setAttribute('aria-pressed', String(laneDetails))
+  toggle.onclick = () => { laneDetails = !laneDetails; try { localStorage.setItem('forge.teamLaneDetails', laneDetails ? '1' : '0') } catch {} document.querySelector('.team-lanes')?.replaceWith(renderLanes()) }
+  return toggle
+}
+// The live view is one editor for the whole team; "Details" swaps it for a lane per agent with every command and message.
+function renderLanes() {
+  const lanes = h('div', `team-lanes${laneDetails ? '' : ' single'}`)
+  if (laneDetails) { const used = usedAgents(); for (const a of used) lanes.append(renderLane(a)); if (!used.length) lanes.append(renderLane('claude')); return lanes }
+  const files: StageCode[] = log.flatMap(x => x.ev.type === 'agent' && x.ev.ev.type === 'code' && x.ev.phase !== 'plan' ? [{ id: x.ev.ev.id, agent: x.ev.ev.agent, path: x.ev.ev.path, text: x.ev.ev.text, kind: x.ev.ev.kind, done: x.ev.ev.done }] : [])
+  const working = run!.tasks.some(t => t.status === 'running')
+  const status = run!.status === 'planning' ? 'Planning the work' : working ? 'Reading the project' : ['done', 'awaiting_approval'].includes(run!.status) ? 'Finished' : run!.status === 'paused' ? 'Paused' : 'Waiting'
+  const agents = (usedAgents().length ? usedAgents() : (['claude'] as const)).map(a => ({ agent: a, name: AGENT_NAME[a], running: run!.tasks.some(t => t.agent === a && t.status === 'running') || run!.status === 'planning' }))
+  lanes.append(buildStage(files, { agents, running: working || run!.status === 'planning', status, details: makeDetailsToggle(), live: ['planning', 'running', 'verifying'].includes(run!.status) ? 'LIVE' : 'HISTORY' }))
+  return lanes
 }
 function renderLane(agent: 'claude' | 'codex' | 'local') {
-  const lane = h('section', `agent-lane ${agent}`); const header = h('header'); header.append(h('span', `agent-orb ${agent}`), h('div', '', AGENT_FULL[agent]), h('span', 'lane-live', ['planning', 'running', 'verifying'].includes(run!.status) ? 'LIVE' : 'HISTORY')); const detailsToggle = h('button', `lane-details ${laneDetails ? 'on' : ''}`, 'Details'); detailsToggle.title = 'Show commands, step results, prompts and reasoning'; detailsToggle.setAttribute('aria-pressed', String(laneDetails)); detailsToggle.onclick = () => { laneDetails = !laneDetails; try { localStorage.setItem('forge.teamLaneDetails', laneDetails ? '1' : '0') } catch {} document.querySelectorAll<HTMLElement>('.agent-lane').forEach(old => { const a = (['claude', 'codex', 'local'] as const).find(n => old.classList.contains(n)); if (a) old.replaceWith(renderLane(a)) }) }; header.append(detailsToggle); lane.append(header)
+  const lane = h('section', `agent-lane ${agent}`); const header = h('header'); header.append(h('span', `agent-orb ${agent}${run!.tasks.some(t => t.agent === agent && t.status === 'running') ? ' busy' : ''}`), h('div', '', AGENT_FULL[agent]), h('span', 'lane-live', ['planning', 'running', 'verifying'].includes(run!.status) ? 'LIVE' : 'HISTORY')); header.append(makeDetailsToggle()); lane.append(header)
   const events = log.filter(x => x.ev.type === 'agent' && x.ev.ev.agent === agent && laneVisible(x.ev))
   const body = h('div', 'lane-body')
-  if (!events.length) body.append(h('p', 'team-empty', run!.tasks.some(t => t.agent === agent) ? 'Waiting for the first message…' : 'Waiting for a task…'))
+  if (!events.length) { const working = run!.tasks.some(t => t.agent === agent && t.status === 'running'); body.append(h('p', `lane-status ${run!.status === 'planning' || working ? 'active' : ''}`, run!.status === 'planning' ? 'Planning the work' : working ? 'Reading the project' : run!.tasks.some(t => t.agent === agent && t.status === 'queued') ? 'Waiting for its turn' : run!.status === 'done' || run!.status === 'awaiting_approval' ? 'Finished' : 'Idle')) }
   let lastKey = ''
-  for (const { t, ev } of events.slice(-40)) if (ev.type === 'agent') {
+  const shown = events.slice(-40), lastCode = shown.map(x => x.ev.type === 'agent' && x.ev.ev.type === 'code').lastIndexOf(true)
+  for (const [shownIndex, { t, ev }] of shown.entries()) if (ev.type === 'agent') {
     const row = h('article', `activity-row ${ev.ev.type}`); const task = run!.tasks.find(x => x.id === ev.taskId)
     const key = `${ev.taskId}:${ev.phase}`
     if (key !== lastKey) { lastKey = key; const divider = h('div', 'lane-divider'); divider.append(h('strong', '', task?.title ?? ev.taskId), h('span', '', `${PHASE_LABEL[ev.phase] ?? ev.phase} · ${new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`)); body.append(divider) }
@@ -396,7 +414,7 @@ function renderLane(agent: 'claude' | 'codex' | 'local') {
         const typing = h('p', 'agent-typing', event.text); typing.append(h('span', 'typing-cursor', '')); row.append(typing)
       }
     }
-    else if (event.type === 'code') row.append(renderLiveCode(event))
+    else if (event.type === 'code') row.append(renderLiveCode(event, shownIndex === lastCode || !event.done))
     else if (event.type === 'prompt') {
       const prompt = h('details', 'agent-prompt')
       prompt.append(h('summary', '', 'What this agent was told'), h('pre', '', event.text)); row.append(prompt)
@@ -412,10 +430,10 @@ function renderLane(agent: 'claude' | 'codex' | 'local') {
   lane.append(body); return lane
 }
 
-function renderLiveCode(event: Extract<RunEvent, { type: 'agent' }>['ev'] & { type: 'code' }) {
-  const card = h('section', `live-code ${event.kind} ${event.done ? 'done' : 'writing'}`)
-  const head = h('div', 'live-code-head')
-  head.append(h('span', 'tool-path', event.path), h('span', 'live-code-state', event.done ? 'Saved' : 'Writing…'))
+function renderLiveCode(event: Extract<RunEvent, { type: 'agent' }>['ev'] & { type: 'code' }, open: boolean) {
+  const card = h('details', `live-code ${event.kind} ${event.done ? 'done' : 'writing'}`) as HTMLDetailsElement; card.open = open
+  const head = h('summary', 'live-code-head')
+  head.append(h('span', 'tool-path', event.path), h('span', 'live-code-state', event.done ? 'Saved' : 'Writing'))
   const pre = h('pre', `live-code-body ${event.kind}`)
   if (event.kind === 'diff') {
     for (const line of event.text.slice(-30000).split('\n')) {
@@ -427,6 +445,7 @@ function renderLiveCode(event: Extract<RunEvent, { type: 'agent' }>['ev'] & { ty
     const marker = `${event.id}:${event.text.length}`; code.dataset.liveCode = marker
     void import('./teamDiff').then(({ colorizeTeamCode }) => colorizeTeamCode(event.text.slice(-30000), event.path)).then(html => { if (code.isConnected && code.dataset.liveCode === marker) code.innerHTML = html }).catch(() => {})
   }
+  if (!event.done) { pre.append(h('span', 'code-cursor', '')); requestAnimationFrame(() => { pre.scrollTop = pre.scrollHeight }) }
   card.append(head, pre); return card
 }
 
@@ -569,6 +588,11 @@ async function undoApplied() {
 function reduceEvent(event: RunEvent, t = Date.now()) {
   if (!run || event.runId !== run.id) return
   const state = reduceTeamView({ run, log, liveFiles }, event, t); run = state.run; log = state.log; liveFiles = state.liveFiles
+  if (event.type === 'agent' && !laneDetails) {
+    const e = event.ev
+    if (e.type === 'code' && event.phase !== 'plan') { if (pushCode({ id: e.id, agent: e.agent, path: e.path, text: e.text, kind: e.kind, done: e.done })) return }
+    else if (e.type !== 'error' && !(e.type === 'done' && !e.ok)) return // talk, commands and planning stay out of the live view
+  }
   if (event.type === 'task' || event.type === 'message') scheduleMemoryRefresh()
   if (refreshTimer) clearTimeout(refreshTimer)
   refreshTimer = setTimeout(() => {
@@ -584,6 +608,7 @@ export function initTeam(options: { project: () => string | null }) {
   $('mode-team').onclick = () => showTeam(); $('team-nav').onclick = () => showTeam(); $('team-back').onclick = showChat; $('mode-chat').onclick = showChat
   $('team-hist-toggle').onclick = () => $('app').classList.toggle('no-hist')
   if (typeof window.forge.onTeamEvent === 'function') window.forge.onTeamEvent(reduceEvent)
+  if (localStorage.getItem('forge.teamReplay')) (window as unknown as { __forgeTeamEmit?: typeof reduceEvent }).__forgeTeamEmit = reduceEvent // lets the replay harness stream fake agent events
   if (typeof window.forge.onTeamFocus === 'function') window.forge.onTeamFocus(id => { showTeam(false); void openRun(id).catch(e => toast(cleanErr(e), 5000)) })
   window.addEventListener('forge-project', (e) => { currentProject = (e as CustomEvent<string | null>).detail ?? '' })
   if (localStorage.getItem('forge.teamReplay') === 'open') { localStorage.setItem('forge.teamReplay', '1'); showTeam() }

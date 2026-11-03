@@ -32,6 +32,6 @@ const languageFor = (path: string) => {
 
 export async function colorizeTeamCode(text: string, path: string) {
   const monaco = await import('monaco-editor')
-  monaco.editor.setTheme('vs-dark') // the app is dark: the default theme draws dark-blue keywords on a dark page
+  monaco.editor.setTheme(document.documentElement.dataset.theme === 'light' ? 'vs' : 'vs-dark') // follow the app: the wrong theme draws dark-blue keywords on a dark page
   return monaco.editor.colorize(text, languageFor(path), {})
 }
