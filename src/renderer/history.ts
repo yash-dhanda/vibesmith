@@ -24,11 +24,9 @@ export function renderHistory(chats: ChatListItem[], activeId: string, query: st
     }
     const item = h('div', 'chat-item' + (c.id === activeId ? ' active' : ''))
     item.title = c.project ?? ''
-    item.tabIndex = 0
-    item.setAttribute('role', 'button')
-    item.setAttribute('aria-label', `Open ${c.title}`)
-    if (c.id === activeId) item.setAttribute('aria-current', 'page')
-    item.onkeydown = e => { if (e.target === item && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); handlers.open(c.id) } }
+    const open = h('button', 'chat-open')
+    open.setAttribute('aria-label', `Open ${c.title}`)
+    if (c.id === activeId) open.setAttribute('aria-current', 'page')
     const row = h('span', 'row1')
     if (c.status !== 'idle') row.append(h('span', 'st ' + c.status))
     const title = h('span', 't', c.title)
@@ -56,15 +54,17 @@ export function renderHistory(chats: ChatListItem[], activeId: string, query: st
       clearTimeout(armed)
       handlers.remove(c.id)
     }
-    item.append(row, sub, x)
-    item.onclick = () => handlers.open(c.id)
+    open.append(row, sub)
+    item.append(open, x)
+    open.onclick = () => handlers.open(c.id)
     // Double-click renames in place, like a file manager.
     item.ondblclick = (e) => {
       e.preventDefault()
       const input = document.createElement('input')
       input.className = 'edit'
       input.value = c.title
-      title.replaceWith(input)
+      open.hidden = true
+      item.prepend(input)
       input.focus()
       input.select()
       let done = false
@@ -72,7 +72,8 @@ export function renderHistory(chats: ChatListItem[], activeId: string, query: st
         if (done) return
         done = true
         if (save && input.value.trim() && input.value.trim() !== c.title) handlers.rename(c.id, input.value)
-        else input.replaceWith(title)
+        input.remove()
+        open.hidden = false
       }
       input.onkeydown = (ev) => {
         ev.stopPropagation()

@@ -1,5 +1,9 @@
 import * as monaco from 'monaco-editor'
 import editorWorker from 'monaco-editor/editor/editor.worker?worker'
+import htmlWorker from 'monaco-editor/languages/html/html.worker?worker'
+import cssWorker from 'monaco-editor/languages/css/css.worker?worker'
+import jsonWorker from 'monaco-editor/languages/json/json.worker?worker'
+import tsWorker from 'monaco-editor/languages/typescript/ts.worker?worker'
 import type { ForgeApi } from '../preload'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -11,7 +15,15 @@ declare global {
   }
 }
 
-self.MonacoEnvironment = { getWorker: () => new editorWorker() }
+self.MonacoEnvironment = {
+  getWorker: (_moduleId, label) => {
+    if (['html', 'handlebars', 'razor'].includes(label)) return new htmlWorker()
+    if (['css', 'scss', 'less'].includes(label)) return new cssWorker()
+    if (label === 'json') return new jsonWorker()
+    if (['typescript', 'javascript'].includes(label)) return new tsWorker()
+    return new editorWorker()
+  },
+}
 
 const editor = monaco.editor.create(document.getElementById('editor')!, {
   theme: 'vs-dark', // replaced by the 'forge' theme once the tokens are read

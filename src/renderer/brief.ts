@@ -46,7 +46,7 @@ function renderPriorities() {
     const check = document.createElement('input')
     check.type = 'checkbox'
     check.checked = !item.skipped
-    check.onchange = () => { item.skipped = !check.checked; save(); renderPriorities() }
+    check.onchange = () => { item.skipped = !check.checked; save(); renderPriorities(); ($('priorities').children[index].querySelector('input') as HTMLElement).focus() }
     label.append(check, h('span', '', item.text))
     const up = h('button', 'icon-btn sm') as HTMLButtonElement
     up.append(icon('arrowup', 'sm'))
@@ -122,6 +122,7 @@ function render() {
   checklist.replaceChildren()
   for (const item of plan) {
     const row = h('li', `plan-item ${item.status}`)
+    row.setAttribute('aria-label', `${item.status === 'doing' ? 'In progress' : item.status === 'done' ? 'Complete' : 'To do'}: ${item.text}`)
     row.append(h('span', 'plan-marker', item.status === 'done' ? '✓' : item.status === 'doing' ? '•' : '○'), h('span', '', item.text))
     checklist.append(row)
   }

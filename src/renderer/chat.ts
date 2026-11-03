@@ -291,8 +291,10 @@ function toolCard(ev: Extract<AgentEvent, { type: 'tool' }>) {
   if (stick) toEnd()
 }
 
-function changesCard(ev: Extract<AgentEvent, { type: 'changes' }>) {
+function changesCard(ev: Extract<AgentEvent, { type: 'changes' }>, replace?: HTMLElement) {
+  const chatId = activeId
   const card = h('div', 'changes')
+  const lock = (disabled: boolean) => card.querySelectorAll<HTMLButtonElement>('button').forEach(b => b.disabled = disabled)
   const sum = (k: 'added' | 'removed') => ev.files.reduce((n, f) => n + f[k], 0)
   const head = h('div', 'changes-head')
   const title = h('span', '', `${ev.files.length} file${ev.files.length === 1 ? '' : 's'} changed`)
@@ -304,7 +306,7 @@ function changesCard(ev: Extract<AgentEvent, { type: 'changes' }>) {
     const open = h('button', 'undo')
     open.append(icon('globe', 'sm'), document.createTextNode('Open page'))
     open.title = `Open ${page.path} in your browser`
-    open.onclick = () => window.forge.openPath(activeId, page.path).catch((e) => toast(cleanErr(e), 4000))
+    open.onclick = () => window.forge.openPath(chatId, page.path).catch((e) => toast(cleanErr(e), 4000))
     head.append(title, stat, open, undo)
   } else head.append(title, stat, undo)
   card.append(head)
@@ -318,16 +320,23 @@ function changesCard(ev: Extract<AgentEvent, { type: 'changes' }>) {
     const impact = h('span', 'file-impact')
     impact.append(h('strong', '', kind), h('span', '', `Before: ${before}`), h('span', '', `Now: ${after}`))
     row.append(impact)
-    row.setAttribute('aria-label', `${f.status}: ${f.path}. ${f.added} lines added, ${f.removed} removed. Open in workspace.`)
+    row.setAttribute('aria-label', `${f.status}: ${f.path}. ${f.added} lines added, ${f.removed} removed. ${f.status === 'deleted' ? 'This file was removed.' : 'Open in workspace.'}`)
     const line = h('div', 'change-line')
     line.append(row)
     const bridge = window.forge
     if (typeof bridge.agentUndoFile === 'function') {
       const one = h('button', 'undo', 'Undo file') as HTMLButtonElement
       one.onclick = async () => {
-        one.disabled = true
-        try { await bridge.agentUndoFile(activeId, ev.checkpoint, f.path); onFilesRestored([f.path]); briefUndone([f.path]); line.replaceChildren(h('div', 'changes-done', `${f.path} restored`)) }
-        catch (e) { one.disabled = false; toast(cleanErr(e), 4000) }
+        lock(true)
+        try {
+          const remaining = await bridge.agentUndoFile(chatId, ev.checkpoint, f.path)
+          if (activeId !== chatId) return
+          onFilesRestored([f.path]); briefUndone([f.path])
+          if (remaining.length) changesCard({ ...ev, files: remaining }, card)
+          else card.replaceChildren(h('div', 'changes-done', 'All files in this run have been restored.'))
+          toast(`Restored ${f.path}`)
+        }
+        catch (e) { lock(false); toast(cleanErr(e), 4000) }
       }
       line.append(one)
     }
@@ -335,18 +344,20 @@ function changesCard(ev: Extract<AgentEvent, { type: 'changes' }>) {
   }
   card.append(h('p', 'change-explainer', 'Review a file in Workspace. Undo this run restores all files in this checkpoint.'))
   undo.onclick = async () => {
-    undo.disabled = true
+    lock(true)
     try {
-      const restored = await window.forge.agentUndo(activeId, ev.checkpoint)
+      const restored = await window.forge.agentUndo(chatId, ev.checkpoint)
+      if (activeId !== chatId) return
       onFilesRestored(restored)
       briefUndone(restored)
       card.replaceChildren(h('div', 'note changes-done', `Undone: ${ev.files.length} file${ev.files.length === 1 ? '' : 's'} restored.`))
     } catch (e) {
-      undo.disabled = false
+      lock(false)
       card.append(h('div', 'errtext', cleanErr(e)))
     }
   }
-  add(card)
+  if (replace) replace.replaceWith(card)
+  else add(card)
 }
 
 function addUser(text: string) {
