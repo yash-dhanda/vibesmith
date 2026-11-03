@@ -10,6 +10,7 @@ let goal = ''
 let changed = new Map<string, string>()
 let state = 'Ready when you are'
 let page: string | null = null
+let plan: { text: string; status: 'todo' | 'doing' | 'done' }[] = []
 let openFile: (path: string) => void = () => {}
 const save = () => { try { localStorage.setItem(`forge.brief.${chatId}`, JSON.stringify(priorities)) } catch {} }
 
@@ -68,6 +69,7 @@ export function resetBrief(id: string, project: string | null) {
   goal = ''
   changed = new Map()
   page = null
+  plan = []
   state = 'Ready when you are'
   try {
     const stored: unknown = JSON.parse(localStorage.getItem(`forge.brief.${id}`) ?? '[]')
@@ -95,6 +97,7 @@ export function withPriorities(text: string) {
 }
 
 export function briefEvent(ev: AgentEvent) {
+  if (ev.type === 'plan') plan = ev.items
   if (ev.type === 'tool') state = ev.needsApproval ? 'Your approval is needed' : ev.name === 'run_command' ? 'Trying the next step' : /edit|create/.test(ev.name) ? 'Shaping your project' : 'Getting to know your project'
   if (ev.type === 'verify') state = ev.ok ? 'Project check passed' : 'Project check needs attention'
   if (ev.type === 'changes') for (const f of ev.files) {
@@ -114,6 +117,14 @@ export function briefUndone(paths: string[]) {
 }
 
 function render() {
+  const checklist = $('agent-plan')
+  $('agent-plan-section').hidden = !plan.length
+  checklist.replaceChildren()
+  for (const item of plan) {
+    const row = h('li', `plan-item ${item.status}`)
+    row.append(h('span', 'plan-marker', item.status === 'done' ? '✓' : item.status === 'doing' ? '•' : '○'), h('span', '', item.text))
+    checklist.append(row)
+  }
   $('brief-goal').textContent = goal || 'A small idea can become something real. Describe yours to start the build.'
   $('brief-status').textContent = state
   const files = $('brief-files')
@@ -131,5 +142,14 @@ function render() {
   }
   const preview = $('brief-preview')
   preview.hidden = !page
-  preview.onclick = () => { if (page) window.forge.openPath(chatId, page).catch(e => toast(cleanErr(e), 4000)) }
+  preview.onclick = async () => {
+    if (!page) return
+    const id = chatId
+    try {
+      if (typeof window.forge.previewStart === 'function') {
+        const { url } = await window.forge.previewStart(id)
+        await window.forge.openExternal(url)
+      } else await window.forge.openPath(id, page)
+    } catch (e) { toast(cleanErr(e), 4000) }
+  }
 }

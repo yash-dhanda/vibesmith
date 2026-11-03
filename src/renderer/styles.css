@@ -597,3 +597,15 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; 
   .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .lib { padding: 18px; }
 }
+#agent-plan { list-style: none; padding: 0; margin: 14px 0 0; }
+.plan-item { display: flex; align-items: flex-start; gap: 9px; font-size: 12px; margin: 11px 0; overflow-wrap: anywhere; }
+.plan-marker { flex: none; color: var(--muted); width: 14px; }
+.plan-item.done { color: var(--muted); }
+.plan-item.done .plan-marker { color: var(--ok); }
+.plan-item.doing .plan-marker { color: var(--accent); }
+.plan-item.doing { color: var(--text); font-weight: 500; }
+.file-impact { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 14px; }
+.file-impact strong { grid-column: 1 / -1; font-weight: 500; font-size: 11px; color: var(--text); margin: 2px 0; }
+.file-impact span { font-size: 10px; }
+.chat-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+#ws-toggle[aria-busy='true'] { opacity: .65; }

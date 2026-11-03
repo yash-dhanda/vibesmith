@@ -246,7 +246,7 @@ function toolCard(ev: Extract<AgentEvent, { type: 'tool' }>) {
   const card = h('div', 'tool')
   const head = h('button', 'tool-head')
   const dot = h('span', 'dot run')
-  head.append(dot, h('span', 'tool-label', story), h('span', 'tool-path', path))
+  head.append(dot, h('span', 'tool-label', ev.label || story), h('span', 'tool-path', path))
   const body = h('div', 'tool-body')
   body.hidden = true
   if (ev.name === 'edit_file') body.append(diff(String(a.old_text ?? ''), String(a.new_text ?? '')))
@@ -312,16 +312,21 @@ function changesCard(ev: Extract<AgentEvent, { type: 'changes' }>) {
     const row = h('button', 'file-row')
     row.append(h('span', 'file-status ' + f.status, f.status === 'added' ? 'New' : f.status === 'deleted' ? 'Removed' : 'Updated'), h('span', 'tool-path', f.path))
     if (f.status !== 'deleted') row.onclick = async () => { await openWorkspace(); onFileChanged(f.path) }
-    row.append(h('span', 'file-impact', `${f.added} lines added · ${f.removed} removed`))
+    const kind = /\.css$/i.test(f.path) ? 'Styles and appearance' : /\.html?$/i.test(f.path) ? 'Page content and structure' : /\.(js|ts|tsx|jsx|py)$/i.test(f.path) ? 'App behavior' : 'Project file'
+    const before = f.status === 'added' ? 'Not in project' : 'Existing file'
+    const after = f.status === 'deleted' ? 'Removed from project' : `${f.added} lines added · ${f.removed} removed`
+    const impact = h('span', 'file-impact')
+    impact.append(h('strong', '', kind), h('span', '', `Before: ${before}`), h('span', '', `Now: ${after}`))
+    row.append(impact)
     row.setAttribute('aria-label', `${f.status}: ${f.path}. ${f.added} lines added, ${f.removed} removed. Open in workspace.`)
     const line = h('div', 'change-line')
     line.append(row)
-    const bridge = window.forge as typeof window.forge & { agentUndoFile?: (chatId: string, checkpoint: string, path: string) => Promise<string[]> }
+    const bridge = window.forge
     if (typeof bridge.agentUndoFile === 'function') {
       const one = h('button', 'undo', 'Undo file') as HTMLButtonElement
       one.onclick = async () => {
         one.disabled = true
-        try { const restored = await bridge.agentUndoFile!(activeId, ev.checkpoint, f.path); onFilesRestored(restored); briefUndone(restored); line.replaceChildren(h('div', 'changes-done', `${f.path} restored`)) }
+        try { await bridge.agentUndoFile(activeId, ev.checkpoint, f.path); onFilesRestored([f.path]); briefUndone([f.path]); line.replaceChildren(h('div', 'changes-done', `${f.path} restored`)) }
         catch (e) { one.disabled = false; toast(cleanErr(e), 4000) }
       }
       line.append(one)
@@ -358,7 +363,7 @@ function addUser(text: string) {
 // ---- events from the agent ----
 function handle(ev: AgentEvent) {
   log.push(ev)
-  briefEvent(ev)
+  if (ev.type !== 'delta' && ev.type !== 'usage' && ev.type !== 'turn_end') briefEvent(ev)
   switch (ev.type) {
     case 'delta': {
       hideThinking()
@@ -421,12 +426,14 @@ function handle(ev: AgentEvent) {
       body.hidden = ev.ok
       body.append(h('pre', ev.ok ? '' : 'err', ev.output.length > 3000 ? '…' + ev.output.slice(-3000) : ev.output))
       head.setAttribute('aria-expanded', String(!body.hidden))
-  head.onclick = () => { body.hidden = !body.hidden; head.setAttribute('aria-expanded', String(!body.hidden)) }
+      head.onclick = () => { body.hidden = !body.hidden; head.setAttribute('aria-expanded', String(!body.hidden)) }
       card.append(head, body)
       add(card)
       if (running) showThinking()
       break
     }
+    case 'plan':
+      break // rendered in the persistent build brief
     case 'note':
       finishGroup()
       add(h('div', 'note', ev.text))
@@ -661,7 +668,7 @@ export async function initChat(opts: {
   openWorkspace = opts.openWorkspace
   try {
     modeSel.value = localStorage.getItem('forge.mode') ?? 'ask-all'
-    if (localStorage.getItem('forge.hist') === '0') $('app').classList.add('no-hist')
+    if (localStorage.getItem('forge.hist') === '0' || (!localStorage.getItem('forge.hist') && matchMedia('(max-width: 1000px)').matches)) $('app').classList.add('no-hist')
   } catch {}
 
   initBrief(async path => { await openWorkspace(); onFileChanged(path) })

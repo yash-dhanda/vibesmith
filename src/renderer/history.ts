@@ -22,8 +22,13 @@ export function renderHistory(chats: ChatListItem[], activeId: string, query: st
       list.append(h('div', 'group-label', g))
       last = g
     }
-    const item = h('button', 'chat-item' + (c.id === activeId ? ' active' : ''))
+    const item = h('div', 'chat-item' + (c.id === activeId ? ' active' : ''))
     item.title = c.project ?? ''
+    item.tabIndex = 0
+    item.setAttribute('role', 'button')
+    item.setAttribute('aria-label', `Open ${c.title}`)
+    if (c.id === activeId) item.setAttribute('aria-current', 'page')
+    item.onkeydown = e => { if (e.target === item && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); handlers.open(c.id) } }
     const row = h('span', 'row1')
     if (c.status !== 'idle') row.append(h('span', 'st ' + c.status))
     const title = h('span', 't', c.title)
@@ -33,6 +38,7 @@ export function renderHistory(chats: ChatListItem[], activeId: string, query: st
     const x = h('button', 'x')
     x.append(icon('x', 'sm'))
     x.title = 'Delete chat'
+    x.setAttribute('aria-label', `Delete ${c.title}`)
     // Two clicks, no native popup: the first turns the button into "Delete?", the second deletes.
     let armed: ReturnType<typeof setTimeout> | null = null
     x.onclick = (e) => {
