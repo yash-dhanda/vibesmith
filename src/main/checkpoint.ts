@@ -6,9 +6,9 @@ import { dirname, join, normalize } from 'node:path'
 // Undo without touching the user's index, branches or stash: a run is snapshotted as a tree built in a throwaway index,
 // stored as a commit under refs/forge/. Untracked files are included, .gitignore is respected.
 
-const AUTHOR = { GIT_AUTHOR_NAME: 'Forge', GIT_AUTHOR_EMAIL: 'forge@localhost', GIT_COMMITTER_NAME: 'Forge', GIT_COMMITTER_EMAIL: 'forge@localhost' }
+export const AUTHOR = { GIT_AUTHOR_NAME: 'Forge', GIT_AUTHOR_EMAIL: 'forge@localhost', GIT_COMMITTER_NAME: 'Forge', GIT_COMMITTER_EMAIL: 'forge@localhost' }
 
-function git(cwd: string, args: string[], env: NodeJS.ProcessEnv = {}): Promise<string> {
+export function git(cwd: string, args: string[], env: NodeJS.ProcessEnv = {}): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile('git', ['-c', 'core.quotepath=off', ...args], { cwd, env: { ...process.env, ...env }, maxBuffer: 64 * 1024 * 1024 }, (err, out, stderr) =>
       err ? reject(new Error(stderr.trim() || err.message)) : resolve(out),
@@ -36,7 +36,7 @@ export async function isRepo(root: string): Promise<boolean> {
 
 export const initRepo = (root: string) => git(root, ['init']).then(() => undefined)
 
-async function snapshotTree(root: string): Promise<string> {
+export async function snapshotTree(root: string): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), 'forge-idx-'))
   const env = { GIT_INDEX_FILE: join(dir, 'index') }
   try {
