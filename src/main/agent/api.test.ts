@@ -167,3 +167,22 @@ describe('ollama provider usage', () => {
     await expect(missing.chat(history, toolDefs, () => {}, signal)).rejects.toThrow(/ollama pull ghost/)
   })
 })
+
+describe('ollama provider over a real connection', () => {
+  it('streams from a local server through the patient connection (no idle timeout)', async () => {
+    const http = await import('node:http')
+    const server = http.createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/x-ndjson' })
+      setTimeout(() => res.end(JSON.stringify({ message: { content: 'hi there' }, done: true, prompt_eval_count: 5, eval_count: 2, eval_duration: 1_000_000_000 }) + '\n'), 150)
+    })
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+    const port = (server.address() as { port: number }).port
+    try {
+      const turn = await ollama({ model: 'm', host: `http://127.0.0.1:${port}` }).chat(history, toolDefs, () => {}, signal)
+      expect(turn.content).toBe('hi there')
+      expect(turn.usage).toMatchObject({ input: 5, output: 2 })
+    } finally {
+      server.close()
+    }
+  })
+})

@@ -56,14 +56,24 @@ const add = (el: HTMLElement) => {
   return el
 }
 
+// Writing a big file can be silent for minutes on a slow machine: show how long the wait has been, so it does not look hung.
+let thinkingTimer: ReturnType<typeof setInterval> | null = null
 function showThinking() {
   if (thinkingEl) return
-  thinkingEl = h('div', 'thinking')
-  thinkingEl.append(h('i'), h('i'), h('i'))
-  thread.append(thinkingEl)
+  const el = (thinkingEl = h('div', 'thinking'))
+  const clock = h('span', 'clock')
+  el.append(h('i'), h('i'), h('i'), clock)
+  const t0 = Date.now()
+  thinkingTimer = setInterval(() => {
+    const s = Math.floor((Date.now() - t0) / 1000)
+    clock.textContent = s >= 8 ? (s >= 60 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s` : `${s}s`) : ''
+  }, 1000)
+  thread.append(el)
   if (nearBottom()) toEnd()
 }
 function hideThinking() {
+  if (thinkingTimer) clearInterval(thinkingTimer)
+  thinkingTimer = null
   thinkingEl?.remove()
   thinkingEl = null
 }
