@@ -258,6 +258,20 @@ describe('team orchestrator', () => {
     expect(r2.tasks[0].agent).toBe('local')
   })
 
+  it('bypass mode (the default) never asks for a permission but keeps the hard limits', async () => {
+    const x = h({ delayMs: 600, plan: { tasks: [T('a')] } })
+    const run = await x.orch.start(x.proj, 'perm')
+    await until(x.orch, run.id, (r) => r.tasks.length === 1)
+    const ask = (tool: string, input: object) => (x.orch as any).onHub('permission', { tool_name: tool, input }, { runId: run.id, taskId: 't1', agent: 'claude' }) as Promise<string>
+    expect(JSON.parse(await ask('Bash', { command: 'sudo rm -rf /' })).behavior).toBe('deny')
+    expect(JSON.parse(await ask('Bash', { command: 'git push origin main' })).behavior).toBe('deny')
+    expect(JSON.parse(await ask('Bash', { command: 'rm -rf build' })).behavior).toBe('allow')
+    expect(JSON.parse(await ask('Read', { file_path: '/etc/hosts' })).behavior).toBe('allow')
+    expect(await (x.orch as any).onHub('request_approval', { title: 'deploy', detail: 'x' }, { runId: run.id, taskId: 't1', agent: 'claude' })).toMatch(/^allowed/)
+    expect(x.orch.get(run.id)!.approvals.filter((a) => a.status === 'pending')).toHaveLength(0)
+    await x.orch.cancel(run.id)
+  })
+
   it('uses the one available agent for planning, work and review', async () => {
     const x = h({ plan: { tasks: [T('a', { agent: 'claude' })] } }, { available: ['codex'] })
     const run = await x.orch.start(x.proj, 'solo')
@@ -575,7 +589,7 @@ describe('mailbox operations agents call', () => {
 
   it('blocks an approval request until the user answers, and applies the policy to permission prompts', async () => {
     const x = h({ delayMs: 600, plan: { tasks: [T('a', { agent: 'claude' })] } })
-    const run = await x.orch.start(x.proj, 'approve')
+    const run = await x.orch.start(x.proj, 'approve', { bypassPermissions: false })
     await until(x.orch, run.id, (r) => r.tasks.length === 1)
     let settled = false
     const p = call(x, run, 'request_approval', { title: 'deploy to prod', detail: 'vercel --prod' }, 'claude').then((v: string) => ((settled = true), v))

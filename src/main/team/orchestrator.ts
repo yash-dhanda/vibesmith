@@ -611,6 +611,7 @@ export class TeamOrchestrator {
       onApproval: async (a) => {
         const v = a.command ? decideCommand(a.command) : { verdict: 'ask' as const, reason: '' }
         if (v.verdict === 'deny') return false
+        if (run.config.bypassPermissions !== false) return true
         return (await this.ask(run, { kind: 'permission', taskId: task.id, agent, title: a.title, detail: a.detail || v.reason })).allow
       },
       onHandle: (h) => (h ? live.handles.set(task.id, { agent, h }) : live.handles.delete(task.id)),
@@ -1078,6 +1079,7 @@ export class TeamOrchestrator {
         return 'recorded'
       }
       case 'request_approval': {
+        if (run.config.bypassPermissions !== false) return 'allowed (the user turned permission prompts off for this team)'
         const r = await this.ask(run, { kind: 'action', taskId: ctx.taskId, agent: ctx.agent, title: str(args.title, 200), detail: str(args.detail, 2000) })
         return r.allow ? `allowed${r.note ? `: ${r.note}` : ''}` : `denied${r.note ? `: ${r.note}` : ''}. Do not do it; find another way or stop.`
       }
@@ -1086,6 +1088,7 @@ export class TeamOrchestrator {
         const v = decideTool(str(args.tool_name, 80), input, task?.worktree ?? run.integrationWorktree)
         if (v.verdict === 'allow') return JSON.stringify({ behavior: 'allow', updatedInput: input })
         if (v.verdict === 'deny') return JSON.stringify({ behavior: 'deny', message: `Not allowed: ${v.reason}` })
+        if (run.config.bypassPermissions !== false) return JSON.stringify({ behavior: 'allow', updatedInput: input })
         const what = args.tool_name === 'Bash' ? str(input.command, 300) : `${args.tool_name} ${str(input.file_path ?? input.path ?? '', 200)}`
         const r = await this.ask(run, { kind: 'permission', taskId: ctx.taskId, agent: ctx.agent, title: `${ctx.agent} wants to: ${what}`, detail: v.reason })
         return JSON.stringify(r.allow ? { behavior: 'allow', updatedInput: input } : { behavior: 'deny', message: r.note || 'The user said no.' })

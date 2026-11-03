@@ -70,8 +70,12 @@ export async function runLocal(o: LocalOpts): Promise<RunResult> {
         endTurn()
         const kind = KIND[ev.name] ?? 'other'
         sink.push({ type: 'tool', agent, id: ev.id, kind, name: ev.name, summary: ev.label ?? describeTool(ev.name, ev.args) })
-        const a = (ev.args ?? {}) as { path?: unknown; content?: unknown }
+        const a = (ev.args ?? {}) as { path?: unknown; content?: unknown; old_text?: unknown; new_text?: unknown }
         if (ev.name === 'create_file' && typeof a.path === 'string' && typeof a.content === 'string') sink.push({ type: 'code', agent, id: ev.id, path: a.path, text: a.content, kind: 'content', done: true })
+        else if (ev.name === 'edit_file' && typeof a.path === 'string' && typeof a.old_text === 'string' && typeof a.new_text === 'string') {
+          const side = (mark: string, t: string) => t.split('\n').map((x) => mark + x).join('\n')
+          sink.push({ type: 'code', agent, id: ev.id, path: a.path, text: `@@ edit @@\n${side('-', a.old_text)}\n${side('+', a.new_text)}`, kind: 'diff', done: true })
+        }
       } else if (ev.type === 'tool_result') sink.push({ type: 'tool_result', agent, id: ev.id, ok: ev.ok, text: ev.text.slice(0, 4000) })
       else if (ev.type === 'usage') sink.push({ type: 'usage', agent, input: ev.input, output: ev.output, cached: 0, costUsd: 0 })
       else if (ev.type === 'note') sink.push({ type: 'note', agent, text: ev.text })

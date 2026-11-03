@@ -796,3 +796,12 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; 
 .activity-row { padding: 8px 2px; }
 @media (prefers-reduced-motion: reduce) { .team-progress-bar i, .task-card { transition: none; } }
 @media (max-width: 600px) { .plan-edit-row { grid-template-columns: auto minmax(0, 1fr); } .plan-edit-row select, .plan-edit-row .plan-skip { grid-column: 2; justify-self: start; } }
+
+.lane-details { margin-left: 8px; border: 0; background: transparent; color: var(--faint); font-size: 10px; letter-spacing: .04em; padding: 3px 6px; border-radius: 5px; }
+.lane-details:hover, .lane-details.on { color: var(--text); background: var(--panel-2); }
+.live-code { border-left: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 5%, var(--bg)); }
+.live-code.done { border-left-color: var(--ok); }
+.agent-lane.local .live-code.writing { border-left-color: #7a9fd6; }
+.live-code-body { font-size: 11px; max-height: 340px; }
+.feed-item.clamped { cursor: pointer; }
+.feed-item.clamped .feed-body { display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }

@@ -28,6 +28,9 @@ let runSearch = ''
 let steerDraft = ''
 let steerTarget: 'all' | 'claude' | 'codex' | 'local' = 'all'
 const AGENT_NAME = { claude: 'Claude', codex: 'Codex', local: 'Local model' } as const
+let laneDetails = (() => { try { return localStorage.getItem('forge.teamLaneDetails') === '1' } catch { return false } })()
+// The lanes show what an agent says and the code it writes. Commands, step results, prompts and reasoning sit behind "Details".
+const laneVisible = (ev: RunEvent & { type: 'agent' }) => { const e = ev.ev; return laneDetails || e.type === 'text' || e.type === 'code' || e.type === 'error' || (e.type === 'delta' && e.channel === 'text') || (e.type === 'done' && !e.ok) }
 const PHASE_LABEL: Record<string, string> = { work: 'Working', review: 'Reviewing', fix: 'Fixing', merge: 'Merging', conflict: 'Resolving a conflict', plan: 'Planning', 'final-review': 'Final review' }
 const AGENT_FULL = { claude: 'Claude Code', codex: 'OpenAI Codex', local: 'Local model' } as const
 
@@ -105,6 +108,7 @@ async function showEntry() {
   const parallel = input('number', String(defaults.maxParallelPerAgent ?? 2)); parallel.min = '1'; parallel.max = '4'
   const review = select([['cross', 'Cross-review every task'], ['off', 'No cross-review']], defaults.review ?? 'cross')
   const finalReview = select([['auto', 'Automatic (bigger runs only)'], ['true', 'Always check the combined result'], ['false', 'Skip the final review']], String(defaults.finalReview ?? 'auto'))
+  const permissions = select([['bypass', 'Never ask me (bypass)'], ['ask', 'Ask before risky actions']], defaults.bypassPermissions === false ? 'ask' : 'bypass')
   const reviewPlan = select([['false', 'Start right away'], ['true', 'Let me review the plan first']], String(defaults.reviewPlan ?? false))
   const fixRounds = input('number', String(defaults.maxFixRounds ?? 3)); fixRounds.min = '0'; fixRounds.max = '5'
   const codexMode = select([['app-server', 'Live Codex session'], ['exec', 'Simple Codex run']], defaults.codexMode ?? 'app-server')
@@ -119,15 +123,15 @@ async function showEntry() {
   const maxTasks = input('number', String(defaults.budget?.maxTasks ?? 12)); maxTasks.min = '1'; maxTasks.max = '30'
   const limit = input('number', String(defaults.maxLimitPercent ?? 90)); limit.min = '0'; limit.max = '100'
   const grid = h('div', 'team-config-grid')
-  grid.append(field('Planner', planner, 'Chooses who splits the goal into tasks.'), field('Parallel tasks per agent', parallel, 'More tasks can finish sooner, but use more allowance.'), field('Task review', review), field('Final review', finalReview, 'Automatic checks the whole result only for runs of 3 or more tasks, which saves plan usage.'), field('Plan approval', reviewPlan, 'Stops after planning so you can edit, reassign or skip tasks before any agent works.'), field('Fix attempts per task', fixRounds), field('Project check', verify, 'Leave blank to detect it from the project.'), field('Codex connection', codexMode, 'Live sessions support streaming and immediate steering.'), field('Codex model', codexModel), ...(health.localModels.length ? [field('Local model', localModel, 'Runs on this computer through Ollama. Free, but weaker: the team gives it simple tasks.')] : []), field('Claude model', claudeModel), field('Claude effort', effort), field('Time budget (minutes)', minutes), field('Token budget', tokens), field('Agent runs', runs), field('Maximum tasks', maxTasks), field('Pause at plan usage %', limit, '0 disables this limit.'))
+  grid.append(field('Planner', planner, 'Chooses who splits the goal into tasks.'), field('Parallel tasks per agent', parallel, 'More tasks can finish sooner, but use more allowance.'), field('Task review', review), field('Final review', finalReview, 'Automatic checks the whole result only for runs of 3 or more tasks, which saves plan usage.'), field('Permissions', permissions, 'Bypass lets the agents run commands and read files without asking. They still cannot push to git, use sudo, or write outside their own task folder.'), field('Plan approval', reviewPlan, 'Stops after planning so you can edit, reassign or skip tasks before any agent works.'), field('Fix attempts per task', fixRounds), field('Project check', verify, 'Leave blank to detect it from the project.'), field('Codex connection', codexMode, 'Live sessions support streaming and immediate steering.'), field('Codex model', codexModel), ...(health.localModels.length ? [field('Local model', localModel, 'Runs on this computer through Ollama. Free, but weaker: the team gives it simple tasks.')] : []), field('Claude model', claudeModel), field('Claude effort', effort), field('Time budget (minutes)', minutes), field('Token budget', tokens), field('Agent runs', runs), field('Maximum tasks', maxTasks), field('Pause at plan usage %', limit, '0 disables this limit.'))
   const validation = h('div', 'team-config-error'); validation.setAttribute('role', 'alert')
   const numeric = [parallel, fixRounds, minutes, tokens, runs, maxTasks, limit]
   const readConfig = (): Partial<TeamConfig> | null => {
     if (numeric.some(item => !item.checkValidity() || !Number.isFinite(Number(item.value)))) { validation.textContent = 'Check the highlighted team settings.'; numeric.find(item => !item.checkValidity())?.focus(); return null }
     validation.textContent = ''
-    return { planner: planner.value as TeamConfig['planner'], maxParallelPerAgent: Number(parallel.value), review: review.value as TeamConfig['review'], finalReview: finalReview.value === 'auto' ? 'auto' : finalReview.value === 'true', reviewPlan: reviewPlan.value === 'true', maxFixRounds: Number(fixRounds.value), codexMode: codexMode.value as TeamConfig['codexMode'], verify: verify.value.trim() || undefined, codexModel: codexModel.value, localModel: localModel.value || undefined, claudeModel: claudeModel.value.trim() || undefined, claudeEffort: effort.value as TeamConfig['claudeEffort'], maxLimitPercent: Number(limit.value), budget: { maxMinutes: Number(minutes.value), maxTokens: Number(tokens.value), maxAgentRuns: Number(runs.value), maxTasks: Number(maxTasks.value) } }
+    return { planner: planner.value as TeamConfig['planner'], maxParallelPerAgent: Number(parallel.value), review: review.value as TeamConfig['review'], finalReview: finalReview.value === 'auto' ? 'auto' : finalReview.value === 'true', reviewPlan: reviewPlan.value === 'true', bypassPermissions: permissions.value === 'bypass', maxFixRounds: Number(fixRounds.value), codexMode: codexMode.value as TeamConfig['codexMode'], verify: verify.value.trim() || undefined, codexModel: codexModel.value, localModel: localModel.value || undefined, claudeModel: claudeModel.value.trim() || undefined, claudeEffort: effort.value as TeamConfig['claudeEffort'], maxLimitPercent: Number(limit.value), budget: { maxMinutes: Number(minutes.value), maxTokens: Number(tokens.value), maxAgentRuns: Number(runs.value), maxTasks: Number(maxTasks.value) } }
   }
-  const reset = h('button', 'btn', 'Reset team defaults') as HTMLButtonElement; reset.type = 'button'; reset.onclick = () => { planner.value = 'auto'; parallel.value = '2'; review.value = 'cross'; finalReview.value = 'auto'; reviewPlan.value = 'false'; fixRounds.value = '3'; verify.value = ''; codexMode.value = 'app-server'; claudeModel.value = ''; effort.value = 'high'; minutes.value = '60'; tokens.value = '500000'; runs.value = '20'; maxTasks.value = '12'; limit.value = '90'; validation.textContent = 'Defaults restored. They will save when you start a run.' }
+  const reset = h('button', 'btn', 'Reset team defaults') as HTMLButtonElement; reset.type = 'button'; reset.onclick = () => { planner.value = 'auto'; parallel.value = '2'; review.value = 'cross'; finalReview.value = 'auto'; reviewPlan.value = 'false'; permissions.value = 'bypass'; fixRounds.value = '3'; verify.value = ''; codexMode.value = 'app-server'; claudeModel.value = ''; effort.value = 'high'; minutes.value = '60'; tokens.value = '500000'; runs.value = '20'; maxTasks.value = '12'; limit.value = '90'; validation.textContent = 'Defaults restored. They will save when you start a run.' }
   const saveDefaults = h('button', 'btn', 'Save team defaults') as HTMLButtonElement; saveDefaults.type = 'button'; saveDefaults.onclick = () => void call(async () => { const config = readConfig(); if (!config || typeof window.forge.teamSettingsSet !== 'function') return; await window.forge.teamSettingsSet(config); validation.textContent = 'Team defaults saved for this project.' })
   const settingActions = h('div', 'team-setting-actions'); settingActions.append(reset, saveDefaults)
   advanced.append(summary, grid, validation, settingActions)
@@ -364,15 +368,15 @@ function renderTask(task: Task, index: number) {
 
 function renderStory() {
   const area = h('section', 'team-story')
-  const lanes = h('div', 'team-lanes'); lanes.append(renderLane('claude'), renderLane('codex')); if (run!.tasks.some(t => t.agent === 'local') || log.some(x => x.ev.type === 'agent' && x.ev.ev.agent === 'local')) lanes.append(renderLane('local'))
+  const lanes = h('div', 'team-lanes'); const used = (a: 'claude' | 'codex' | 'local') => run!.tasks.some(t => t.agent === a) || log.some(x => x.ev.type === 'agent' && x.ev.ev.agent === a); for (const a of ['claude', 'codex', 'local'] as const) if (used(a)) lanes.append(renderLane(a)); if (!lanes.children.length) lanes.append(renderLane('claude'))
   const side = h('aside', 'team-side-story'); side.append(renderLiveFiles(), renderFeed(), renderMemory(), renderVerify(), renderSteer(), renderDiffPanel())
   area.append(lanes, side); return area
 }
 function renderLane(agent: 'claude' | 'codex' | 'local') {
-  const lane = h('section', `agent-lane ${agent}`); const header = h('header'); header.append(h('span', `agent-orb ${agent}`), h('div', '', AGENT_FULL[agent]), h('span', 'lane-live', ['planning', 'running', 'verifying'].includes(run!.status) ? 'LIVE' : 'HISTORY')); lane.append(header)
-  const events = log.filter(x => x.ev.type === 'agent' && x.ev.ev.agent === agent)
+  const lane = h('section', `agent-lane ${agent}`); const header = h('header'); header.append(h('span', `agent-orb ${agent}`), h('div', '', AGENT_FULL[agent]), h('span', 'lane-live', ['planning', 'running', 'verifying'].includes(run!.status) ? 'LIVE' : 'HISTORY')); const detailsToggle = h('button', `lane-details ${laneDetails ? 'on' : ''}`, 'Details'); detailsToggle.title = 'Show commands, step results, prompts and reasoning'; detailsToggle.setAttribute('aria-pressed', String(laneDetails)); detailsToggle.onclick = () => { laneDetails = !laneDetails; try { localStorage.setItem('forge.teamLaneDetails', laneDetails ? '1' : '0') } catch {} document.querySelectorAll<HTMLElement>('.agent-lane').forEach(old => { const a = (['claude', 'codex', 'local'] as const).find(n => old.classList.contains(n)); if (a) old.replaceWith(renderLane(a)) }) }; header.append(detailsToggle); lane.append(header)
+  const events = log.filter(x => x.ev.type === 'agent' && x.ev.ev.agent === agent && laneVisible(x.ev))
   const body = h('div', 'lane-body')
-  if (!events.length) body.append(h('p', 'team-empty', 'Waiting for a task…'))
+  if (!events.length) body.append(h('p', 'team-empty', run!.tasks.some(t => t.agent === agent) ? 'Waiting for the first message…' : 'Waiting for a task…'))
   let lastKey = ''
   for (const { t, ev } of events.slice(-40)) if (ev.type === 'agent') {
     const row = h('article', `activity-row ${ev.ev.type}`); const task = run!.tasks.find(x => x.id === ev.taskId)
@@ -429,7 +433,7 @@ function renderLiveCode(event: Extract<RunEvent, { type: 'agent' }>['ev'] & { ty
 function renderFeed() {
   const section = h('section', 'team-feed'); const head = h('div', 'team-section-head'); head.append(h('div', '', 'Team feed'), h('span', '', `${run!.messages.length}`)); section.append(head)
   if (!run!.messages.length) section.append(h('p', 'team-empty', 'Handoffs, reviews and decisions appear here.'))
-  for (const msg of run!.messages.slice(-12)) { const item = h('article', `feed-item ${msg.kind}`); const top = h('div'); top.append(h('strong', '', msg.from === 'user' ? 'You' : msg.from === 'orchestrator' ? 'Forge' : AGENT_NAME[msg.from]), h('span', '', msg.kind.replace('_', ' '))); item.append(top, h('p', '', msg.body)); section.append(item) }
+  for (const msg of run!.messages.slice(-12)) { const item = h('article', `feed-item ${msg.kind}`); const top = h('div'); top.append(h('strong', '', msg.from === 'user' ? 'You' : msg.from === 'orchestrator' ? 'Forge' : AGENT_NAME[msg.from]), h('span', '', msg.kind.replace('_', ' '))); const body = h('p', 'feed-body', msg.body); item.append(top, body); if (msg.body.length > 260) { item.classList.add('clamped'); item.title = 'Click to read all'; item.onclick = () => item.classList.toggle('clamped') } section.append(item) }
   return section
 }
 

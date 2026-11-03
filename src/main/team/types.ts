@@ -70,6 +70,7 @@ export type TeamConfig = {
   codexModel: string
   localModel?: string // the Ollama model the local agent uses; empty = the best installed one
   claudeModel?: string
+  bypassPermissions?: boolean // never ask the user to allow a command or file read (default on). Hard limits stay: no push, no sudo, no writes outside the task folder or to secrets
   claudeEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   maxParallelPerAgent: number
   maxFixRounds: number
@@ -84,7 +85,7 @@ export type TeamConfig = {
   maxLimitPercent: number // pause when a subscription's short-window allowance is this used (0 = never)
 }
 
-export const DEFAULT_CONFIG: TeamConfig = { planner: 'auto', codexModel: '', maxParallelPerAgent: 2, maxFixRounds: 3, maxVerifyRounds: 2, review: 'cross', finalReview: 'auto', allowSubtasks: true, budget: { maxTasks: 12 }, codexMode: 'app-server', reviewPlan: false, maxLimitPercent: 80 }
+export const DEFAULT_CONFIG: TeamConfig = { planner: 'auto', codexModel: '', maxParallelPerAgent: 2, maxFixRounds: 3, maxVerifyRounds: 2, review: 'cross', finalReview: 'auto', bypassPermissions: true, allowSubtasks: true, budget: { maxTasks: 12 }, codexMode: 'app-server', reviewPlan: false, maxLimitPercent: 80 }
 
 export type RunFinal = { report: string; files: Task['changed']; verifyOk: boolean | null; verifyOutput: string; reviewNotes: string[] }
 

@@ -24,6 +24,7 @@ export function sanitizeConfig(raw: unknown): Partial<TeamConfig> {
   if (r.planner === 'auto' || isAgent(r.planner)) out.planner = r.planner
   if (typeof r.localModel === 'string' && /^[\w.:/-]{1,80}$/.test(r.localModel)) out.localModel = r.localModel
   if (typeof r.codexModel === 'string' && /^[\w.:-]{1,60}$/.test(r.codexModel)) out.codexModel = r.codexModel
+  if (typeof r.bypassPermissions === 'boolean') out.bypassPermissions = r.bypassPermissions
   if (r.claudeEffort === 'low' || r.claudeEffort === 'medium' || r.claudeEffort === 'high' || r.claudeEffort === 'xhigh' || r.claudeEffort === 'max') out.claudeEffort = r.claudeEffort
   if (typeof r.claudeModel === 'string' && /^[\w.:\[\]-]{1,60}$/.test(r.claudeModel)) out.claudeModel = r.claudeModel
   const par = num(r.maxParallelPerAgent, 1, 4)
