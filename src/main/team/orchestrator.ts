@@ -912,7 +912,8 @@ export class TeamOrchestrator {
 
       const notes: string[] = []
       const total = await changedSince(wt, run.baseCommit).catch(() => [])
-      if (run.config.finalReview && run.config.review === 'cross' && total.length) {
+      const parts = run.tasks.filter((t) => t.status === 'done' && t.kind === 'build').length
+      if (run.config.finalReview && (run.config.finalReview === true || parts >= 3) && run.config.review === 'cross' && total.length) {
         const reviewer: AgentName = live.available.includes('claude') ? 'claude' : 'codex'
         const t = this.virtualTask(run, 'final', 'Final review', reviewer)
         const rr = await this.agentRun(run, t, reviewer, 'final-review', finalReviewPrompt(run, await diffText(wt, run.baseCommit)), false, wt)

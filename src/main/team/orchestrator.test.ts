@@ -168,6 +168,17 @@ describe('team orchestrator', () => {
     expect((await x.orch.undoApply(run.id)).message).toMatch(/Already/)
   })
 
+  it('skips the final review on a small run and does it on a bigger one', async () => {
+    const small = h({ plan: { tasks: [T('a')] } })
+    const r1 = await small.orch.start(small.proj, 'small')
+    await until(small.orch, r1.id, (r) => r.status === 'awaiting_approval')
+    expect(small.calls.some((c) => c.kind === 'final')).toBe(false)
+    const big = h({ plan: { tasks: [T('a'), T('b'), T('c')] } })
+    const r2 = await big.orch.start(big.proj, 'big')
+    await until(big.orch, r2.id, (r) => r.status === 'awaiting_approval')
+    expect(big.calls.some((c) => c.kind === 'final')).toBe(true)
+  })
+
   it('sends a failed review back to the author, who resumes the same session', async () => {
     const x = h({ plan: { tasks: [T('a', { agent: 'codex' })] }, reviews: { t1: ['FAIL', 'PASS'] } })
     const run = await x.orch.start(x.proj, 'one thing')
@@ -296,7 +307,7 @@ describe('team orchestrator', () => {
     }
     void base
     const verify = `node -e "process.exit(require('fs').existsSync('fixed.txt')?0:1)"`
-    const run = await x.orch.start(x.proj, 'final review fixes', { verify, maxVerifyRounds: 0 })
+    const run = await x.orch.start(x.proj, 'final review fixes', { verify, maxVerifyRounds: 0, finalReview: true })
     const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
     const checks = x.events.filter((e) => e.type === 'verify')
     expect(checks.map((c: any) => c.ok)).toEqual([false, true]) // failed first, then re-run after the fix and passed

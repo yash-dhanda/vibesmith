@@ -32,7 +32,7 @@ export function sanitizeConfig(raw: unknown): Partial<TeamConfig> {
   const ver = num(r.maxVerifyRounds, 0, 4)
   if (ver !== undefined) out.maxVerifyRounds = ver
   if (r.review === 'cross' || r.review === 'off') out.review = r.review
-  if (typeof r.finalReview === 'boolean') out.finalReview = r.finalReview
+  if (typeof r.finalReview === 'boolean' || r.finalReview === 'auto') out.finalReview = r.finalReview
   if (typeof r.allowSubtasks === 'boolean') out.allowSubtasks = r.allowSubtasks
   if (r.codexMode === 'exec' || r.codexMode === 'app-server') out.codexMode = r.codexMode
   const cap = num(r.maxLimitPercent, 0, 100)

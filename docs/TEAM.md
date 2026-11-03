@@ -80,4 +80,4 @@ Forge only uses the two subscriptions: Claude Code signed in with a Claude accou
 - **Claude Code** runs with `--setting-sources project,local`: the user's personal hooks, plugins, global CLAUDE.md and extra MCP servers are not loaded (a project's own CLAUDE.md and settings still are). Measured on the same small task: 207k to 98k input tokens (about -53%), and the team agents no longer pick up personal styles from global hooks.
 - **Codex** starts without the apps, browser, computer-use, image and plugin tool sets (`--disable apps browser_use computer_use in_app_browser image_generation plugins hooks ...`): a coding task never uses them, and their descriptions are sent with every conversation.
 - Before a run Forge reads the ChatGPT plan allowance (free) and leaves Codex out when the 5-hour or weekly window is at 80%.
-- Reviews are the other agent's cost: turn them off per run (`review: 'off'`) for throwaway work.
+- Reviews are the other agent's cost: turn them off per run (`review: 'off'`) for throwaway work. The final review of the whole result (`finalReview`, default `'auto'`) only runs for runs of 3 or more tasks.

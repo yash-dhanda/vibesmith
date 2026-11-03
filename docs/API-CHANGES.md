@@ -173,3 +173,5 @@ Typing and growing files are not written to the log; finished text, tool results
 
 **Desktop notifications for team runs**
 - While the window is not focused (and notifications are on in settings), Forge shows a system notification when a team run needs an answer (a pending approval other than the final one), is ready to review, fails, or stops for a reason other than the user's own pause. Clicking it focuses the window and sends `onTeamFocus(runId)`: open that run.
+
+**Config change:** `TeamConfig.finalReview` is now `true | false | 'auto'` (default `'auto'`: only runs of 3 or more build tasks get the final whole-result review, to save plan usage). A UI toggle can keep writing booleans; offer "Automatic" as a third state.

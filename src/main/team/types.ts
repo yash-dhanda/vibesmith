@@ -74,7 +74,7 @@ export type TeamConfig = {
   maxFixRounds: number
   maxVerifyRounds: number
   review: 'cross' | 'off'
-  finalReview: boolean
+  finalReview: boolean | 'auto' // auto: only for runs of 3 or more tasks, where parts written by different agents have to fit together
   verify?: string | null // null = none, undefined = detect from the project
   allowSubtasks: boolean
   budget: Budget
@@ -82,7 +82,7 @@ export type TeamConfig = {
   maxLimitPercent: number // pause when a subscription's short-window allowance is this used (0 = never)
 }
 
-export const DEFAULT_CONFIG: TeamConfig = { planner: 'auto', codexModel: '', maxParallelPerAgent: 2, maxFixRounds: 3, maxVerifyRounds: 2, review: 'cross', finalReview: true, allowSubtasks: true, budget: { maxTasks: 12 }, codexMode: 'app-server', maxLimitPercent: 80 }
+export const DEFAULT_CONFIG: TeamConfig = { planner: 'auto', codexModel: '', maxParallelPerAgent: 2, maxFixRounds: 3, maxVerifyRounds: 2, review: 'cross', finalReview: 'auto', allowSubtasks: true, budget: { maxTasks: 12 }, codexMode: 'app-server', maxLimitPercent: 80 }
 
 export type RunFinal = { report: string; files: Task['changed']; verifyOk: boolean | null; verifyOutput: string; reviewNotes: string[] }
 
