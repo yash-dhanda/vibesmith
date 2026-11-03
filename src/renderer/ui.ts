@@ -10,10 +10,18 @@ export const h = (tag: string, cls = '', text = '') => {
 
 export const cleanErr = (e: unknown) => String((e as Error).message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
 
-export function toast(msg: string, ms = 1800) {
-  const t = h('div', 'toast', msg)
+export function toast(msg: string, ms = 1800, action?: { label: string; run: () => void }) {
+  const t = h('div', 'toast' + (action ? ' act' : ''), msg)
+  if (action) {
+    const b = h('button', 'tbtn', action.label)
+    b.onclick = () => {
+      t.remove()
+      action.run()
+    }
+    t.append(b)
+  }
   $('toasts').append(t)
-  setTimeout(() => t.remove(), ms)
+  setTimeout(() => t.remove(), action ? Math.max(ms, 6000) : ms)
 }
 
 export async function copy(text: string, what = 'Copied') {

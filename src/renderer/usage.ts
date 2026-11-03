@@ -1,5 +1,6 @@
 import type { UsageSummary } from '../preload'
 import { formatRate, formatTokens } from './format'
+import { icon } from './icons'
 import { $, h } from './ui'
 
 let last: UsageSummary | null = null
@@ -8,7 +9,7 @@ export function setUsage(u: UsageSummary) {
   last = u
   const total = u.allTime.input + u.allTime.output
   const badge = $('usage-badge')
-  badge.querySelector('.u-main')!.textContent = `⚡ ${formatTokens(total)} tokens`
+  badge.querySelector('.u-main')!.replaceChildren(icon('bolt', 'sm'), document.createTextNode(`${formatTokens(total)} tokens`))
   const top = u.byModel.find((m) => m.avgTps > 0)
   const today = u.today.input + u.today.output
   badge.querySelector('.u-sub')!.textContent = total ? `${formatTokens(today)} today${top ? ` · ${formatRate(top.avgTps)} tok/s` : ''}` : 'no usage yet'

@@ -1,15 +1,16 @@
 import { getCustomIds, loadModels, setCustomIds } from './models'
 import { $, MINUTE_CHOICES, STEP_CHOICES, agentLimits, cleanErr, h, numCtxPref, setThemePref, themePref, toast, type ThemePref } from './ui'
+import { icon, type IconName } from './icons'
 import { renderUsage } from './usage'
 
 export type Page = 'general' | 'models' | 'agent' | 'usage' | 'shortcuts' | 'about'
-const PAGES: [Page, string, string][] = [
-  ['general', '◐', 'General'],
-  ['models', '◈', 'Models'],
-  ['agent', '⚙', 'Agent'],
-  ['usage', '⚡', 'Usage'],
-  ['shortcuts', '⌘', 'Shortcuts'],
-  ['about', 'ⓘ', 'About'],
+const PAGES: [Page, IconName, string][] = [
+  ['general', 'sliders', 'General'],
+  ['models', 'cube', 'Models'],
+  ['agent', 'bolt', 'Agent'],
+  ['usage', 'chart', 'Usage'],
+  ['shortcuts', 'keyboard', 'Shortcuts'],
+  ['about', 'info', 'About'],
 ]
 const TITLES: Record<Page, string> = { general: 'General', models: 'Models', agent: 'Agent', usage: 'Usage', shortcuts: 'Keyboard shortcuts', about: 'About Forge' }
 
@@ -266,11 +267,22 @@ let current: Page = 'general'
 let body: HTMLElement | null = null
 let headTitle: HTMLElement | null = null
 
+function skeleton(): HTMLElement {
+  const w = h('div')
+  w.append(h('div', 'skel skel-title'))
+  const box = h('div', 'sbox')
+  for (let i = 0; i < 3; i++) box.append(h('div', 'skel skel-row'))
+  w.append(box)
+  return w
+}
+
 async function rerender() {
   if (!body) return
   const scroll = body.scrollTop
   const fresh = h('div')
+  const slow = setTimeout(() => body?.replaceChildren(skeleton()), 120) // only if the page takes a moment
   await BUILD[current](fresh)
+  clearTimeout(slow)
   body.replaceChildren(...fresh.childNodes)
   body.scrollTop = scroll
 }
@@ -287,18 +299,20 @@ export async function openSettings(page: Page = 'general') {
   const dlg = $<HTMLDialogElement>('settings')
   const nav = h('nav', 'set-nav')
   nav.append(h('h2', '', 'Settings'))
-  for (const [id, icon, label] of PAGES) {
+  for (const [id, iconName, label] of PAGES) {
     const b = h('button')
     b.dataset.page = id
-    b.append(h('span', 'ic', icon), document.createTextNode(label))
+    b.append(icon(iconName), document.createTextNode(label))
     b.onclick = () => show(id)
     nav.append(b)
   }
   const main = h('section', 'set-main')
   const head = h('div', 'set-head')
   headTitle = h('h3')
-  const close = h('button', 'icon-btn', '✕')
+  const close = h('button', 'icon-btn')
+  close.append(icon('x'))
   close.title = 'Close (Esc)'
+  close.setAttribute('aria-label', 'Close settings')
   close.onclick = () => dlg.close()
   head.append(headTitle, close)
   body = h('div', 'set-body')

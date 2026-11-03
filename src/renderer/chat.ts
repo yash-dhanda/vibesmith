@@ -1,5 +1,6 @@
 import type { AgentEvent, ChatListItem, Mode, TranscriptItem } from '../preload'
 import { exportMarkdown, folderName, formatRate, formatTokens, matchesQuery, md, toolTarget, toolVerb } from './format'
+import { icon } from './icons'
 import { renderHistory } from './history'
 import { initModels, noModels, selectedModel } from './models'
 import { openSettings } from './settings'
@@ -112,27 +113,35 @@ function setUsageChips(ev: Extract<AgentEvent, { type: 'usage' }>) {
 }
 
 // ---- empty state ----
-const SUGGESTIONS = ['Build a Telegram bot', 'Make a simple website', 'Explain this project', 'Find and fix bugs']
+const STARTERS: { title: string; hint: string }[] = [
+  { title: 'Build a Telegram bot', hint: 'Creates the files, then asks for what it still needs' },
+  { title: 'Make a simple website', hint: 'HTML, CSS and a little JavaScript, ready to open' },
+  { title: 'Explain this project', hint: 'Reads the folder and tells you how it works' },
+  { title: 'Find and fix bugs', hint: 'Runs your tests and repairs what fails' },
+]
 
 function showEmpty() {
   emptyEl = h('div', 'empty')
-  emptySub = h('div', '')
+  emptySub = h('div', 'sub')
   emptyEl.append(h('h2', '', 'What are we building?'), emptySub)
-  const chips = h('div', 'chips')
-  for (const t of SUGGESTIONS) {
-    const c = h('button', 'chip', t)
-    c.onclick = () => {
-      prompt.value = t
+  const list = h('div', 'suggest')
+  for (const t of STARTERS) {
+    const b = h('button')
+    const text = h('div')
+    text.append(h('div', 't', t.title), h('div', 'd', t.hint))
+    b.append(icon('arrowright'), text)
+    b.onclick = () => {
+      prompt.value = t.title
       prompt.focus()
       grow()
     }
-    chips.append(c)
+    list.append(b)
   }
-  emptyEl.append(chips)
+  emptyEl.append(list)
   if (noModels) {
     const b = h('div', 'banner')
-    b.append(h('div', '', 'No AI model found. Start Ollama and pull a model, or add an API key.'))
-    const open = h('button', '', 'Open settings')
+    b.append(h('div', '', 'No AI model found. Download one from the model library, or add an API key.'))
+    const open = h('button', 'btn', 'Open settings')
     open.onclick = () => openSettings('models')
     b.append(open)
     emptyEl.append(b)
@@ -143,7 +152,7 @@ function showEmpty() {
 
 function setProject(p: string | null) {
   project = p
-  projectBtn.textContent = p ? folderName(p) : 'Choose folder'
+  projectBtn.replaceChildren(icon('folder', 'sm'), document.createTextNode(p ? folderName(p) : 'Choose folder'))
   projectBtn.title = hasMessages ? `This chat works in ${p}` : (p ?? 'Choose the folder the agent works in')
   projectBtn.classList.toggle('need', !p)
   projectBtn.disabled = hasMessages
@@ -153,7 +162,7 @@ function setProject(p: string | null) {
 function setRunning(on: boolean) {
   running = on
   sendBtn.classList.toggle('stop', on)
-  sendBtn.textContent = on ? '■' : '↑'
+  sendBtn.replaceChildren(icon(on ? 'stop' : 'arrowup'))
   sendBtn.title = on ? 'Stop (Esc)' : 'Send'
   if (on) startLive()
   else {
@@ -186,7 +195,9 @@ function ensureGroup(): Group {
   const head = h('button', 'steps-head')
   const dot = h('span', 'dot run')
   const label = h('span', 'steps-label', 'Working…')
-  head.append(dot, label, h('span', 'chev', '›'))
+  const chev = h('span', 'chev')
+  chev.append(icon('chevron', 'sm'))
+  head.append(dot, label, chev)
   const body = h('div', 'steps-body')
   body.hidden = true
   head.onclick = () => {
@@ -535,7 +546,6 @@ async function newChat() {
 }
 
 async function removeChat(id: string) {
-  if (!confirm('Delete this chat? This cannot be undone.')) return
   try {
     await window.forge.chatsDelete(id)
     if (id === activeId) await newChat()
@@ -589,7 +599,7 @@ function moreMenu() {
         if (await window.forge.saveText(`${title.replace(/[^\w.-]+/g, '-').slice(0, 40) || 'chat'}.md`, asMarkdown())) toast('Exported')
       },
     },
-    ...(me ? [{ label: 'Rename', run: startTitleEdit }, { label: 'Delete chat', danger: true, run: () => removeChat(me.id) }] : []),
+    ...(me ? [{ label: 'Rename', run: startTitleEdit }, { label: 'Delete chat', danger: true, run: () => toast(`Delete “${me.title}”? This cannot be undone.`, 6000, { label: 'Delete', run: () => removeChat(me.id) }) }] : []),
   ])
 }
 

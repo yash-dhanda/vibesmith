@@ -6,6 +6,9 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { initChat } from './chat'
 import { applyTheme } from './ui'
+import { hydrateIcons } from './icons'
+import '@fontsource-variable/geist/index.css'
+import '@fontsource-variable/geist-mono/index.css'
 
 declare global {
   interface Window {
@@ -16,7 +19,11 @@ declare global {
 self.MonacoEnvironment = { getWorker: () => new editorWorker() }
 
 const editor = monaco.editor.create(document.getElementById('editor')!, {
-  theme: 'vs-dark',
+  theme: 'vs-dark', // replaced by the 'forge' theme once the tokens are read
+  fontFamily: "'Geist Mono Variable', ui-monospace, Menlo, Consolas, monospace",
+  fontSize: 13,
+  minimap: { enabled: false },
+  scrollBeyondLastLine: false,
   automaticLayout: true,
   model: null,
 })
@@ -181,7 +188,7 @@ try {
   if (localStorage.getItem('forge.ws') === '1') setWorkspace(true)
 } catch {}
 
-const term = new Terminal({ fontSize: 13, theme: { background: '#1e1e1e' }, cursorBlink: true })
+const term = new Terminal({ fontSize: 13, fontFamily: "'Geist Mono Variable', ui-monospace, Menlo, Consolas, monospace", cursorBlink: true })
 const fit = new FitAddon()
 term.loadAddon(fit)
 term.open(document.getElementById('term')!)
@@ -199,11 +206,28 @@ async function startTerminal() {
   await window.forge.termSpawn(term.cols, term.rows)
 }
 
-// The editor and terminal follow the app theme (dark, light or system).
+// The editor and terminal follow the app theme and take their colours from the same tokens as the rest of the UI.
+const token = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 function paintTheme() {
   const dark = document.documentElement.dataset.theme !== 'light'
-  monaco.editor.setTheme(dark ? 'vs-dark' : 'vs')
-  term.options.theme = dark ? { background: '#1e1e1e', foreground: '#d4d4d4' } : { background: '#ffffff', foreground: '#1c1c21', cursor: '#1c1c21', selectionBackground: '#cfd3ff' }
+  monaco.editor.defineTheme('forge', {
+    base: dark ? 'vs-dark' : 'vs',
+    inherit: true,
+    rules: [],
+    colors: {
+      'editor.background': token('--bg'),
+      'editor.foreground': token('--text'),
+      'editorLineNumber.foreground': token('--faint'),
+      'editorLineNumber.activeForeground': token('--muted'),
+      'editor.lineHighlightBackground': token('--panel'),
+      'editorCursor.foreground': token('--accent'),
+      'editor.selectionBackground': token('--accent') + '44',
+      'editorWidget.background': token('--panel'),
+      'editorGutter.background': token('--bg'),
+    },
+  })
+  monaco.editor.setTheme('forge')
+  term.options.theme = { background: token('--term-bg'), foreground: token('--text'), cursor: token('--accent'), selectionBackground: token('--accent') + '44' }
 }
 window.addEventListener('forge-theme', paintTheme)
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
@@ -211,4 +235,5 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     if (localStorage.getItem('forge.theme') === 'system') applyTheme('system')
   } catch {}
 })
+hydrateIcons()
 applyTheme()

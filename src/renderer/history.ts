@@ -1,5 +1,6 @@
 import type { ChatListItem } from '../preload'
 import { folderName, timeAgo, groupOf } from './format'
+import { icon } from './icons'
 import { h } from './ui'
 
 const list = document.getElementById('chat-list')!
@@ -29,10 +30,24 @@ export function renderHistory(chats: ChatListItem[], activeId: string, query: st
     row.append(title)
     const sub = h('span', 's', c.status === 'running' ? 'Working…' : c.status === 'waiting' ? 'Needs your approval' : `${folderName(c.project)} · ${timeAgo(c.updatedAt)}`)
     if (c.status === 'waiting') sub.style.color = 'var(--warn)'
-    const x = h('button', 'x', '✕')
+    const x = h('button', 'x')
+    x.append(icon('x', 'sm'))
     x.title = 'Delete chat'
+    // Two clicks, no native popup: the first turns the button into "Delete?", the second deletes.
+    let armed: ReturnType<typeof setTimeout> | null = null
     x.onclick = (e) => {
       e.stopPropagation()
+      if (!armed) {
+        x.classList.add('confirm')
+        x.replaceChildren(document.createTextNode('Delete?'))
+        armed = setTimeout(() => {
+          armed = null
+          x.classList.remove('confirm')
+          x.replaceChildren(icon('x', 'sm'))
+        }, 3000)
+        return
+      }
+      clearTimeout(armed)
       handlers.remove(c.id)
     }
     item.append(row, sub, x)
