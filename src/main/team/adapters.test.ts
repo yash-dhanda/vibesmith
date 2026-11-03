@@ -17,7 +17,8 @@ const bin = (name: string, body: string) => {
 }
 const link: TeamLink = { sock: '/tmp/x.sock', token: 'tok', runId: 'r1', taskId: 't1', agent: 'claude', script: '/app/team-mcp.js', node: '/app/forge' }
 
-describe('claude adapter, as started', () => {
+// stand-in binaries are shebang scripts: POSIX only
+describe.skipIf(process.platform === 'win32')('claude adapter, as started', () => {
   const fake = bin('claude', `
     out({type:'system',subtype:'init',session_id:'S1'});
     out({type:'result',is_error:false,session_id:'S1',result:JSON.stringify({argv,stdin,key:env.ANTHROPIC_API_KEY??null,nested:env.CLAUDECODE??null,fromLink:env.FORGE_TEAM_SOCK??null,timeout:env.MCP_TOOL_TIMEOUT??null}),usage:{}});`)
@@ -51,7 +52,7 @@ describe('claude adapter, as started', () => {
   })
 })
 
-describe('codex adapter, as started', () => {
+describe.skipIf(process.platform === 'win32')('codex adapter, as started', () => {
   it('exec: pins the model, reads the prompt from stdin, attaches the team server and the lean tool set', async () => {
     const fake = bin('codex', `
       out({type:'thread.started',thread_id:'T9'});

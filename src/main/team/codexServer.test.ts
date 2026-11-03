@@ -32,7 +32,8 @@ rl.on('line',(l)=>{const m=JSON.parse(l);
  else if(m.method==='turn/steer'){ steered=m.params.input[0].text+'|'+m.params.expectedTurnId; out({id:m.id,result:{turnId:'U1'}}); }
 });`
 
-describe('codex app-server adapter', () => {
+// the stand-in `codex` is a shebang script: POSIX only
+describe.skipIf(process.platform === 'win32')('codex app-server adapter', () => {
   it('maps items, approvals, usage deltas and plan limits, and answers the approval it was given', async () => {
     const evs: TeamEvent[] = []
     const asked: string[] = []
