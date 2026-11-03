@@ -286,7 +286,14 @@ function changesCard(ev: Extract<AgentEvent, { type: 'changes' }>) {
   const stat = h('span', 'stat')
   stat.append(h('span', 'plus', `+${sum('added')}`), document.createTextNode(' '), h('span', 'minus', `−${sum('removed')}`))
   const undo = h('button', 'undo', 'Undo') as HTMLButtonElement
-  head.append(title, stat, undo)
+  const page = ev.files.find((f) => f.status !== 'deleted' && /\.html?$/i.test(f.path))
+  if (page) {
+    const open = h('button', 'undo')
+    open.append(icon('globe', 'sm'), document.createTextNode('Open page'))
+    open.title = `Open ${page.path} in your browser`
+    open.onclick = () => window.forge.openPath(activeId, page.path).catch((e) => toast(cleanErr(e), 4000))
+    head.append(title, stat, open, undo)
+  } else head.append(title, stat, undo)
   card.append(head)
   for (const f of ev.files) {
     const row = h('button', 'file-row')
@@ -600,6 +607,7 @@ function moreMenu() {
         if (await window.forge.saveText(`${title.replace(/[^\w.-]+/g, '-').slice(0, 40) || 'chat'}.md`, asMarkdown())) toast('Exported')
       },
     },
+    ...(project ? [{ label: 'Open project folder', run: () => window.forge.openFolder(activeId).catch((e) => toast(cleanErr(e), 4000)) }] : []),
     ...(me ? [{ label: 'Rename', run: startTitleEdit }, { label: 'Delete chat', danger: true, run: () => toast(`Delete “${me.title}”? This cannot be undone.`, 6000, { label: 'Delete', run: () => removeChat(me.id) }) }] : []),
   ])
 }

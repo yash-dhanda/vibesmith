@@ -397,3 +397,4 @@ body::before { content: ''; position: fixed; inset: 0; pointer-events: none; z-i
 .dl-row { display: grid; grid-template-columns: minmax(0, 190px) minmax(0, 1fr); align-items: center; gap: 14px; }
 .dl-name { font: 12.5px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dl-row .pull { min-width: 0; }
+.undo { display: inline-flex; align-items: center; gap: 6px; }

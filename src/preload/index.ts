@@ -61,6 +61,8 @@ const api = {
   // misc
   saveText: (name: string, text: string): Promise<boolean> => ipcRenderer.invoke('save:text', name, text),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke('open:external', url),
+  openPath: (chatId: string, rel: string): Promise<void> => ipcRenderer.invoke('open:path', chatId, rel),
+  openFolder: (chatId: string): Promise<void> => ipcRenderer.invoke('open:folder', chatId),
   // workspace (files, editor, terminal)
   list: (dir: string): Promise<{ name: string; dir: boolean }[]> => ipcRenderer.invoke('fs:list', dir),
   read: (file: string): Promise<string> => ipcRenderer.invoke('fs:read', file),

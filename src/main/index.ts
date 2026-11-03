@@ -5,7 +5,8 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { getRoot, inRoot, setRoot } from './project'
+import { getRoot, inRoot, resolveIn, setRoot } from './project'
+import { isPreviewable } from './preview'
 import { runVerify } from './agent/commands'
 import { runAgent, SYSTEM_PROMPT, type AgentEvent, type Mode } from './agent/loop'
 import { ToolBox } from './agent/tools'
@@ -186,6 +187,24 @@ ipcMain.handle('save:text', async (_e, name: string, text: string) => {
 
 ipcMain.handle('open:external', (_e, url: string) => {
   if (/^https?:\/\//i.test(url)) return shell.openExternal(url) // never file: or custom schemes
+})
+
+// Open something the agent built: a page in the browser, or the project folder. Always inside the chat's own folder.
+const chatRoot = (chatId: string) => {
+  const root = sessions.get(chatId)?.chat.project ?? store.load(chatId)?.project ?? getRoot()
+  if (!root || !existsSync(root)) throw new Error('This chat has no folder to open.')
+  return root
+}
+ipcMain.handle('open:path', async (_e, chatId: string, rel: string) => {
+  if (!isPreviewable(rel)) throw new Error('Forge only opens pages, images and documents this way.')
+  const abs = resolveIn(chatRoot(chatId), rel) // throws if the path leaves the folder
+  if (!existsSync(abs)) throw new Error(`${rel} does not exist any more.`)
+  const err = await shell.openPath(abs)
+  if (err) throw new Error(err)
+})
+ipcMain.handle('open:folder', async (_e, chatId: string) => {
+  const err = await shell.openPath(chatRoot(chatId))
+  if (err) throw new Error(err)
 })
 
 // ---- the agent ----
