@@ -76,7 +76,7 @@ export function parsePlan(text: string, available: AgentName[], maxTasks = 12): 
 
 const TOOLS = `You are one member of a team of coding agents, each working in its own copy of the project. Team tools (MCP server "forge_team") let you talk to the others:
 - team_post(to, kind, body): tell a teammate ("claude", "codex" or "all") something they need: a finding, a question, a decision.
-- team_inbox(): read messages sent to you.
+- team_inbox(): read messages sent to you. Call it when you start and again before you finish: teammates and the user may have sent something new.
 - team_context(query): look up earlier decisions, problems and notes about this project.
 - team_decision(text): record a decision others must follow (a name, an API shape, a library choice).
 - team_handoff(notes): at the end, say what the next task needs to know (files, names, how to run, what is left).

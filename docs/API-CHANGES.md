@@ -111,3 +111,33 @@ A sandboxed native view (Electron `WebContentsView`) laid over the window: no Fo
 
 - `updateCheck(): Promise<{ available, version?, url?, notes? }>` asks GitHub for the latest published release (not a draft or prerelease) and compares it with the running version. Any failure (offline, rate limit, no release yet) returns `{ available: false }`.
 - Call it once a few seconds after start and show a quiet "Forge 0.2.0 is available" with the release notes and a button that calls `openExternal(url)`. Forge never downloads or installs by itself.
+
+## 2026-11-03 — team mode (Claude Code + Codex as one team), backend only
+
+No screens yet. Design and findings: `docs/TEAM.md`. All hooks are additive. Types: `RunSummary` (src/main/team/service.ts), `Run`, `Task`, `RunEvent`, `TeamConfig` (src/main/team/types.ts).
+
+**Hooks** (`window.forge.*`)
+
+| Hook | Does |
+|---|---|
+| `teamHealth()` | `{ agents: [{agent, ok, detail, fix?, version?}], codexModels }`. Show `fix` verbatim when an agent is not ready |
+| `teamStart(goal, config?)` | Starts a run in the current project folder; returns a `RunSummary` at once, then follow `onTeamEvent`. Refuses a second active run in the same project, and a non-git folder that has files |
+| `teamList()` / `teamGet(id)` | Summaries / the full `Run` (tasks, messages, decisions, approvals, usage, final report) |
+| `teamEvents(id, limit?)` | `[{t, ev}]` everything the live screen showed, to rebuild it after a restart |
+| `teamDiff(id, taskId?)` | Unified diff of one task, or of everything merged so far |
+| `teamPause(id, hard?)` / `teamResume(id)` / `teamCancel(id)` | Soft pause finishes what is running; `hard` kills the agents (they resume their sessions later). Cancel removes the worktrees |
+| `teamAnswer(id, approvalId, allow, note?)` | Answers an approval card (agent asked, risky command, review override, budget). Returns false if the agent is no longer waiting |
+| `teamSteer(id, text, to?)` | Tells the team something mid-run; each agent reads it at the start of its next turn |
+| `teamRetryTask` / `teamSkipTask` / `teamExtendBudget` | Recovery controls |
+| `teamApply(id)` / `teamReject(id)` | The final gate. Apply puts the result in the user's folder as uncommitted changes and returns a checkpoint id, so the normal Undo works |
+| `onTeamEvent(cb)` | Live `RunEvent`s |
+
+**`RunEvent`**: `run {status, reason?}`, `plan {summary, tasks}`, `task {task}` (status, phase work/review/fix/merge/conflict), `agent {taskId, phase, ev}` (`ev` is the normalised agent event: `text`, `tool`, `tool_result`, `usage`, `note`, `error`, `done`), `message` (agent-to-agent, review verdicts, handoffs, user steering), `approval`, `verify`, `usage`, `final {report, files, verifyOk}`.
+
+**Run status**: `planning → running ⇄ paused → verifying → awaiting_approval → done`, or `failed` / `cancelled` / `interrupted` (found half-done after a restart; the user presses resume).
+
+**Things the screen must do**
+- Approval cards (`run.approvals` with `status: 'pending'`) block an agent until answered. Show them prominently; `kind` is `action`, `permission`, `review_override`, `budget` or `final`.
+- A `paused` run with a `pausedReason` is waiting for the user (an agent is not signed in, a task failed, a budget was hit). Show the reason and the matching control.
+- The final report is Markdown (`run.final.report`).
+- Nothing touches the user's folder until `teamApply`.

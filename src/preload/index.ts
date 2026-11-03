@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { AgentEvent, Mode } from '../main/agent/loop'
 import type { ChatListItem, ChatStatus, TranscriptItem } from '../main/chatStore'
 import type { UsageSummary } from '../main/usageStore'
+import type { RunSummary } from '../main/team/service'
+import type { Run as TeamRun, RunEvent as TeamRunEvent, TeamConfig } from '../main/team/types'
 
 export type CatalogItem = { id: string; name: string; sizeGB: number; q: number; tags: string[]; blurb: string; fit: 'gpu' | 'partial' | 'cpu' | 'too-big'; best: boolean; installed: boolean }
 export type InstalledModel = { name: string; sizeBytes: number; modified: string; params: string; quant: string; loaded: boolean }
@@ -73,6 +75,24 @@ const api = {
   prefsSet: (key: 'notify', value: boolean): Promise<void> => ipcRenderer.invoke('prefs:set', key, value),
   // misc
   saveText: (name: string, text: string): Promise<boolean> => ipcRenderer.invoke('save:text', name, text),
+  // team mode: Claude Code + Codex as one team (docs/TEAM.md)
+  teamHealth: (): Promise<{ agents: { agent: 'claude' | 'codex'; ok: boolean; detail: string; fix?: string; version?: string }[]; codexModels: string[] }> => ipcRenderer.invoke('team:health'),
+  teamStart: (goal: string, config?: Partial<TeamConfig>): Promise<RunSummary> => ipcRenderer.invoke('team:start', goal, config),
+  teamList: (): Promise<RunSummary[]> => ipcRenderer.invoke('team:list'),
+  teamGet: (id: string): Promise<TeamRun | null> => ipcRenderer.invoke('team:get', id),
+  teamEvents: (id: string, limit?: number): Promise<{ t: number; ev: TeamRunEvent }[]> => ipcRenderer.invoke('team:events', id, limit),
+  teamDiff: (id: string, taskId?: string): Promise<string> => ipcRenderer.invoke('team:diff', id, taskId),
+  teamPause: (id: string, hard?: boolean): Promise<void> => ipcRenderer.invoke('team:pause', id, hard),
+  teamResume: (id: string): Promise<void> => ipcRenderer.invoke('team:resume', id),
+  teamCancel: (id: string): Promise<void> => ipcRenderer.invoke('team:cancel', id),
+  teamAnswer: (id: string, approvalId: string, allow: boolean, note?: string): Promise<boolean> => ipcRenderer.invoke('team:answer', id, approvalId, allow, note),
+  teamSteer: (id: string, text: string, to?: 'claude' | 'codex' | 'all'): Promise<void> => ipcRenderer.invoke('team:steer', id, text, to),
+  teamRetryTask: (id: string, taskId: string): Promise<void> => ipcRenderer.invoke('team:retry-task', id, taskId),
+  teamSkipTask: (id: string, taskId: string): Promise<void> => ipcRenderer.invoke('team:skip-task', id, taskId),
+  teamExtendBudget: (id: string): Promise<void> => ipcRenderer.invoke('team:extend-budget', id),
+  teamApply: (id: string): Promise<{ ok: boolean; message: string; checkpoint?: string }> => ipcRenderer.invoke('team:apply', id),
+  teamReject: (id: string): Promise<void> => ipcRenderer.invoke('team:reject', id),
+  onTeamEvent: (cb: (ev: TeamRunEvent) => void) => ipcRenderer.on('team:event', (_e, ev: TeamRunEvent) => cb(ev)),
   updateCheck: (): Promise<{ available: boolean; version?: string; url?: string; notes?: string }> => ipcRenderer.invoke('update:check'),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke('open:external', url),
   openPath: (chatId: string, rel: string): Promise<void> => ipcRenderer.invoke('open:path', chatId, rel),

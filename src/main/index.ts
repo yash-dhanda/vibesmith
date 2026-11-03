@@ -28,6 +28,7 @@ import { AttachmentStore, inlineText } from './attachments'
 import { getVerify, setVerify } from './settings'
 import { registerLibrary } from './library'
 import { UsageStore } from './usageStore'
+import { createTeamService, sanitizeConfig, type TeamService } from './team/service'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -581,8 +582,46 @@ app.on('second-instance', () => {
   win?.focus()
 })
 
+// ---- team mode: Claude Code and Codex working as one team, each on its own git branch (see docs/TEAM.md) ----
+let team: TeamService | null = null
+const teamSvc = (): TeamService =>
+  (team ??= createTeamService({
+    userData: app.getPath('userData'),
+    mcpScript: join(here, 'team-mcp.js').replace('app.asar' + (process.platform === 'win32' ? '\\' : '/'), 'app.asar.unpacked' + (process.platform === 'win32' ? '\\' : '/')),
+    emit: (ev) => win?.webContents.send('team:event', ev),
+    projectNotes: (p) => {
+      const b = briefStore().get(p)
+      return { brief: [b.name, b.description].filter(Boolean).join(': '), rules: b.rules }
+    },
+  }))
+const teamId = (v: unknown): string => {
+  if (typeof v !== 'string' || !/^[\w-]{1,60}$/.test(v)) throw new Error('bad id')
+  return v
+}
+ipcMain.handle('team:health', () => teamSvc().health())
+ipcMain.handle('team:start', (_e, goal: unknown, config: unknown) => {
+  const root = getRoot()
+  if (!root) throw new Error('Choose a folder to work in first.')
+  return teamSvc().start(root, String(goal ?? ''), sanitizeConfig(config))
+})
+ipcMain.handle('team:list', () => teamSvc().list())
+ipcMain.handle('team:get', (_e, id: unknown) => teamSvc().orch.get(teamId(id)))
+ipcMain.handle('team:events', (_e, id: unknown, limit?: unknown) => teamSvc().orch.events(teamId(id), typeof limit === 'number' ? Math.min(5000, Math.max(1, limit)) : 2000))
+ipcMain.handle('team:diff', (_e, id: unknown, taskId?: unknown) => teamSvc().orch.diffFor(teamId(id), typeof taskId === 'string' ? teamId(taskId) : undefined))
+ipcMain.handle('team:pause', (_e, id: unknown, hard?: unknown) => teamSvc().orch.pause(teamId(id), hard === true))
+ipcMain.handle('team:resume', (_e, id: unknown) => teamSvc().orch.resume(teamId(id)))
+ipcMain.handle('team:cancel', (_e, id: unknown) => teamSvc().orch.cancel(teamId(id)))
+ipcMain.handle('team:answer', (_e, id: unknown, approvalId: unknown, allow: unknown, note?: unknown) => teamSvc().orch.answerApproval(teamId(id), teamId(approvalId), allow === true, typeof note === 'string' ? note.slice(0, 500) : undefined))
+ipcMain.handle('team:steer', (_e, id: unknown, text: unknown, to?: unknown) => teamSvc().orch.steer(teamId(id), String(text ?? ''), to === 'claude' || to === 'codex' ? to : 'all'))
+ipcMain.handle('team:retry-task', (_e, id: unknown, taskId: unknown) => teamSvc().orch.retryTask(teamId(id), teamId(taskId)))
+ipcMain.handle('team:skip-task', (_e, id: unknown, taskId: unknown) => teamSvc().orch.skipTask(teamId(id), teamId(taskId)))
+ipcMain.handle('team:extend-budget', (_e, id: unknown) => teamSvc().orch.extendBudget(teamId(id)))
+ipcMain.handle('team:apply', (_e, id: unknown) => teamSvc().orch.approveFinal(teamId(id)))
+ipcMain.handle('team:reject', (_e, id: unknown) => teamSvc().orch.rejectFinal(teamId(id)))
+
 app.whenReady().then(() => {
   library = registerLibrary(() => win)
+  teamSvc() // also recovers runs that were interrupted by the last shutdown
   library.ensureStarted()
   store = new ChatStore(join(app.getPath('userData'), 'chats'))
   usage = new UsageStore(app.getPath('userData'))
@@ -635,6 +674,7 @@ app.whenReady().then(() => {
 })
 
 app.on('before-quit', () => {
+  team?.orch.shutdown()
   views.detachAll()
   for (const id of [...runners.keys()]) stopRunner(id)
   for (const id of [...previews.keys()]) stopPreview(id)

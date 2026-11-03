@@ -33,6 +33,7 @@ export type Task = {
   handoff: string // what the next task needs to know (recorded through the mailbox, or the summary)
   changed: { path: string; status: 'added' | 'modified' | 'deleted'; added: number; removed: number }[]
   usage: Usage
+  diff?: string // the task's change as the reviewer saw it (capped), kept for the diff view after the worktree is gone
   proposedBy?: string
   error?: string
   startedAt?: number
@@ -109,7 +110,7 @@ export type RunEvent =
   | { type: 'run'; runId: string; status: RunStatus; reason?: string }
   | { type: 'plan'; runId: string; summary: string; tasks: Task[] }
   | { type: 'task'; runId: string; task: Task }
-  | { type: 'agent'; runId: string; taskId: string; phase: TaskPhase; ev: TeamEvent }
+  | { type: 'agent'; runId: string; taskId: string; phase: TaskPhase | 'plan' | 'final-review'; ev: TeamEvent }
   | { type: 'message'; runId: string; message: Message }
   | { type: 'approval'; runId: string; approval: Approval }
   | { type: 'verify'; runId: string; command: string; ok: boolean; output: string }

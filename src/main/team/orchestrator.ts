@@ -143,14 +143,20 @@ export class TeamOrchestrator {
   async resume(runId: string) {
     const run = this.runOf(runId)
     if (!run || !['paused', 'interrupted'].includes(run.status)) return
+    const available = await this.d.available() // the user may have just signed an agent in
+    if (!available.length) return void this.setStatus(run, run.status, 'Neither Claude Code nor Codex is signed in yet.')
     let live = this.live.get(runId)
     if (!live) {
-      live = this.newLive(await this.d.available())
+      live = this.newLive(available)
       this.live.set(runId, live)
     }
+    live.available = available
     if (live.stop) (live.ctl = new AbortController()), (live.stop = null)
     live.paused = false
-    for (const t of run.tasks) if (t.status === 'interrupted') (t.status = 'queued'), (t.phase = null)
+    for (const t of run.tasks) {
+      if (t.status === 'interrupted') (t.status = 'queued'), (t.phase = null)
+      else if (t.status === 'blocked' && !/depends on failed/.test(t.error ?? '')) (t.status = 'queued'), (t.error = undefined) // blocked by a missing sign-in, which may be fixed now
+    }
     this.setStatus(run, run.tasks.length ? 'running' : 'planning')
     if (!run.tasks.length) void this.plan(run).then(() => this.pump(run)).catch((e) => this.fail(run, (e as Error).message))
     else this.pump(run)
@@ -224,6 +230,15 @@ export class TeamOrchestrator {
       await this.resume(run.id)
     } else this.touch(run)
     this.pump(run)
+  }
+
+  // The change for the diff view: one task's, or (no task) everything the team has merged so far.
+  async diffFor(runId: string, taskId?: string): Promise<string> {
+    const run = this.runOf(runId)
+    if (!run) return ''
+    const t = taskId ? run.tasks.find((x) => x.id === taskId) : undefined
+    if (t) return t.worktree && t.base ? await diffText(t.worktree, t.base, 'HEAD', 60_000).catch(() => t.diff ?? '') : (t.diff ?? '')
+    return diffText(run.integrationWorktree, run.baseCommit, 'HEAD', 120_000).catch(() => '')
   }
 
   extendBudget(runId: string, factor = 1.5) {
@@ -343,7 +358,7 @@ export class TeamOrchestrator {
     const res = await this.d.runner(agent, {
       cwd, prompt, write, resume, signal: live.ctl.signal, taskId: task.id, link: await this.linkFor(run, task, agent),
       model: agent === 'codex' ? run.config.codexModel : run.config.claudeModel,
-      onEvent: (ev) => this.out(run, { type: 'agent', runId: run.id, taskId: task.id, phase: phase as TaskPhase, ev }),
+      onEvent: (ev) => this.out(run, { type: 'agent', runId: run.id, taskId: task.id, phase, ev }),
     })
     for (const u of [run.usage[agent], task.usage]) {
       u.input += res.usage.input
@@ -567,6 +582,8 @@ export class TeamOrchestrator {
         task.changed = await changedSince(cwd, task.base!)
       }
     }
+
+    task.diff = await diffText(cwd, task.base!, 'HEAD', 60_000).catch(() => '')
 
     // ---- merge into the team branch, one at a time; a conflict is handed to an agent
     await live.merge.run(async () => {

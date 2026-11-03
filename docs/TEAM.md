@@ -1,6 +1,6 @@
 # Team mode (Claude Code + Codex as one team)
 
-Backend only so far. No UI, no IPC. Code: `src/main/team/`. Live check: `TEAM_SPIKE=1 npx vitest run --config vitest.eval.config.ts team-spike` (uses your own signed-in subscriptions, a few thousand tokens).
+Backend is complete (phases 1 to 3 below); there is no screen yet. Hooks: `docs/API-CHANGES.md`. Code: `src/main/team/`. Live check: `TEAM_SPIKE=1 npx vitest run --config vitest.eval.config.ts team-spike` (uses your own signed-in subscriptions, a few thousand tokens).
 
 ## Phase 0 findings (2026-11-03)
 
@@ -20,3 +20,35 @@ Backend only so far. No UI, no IPC. Code: `src/main/team/`. Live check: `TEAM_SP
 | `process.ts` | `runCli`: spawn, stdin prompt, idle/max/abort watchdogs, process-tree kill, `cleanEnv` |
 | `claude.ts`, `codex.ts` | Argument builders (`write` = edit or read-only), deny lists, `runClaude`, `runCodex` |
 | `health.ts` | Installed? signed in? Which Codex models? With the exact fix text |
+
+## How a run works
+
+1. **Plan.** A read-only agent (Claude when it is signed in, else Codex) looks at the project and returns a JSON plan: 1 to 8 tasks with goals, acceptance checks, dependencies and an agent each. The plan is validated (unknown agents, unknown dependencies, cycles).
+2. **Isolate.** The project is snapshotted (uncommitted work included, secrets and `node_modules` left out) into a commit. A run branch `forge/<run>` and one worktree per task live outside the project, under the app's data folder. Your folder is not touched until you approve.
+3. **Work in parallel.** Tasks whose dependencies are merged start, up to 2 per agent. Each prompt carries the goal, the task, what finished tasks handed over, unread messages, your project rules, relevant notes and problems met earlier (ranked by relevance, not the whole history).
+4. **Cross-review.** The other agent reads the task's diff and ends with `VERDICT: PASS` or `FAIL`. A fail goes back to the author's own session (so it remembers) for up to 3 rounds; after that you decide whether to merge anyway.
+5. **Merge.** One merge at a time into the run branch. A conflict is handed to an agent in the integration worktree; markers left behind abort the merge instead of committing it.
+6. **Check.** The project's test/build command (or the one you set) runs on the merged result; failures go to an agent, up to 2 rounds. Then one final review of the whole change by the other agent.
+7. **Report and approve.** A Markdown report (what each task did, files, checks, reviews, decisions, usage). You apply it, or leave it on the branch.
+
+## How the agents talk
+
+Each agent is started with the `forge_team` MCP server (`team-mcp.js`, run by the app's own Electron binary as plain node). It forwards every call over a private local socket to the orchestrator: `team_post`, `team_inbox`, `team_context`, `team_decision`, `team_handoff`, `team_request_approval`, `team_propose_subtask`, `team_tasks`, and `team_permission` (Claude Code's permission prompts are routed to the same policy and to you). Delivery is turn-based: an agent reads its inbox when it starts a turn or calls `team_inbox`; nothing interrupts a turn in progress.
+
+## Safety
+
+- Agents never push, and the user's folder changes only on Apply.
+- `policy.ts`: `git push`, `sudo`, remote changes are denied; deploys, destructive commands, network downloads, secret files and reads outside the task folder need your approval (Claude, through the permission tool; Codex, through the sandbox: workspace-write, no network, plus `team_request_approval`).
+- `.env`, keys and `node_modules` are never committed into the team branches (`.env.example` is).
+- Budgets per run: tokens, agent runs, minutes, cost; hitting one pauses the run and asks before spending 50% more.
+- A restart marks running runs `interrupted`; nothing resumes without a click.
+
+## Status
+
+| Part | State |
+|---|---|
+| Codex adapter, resume, MCP mailbox, approvals | verified live |
+| Orchestrator (all of the above) | covered by tests with scripted agents on real git; one live run with Codex as the whole team (`src/eval/team-live.eval.ts`) |
+| Claude Code adapter | built to the documented protocol, **not verified live** (CLI signed out on the dev laptop: run `claude auth login`) |
+| Codex `app-server` (live steering, native approvals) | not built: `team_request_approval` plus the sandbox cover approvals, and steering is delivered at turn boundaries |
+| Screens | not started |
