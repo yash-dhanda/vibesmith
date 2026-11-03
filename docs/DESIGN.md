@@ -15,14 +15,18 @@ Geist and Geist Mono are bundled locally. No remote fonts, assets, or renderer d
 
 | Token | Dark | Light | Purpose |
 | --- | --- | --- | --- |
-| Background | `#161513` | `#faf7f2` | Main canvas |
-| Panel | `#1c1b18` | `#f1ece4` | Quiet object surfaces |
-| Raised panel | `#24221e` | `#e8e0d5` | Controls and user messages |
-| Text | `#ece8e0` | `#211e19` | Primary information |
-| Secondary | `#b0a79a` | `#6d6256` | Supporting information |
-| Ember | `#e79a73` | `#a84420` | Intent, focus and action |
+| Background | `#1a1918` | `#fcfbf9` | Main canvas |
+| Panel | `#201f1d` | `#f5f3ef` | Sidebar, settings nav, code blocks |
+| Raised panel | `#2b2a27` | `#ece9e3` | Hover, selected rows, user messages |
+| Hairline | `#2c2b28` | `#ebe8e2` | 1px dividers and card borders |
+| Text | `#ecebe7` | `#1d1b18` | Primary information |
+| Secondary | `#a8a39a` | `#625d55` | Supporting information |
+| Faint | `#918c83` | `#6f6a60` | Meta text (still AA on the canvas) |
+| Ember | `#e38b68` | `#b4532f` | Intent, focus and action |
 
-The CSS foundation retains the existing tokens; the build-studio section refines contrast and component composition. Corners range from 5px to 18px. Thin warm borders establish hierarchy; shadows are reserved for floating surfaces and the composer.
+Chrome is flat: 1px hairlines instead of cards and drop shadows, one accent, sentence case, no all-caps eyebrows. Radii are 5-10px, 16px on the composer and dialogs. Type is 13px for UI, 14px for messages, 11.5-12px for meta. Only floating surfaces (dialogs, menus, toasts) get a shadow.
+
+**Emoji for meaning, SVG for utility.** Statuses, step kinds, section heads, nav items and compact controls use emoji (`.emo`, sized 1.05em and centred on the line); plus, x, chevrons, arrows and dots stay SVG. Every emoji-only control keeps its words in `title` and `aria-label`. Agents keep their names (Claude, Codex, Local) with a colour dot. Long text, headings, errors and form help stay as words. The UI font stacks end with Noto Color Emoji, Apple Color Emoji and Segoe UI Emoji.
 
 ## Components and behavior
 
@@ -36,7 +40,7 @@ The CSS foundation retains the existing tokens; the build-studio section refines
 
 ## Motion and performance
 
-Arrivals move only 7px over 260ms. Disclosures fade in over 180ms, controls respond in 120–180ms, and starting-point cards rise 2px on hover. Reduced-motion disables all animations and transitions. Motion indicates arrival or interaction, never fictional progress.
+Motion is transform and opacity only, 150-300ms on `cubic-bezier(.2,.8,.2,1)`. Messages, chat rows, task cards, settings groups, palette results and model rows rise 6px as they arrive, staggered a few tens of ms. Lists that redraw live (chat history, task board, run list) only animate items seen for the first time. Dialogs scale from .97 and fade in and back out (`@starting-style` plus `allow-discrete`). The sidebar, workspace and brief slide in when shown; chat and Team screens cross-fade. Toasts slide in and out, running states pulse, progress bars fill with `scaleX` and carry a sheen, skeletons use a sliding sheen, focus rings ease in, and the token count nudges when it changes. `prefers-reduced-motion: reduce` turns every animation and transition off.
 
 Chat’s entry bundle is about 89 kB unminified after build, compared with roughly 7.7 MB before the redesign. Monaco and xterm load only when Workspace is requested; no hidden terminal starts with chat. Long threads use `content-visibility: auto` with remembered intrinsic sizes, keeping all messages available to search, selection, and accessibility tools. Streaming and export continue to use the existing escaping Markdown renderer.
 
