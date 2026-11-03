@@ -16,8 +16,8 @@ describe('groupOf', () => {
 
 describe('folderName / timeAgo / matchesQuery', () => {
   it('takes the last path segment on posix and windows', () => {
-    expect(folderName('/home/yash/code/forge')).toBe('forge')
-    expect(folderName('/home/yash/code/forge/')).toBe('forge')
+    expect(folderName('/home/dev/code/forge')).toBe('forge')
+    expect(folderName('/home/dev/code/forge/')).toBe('forge')
     expect(folderName('C:\\Users\\yash\\app')).toBe('app')
     expect(folderName(null)).toBe('No folder')
   })
@@ -29,7 +29,7 @@ describe('folderName / timeAgo / matchesQuery', () => {
     expect(timeAgo(now - 2 * 86_400_000, now)).toBe('2d ago')
   })
   it('search matches the title or the folder, ignoring case', () => {
-    const c = { title: 'Telegram Bot', project: '/home/yash/code/notifier' }
+    const c = { title: 'Telegram Bot', project: '/home/dev/code/notifier' }
     expect(matchesQuery(c, 'telegram')).toBe(true)
     expect(matchesQuery(c, 'NOTIF')).toBe(true)
     expect(matchesQuery(c, 'zzz')).toBe(false)
