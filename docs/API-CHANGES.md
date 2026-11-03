@@ -106,3 +106,8 @@ A sandboxed native view (Electron `WebContentsView`) laid over the window: no Fo
 - `usage` events gain `costUsd?: number`: the estimated dollar cost of that one model call. Absent for local models and for cloud models without a known price. Sum it across a run for a total.
 - `runtime` events for cloud models gain `price?: { input, output, currency: 'USD', asOf }` (dollars per million tokens, as of a date). Show it as an estimate ("about", "~"), never as a bill.
 - Only the three Claude models Forge lists are priced. OpenAI and OpenRouter models show no cost.
+
+## 2026-11-03 — update check
+
+- `updateCheck(): Promise<{ available, version?, url?, notes? }>` asks GitHub for the latest published release (not a draft or prerelease) and compares it with the running version. Any failure (offline, rate limit, no release yet) returns `{ available: false }`.
+- Call it once a few seconds after start and show a quiet "Forge 0.2.0 is available" with the release notes and a button that calls `openExternal(url)`. Forge never downloads or installs by itself.

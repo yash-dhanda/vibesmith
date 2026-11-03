@@ -5,6 +5,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { checkForUpdate, type UpdateInfo } from './updates'
 import { PRICES_AS_OF, costOf, priceFor } from './pricing'
 import { getRoot, inRoot, resolveIn, setRoot } from './project'
 import { isPreviewable } from './preview'
@@ -553,6 +554,8 @@ ipcMain.handle('verify:set', (_e, cmd: string) => getRoot() && setVerify(getRoot
 
 ipcMain.handle('agent:models', () => listModels())
 ipcMain.handle('ollama:status', () => ollamaStatus())
+let lastUpdate: UpdateInfo = { available: false }
+ipcMain.handle('update:check', async () => (lastUpdate = await checkForUpdate(app.getVersion())))
 ipcMain.handle('app:info', () => ({ version: app.getVersion(), dataDir: app.getPath('userData'), electron: process.versions.electron, platform: process.platform }))
 ipcMain.handle('app:open-data', () => shell.openPath(app.getPath('userData')))
 ipcMain.handle('prefs:get', () => ({ notify: readState().notify !== false }))

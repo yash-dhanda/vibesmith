@@ -73,6 +73,7 @@ const api = {
   prefsSet: (key: 'notify', value: boolean): Promise<void> => ipcRenderer.invoke('prefs:set', key, value),
   // misc
   saveText: (name: string, text: string): Promise<boolean> => ipcRenderer.invoke('save:text', name, text),
+  updateCheck: (): Promise<{ available: boolean; version?: string; url?: string; notes?: string }> => ipcRenderer.invoke('update:check'),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke('open:external', url),
   openPath: (chatId: string, rel: string): Promise<void> => ipcRenderer.invoke('open:path', chatId, rel),
   previewStart: (chatId: string): Promise<{ url: string }> => ipcRenderer.invoke('preview:start', chatId),
