@@ -1,0 +1,14 @@
+{
+  "navigation": {
+    "domReady": 37.600000001490116,
+    "workspaceFetched": false
+  },
+  "perFileUndo": "restored index.html; kept styles.css",
+  "runUndo": "removed newly created styles.css",
+  "priorities": "persisted order and skip state; sent included priority only",
+  "palette": "keyboard search and action execution",
+  "workspace": "lazy loaded editor and terminal on Ctrl J",
+  "remoteEngine": "settings controls present",
+  "reducedMotion": "none",
+  "errors": []
+}

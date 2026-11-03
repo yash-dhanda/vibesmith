@@ -4,6 +4,16 @@ A desktop app that builds software for you. Describe what you want in a chat; an
 
 The editor, file tree and terminal exist but stay hidden behind the **Workspace** button. The app opens as a chat.
 
+## The build studio
+
+Your conversation sits beside a living build brief: the goal, the agent’s plan, your next-message priorities, and the files taking shape. Ctrl K finds actions, chats and models. Changes have per-file Undo; the optional Workspace keeps code and the terminal a click away.
+
+![Forge build studio in dark mode](docs/screenshots/after-project-dark.png)
+
+![Forge’s light theme](docs/screenshots/after-empty-light.png)
+
+[Design principles and verification](docs/DESIGN.md) · [Before/after screenshots](docs/screenshots/) · [Backend UI requests](docs/UI-REQUESTS.md)
+
 ## Download
 
 Installers for Linux (`.AppImage`, `.deb`) and Windows (`.exe`) are on the [Releases page](https://github.com/yash-dhanda/vibesmith/releases). They contain only the app, no AI model.
