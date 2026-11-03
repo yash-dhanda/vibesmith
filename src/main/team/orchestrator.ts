@@ -482,7 +482,7 @@ export class TeamOrchestrator {
     const open = run.tasks.filter((t) => !settled(t))
     if (!open.length && run.tasks.some((t) => t.status === 'done')) return void this.finish(run)
     if (!open.length) return void this.setStatus(run, 'done', 'Nothing was done.')
-    if (open.some((t) => t.status === 'queued')) return // waiting on a dep that is about to run
+    if (open.some((t) => t.status === 'queued' && t.deps.every((d) => settled(run.tasks.find((x) => x.id === d)!)))) return // ready, about to start
     // nothing can move: failures or blocked tasks need the user
     const bad = open.find((t) => t.status === 'failed' || t.status === 'blocked')
     live.paused = true
