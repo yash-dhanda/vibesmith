@@ -2,35 +2,82 @@
   "name": "forge",
   "version": "0.1.0",
   "main": "out/main/index.js",
-  "directories": {
-    "doc": "docs"
-  },
   "scripts": {
     "test": "vitest run",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit",
-    "eval": "vitest run --config vitest.eval.config.ts"
+    "eval": "vitest run --config vitest.eval.config.ts",
+    "dist": "electron-vite build && electron-builder",
+    "dist:linux": "electron-vite build && electron-builder --linux",
+    "dist:win": "electron-vite build && electron-builder --win"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "Desktop code editor with autonomous AI agent",
+  "author": "yash-dhanda",
+  "license": "MIT",
+  "description": "Chat-first desktop app that builds software on your PC with local or cloud AI",
   "type": "module",
   "devDependencies": {
     "@electron/rebuild": "^4.2.1",
     "@types/node": "^26.6.6",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "electron": "^45.2.1",
+    "electron-builder": "^26.18.0",
     "electron-vite": "^6.0.0",
+    "monaco-editor": "^0.57.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
     "vitest": "^5.1.0"
   },
   "dependencies": {
-    "@xterm/addon-fit": "^0.11.0",
-    "@xterm/xterm": "^6.0.0",
-    "monaco-editor": "^0.57.0",
     "node-pty": "^1.1.0",
     "undici": "^7.30.1"
+  },
+  "homepage": "https://github.com/yash-dhanda/vibesmith",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yash-dhanda/vibesmith.git"
+  },
+  "build": {
+    "appId": "dev.vibesmith.forge",
+    "productName": "Forge",
+    "copyright": "Copyright (c) 2026 yash-dhanda",
+    "directories": {
+      "buildResources": "build",
+      "output": "release"
+    },
+    "files": [
+      "out/**",
+      "build/icon.png",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "**/node_modules/node-pty/**"
+    ],
+    "npmRebuild": true,
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Development",
+      "icon": "build/icon.png",
+      "maintainer": "yash-dhanda <260124161+yashleell11-ship-it@users.noreply.github.com>",
+      "synopsis": "AI that builds software on your computer",
+      "executableName": "forge"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    },
+    "publish": null
   }
 }

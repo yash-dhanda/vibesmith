@@ -16,6 +16,15 @@ function git(cwd: string, args: string[], env: NodeJS.ProcessEnv = {}): Promise<
   })
 }
 
+export async function hasGit(): Promise<boolean> {
+  try {
+    await git(process.cwd(), ['--version'])
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function isRepo(root: string): Promise<boolean> {
   try {
     await git(root, ['rev-parse', '--show-toplevel'])

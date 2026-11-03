@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Notification, shell } from 'electron'
-import * as pty from 'node-pty'
+import type * as PtyModule from 'node-pty'
 import { homedir } from 'node:os'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { readdir, readFile, writeFile } from 'node:fs/promises'
@@ -9,7 +9,7 @@ import { getRoot, inRoot, setRoot } from './project'
 import { runVerify } from './agent/commands'
 import { runAgent, SYSTEM_PROMPT, type AgentEvent, type Mode } from './agent/loop'
 import { ToolBox } from './agent/tools'
-import { changesSince, createCheckpoint, initRepo, isRepo, undoTo, type Checkpoint } from './checkpoint'
+import { changesSince, createCheckpoint, hasGit, initRepo, isRepo, undoTo, type Checkpoint } from './checkpoint'
 import { ChatStore, compact, titleFrom, type Chat, type ChatListItem, type ChatStatus } from './chatStore'
 import { clearKey, keyStatus, setKey, type KeyProvider } from './keys'
 import { listModels, makeProvider, ollamaStatus } from './models'
@@ -34,10 +34,19 @@ ipcMain.handle('fs:read', (_e, file: string) => readFile(inRoot(file), 'utf8'))
 ipcMain.handle('fs:write', (_e, file: string, text: string) => writeFile(inRoot(file), text))
 
 // One terminal per window. It runs in the project folder; the shell itself is the user's, not jailed.
-let term: pty.IPty | null = null
-ipcMain.handle('term:spawn', (e, cols: number, rows: number) => {
+// node-pty is a native module: it is loaded on demand, so a build where it is missing still runs (without a terminal).
+let term: PtyModule.IPty | null = null
+ipcMain.handle('term:spawn', async (e, cols: number, rows: number) => {
   term?.kill()
-  term = pty.spawn(process.env.SHELL || 'bash', [], { name: 'xterm-256color', cols, rows, cwd: getRoot() ?? homedir(), env: process.env as Record<string, string> })
+  let pty: typeof PtyModule
+  try {
+    pty = await import('node-pty')
+  } catch {
+    e.sender.send('term:data', '\r\nThe terminal is not available in this build.\r\n')
+    return
+  }
+  const shell = process.platform === 'win32' ? process.env.COMSPEC || 'powershell.exe' : process.env.SHELL || 'bash'
+  term = pty.spawn(shell, [], { name: 'xterm-256color', cols, rows, cwd: getRoot() ?? homedir(), env: process.env as Record<string, string> })
   term.onData((d) => e.sender.send('term:data', d))
   term.onExit(() => e.sender.send('term:data', '\r\n[process exited]\r\n'))
 })
@@ -188,8 +197,9 @@ ipcMain.handle('agent:send', async (e, p: { chatId: string; text: string; mode: 
   const verifyCmd = getVerify(root).effective
   if (p.mode === 'full-auto' && !verifyCmd) throw new Error("Full auto needs a verify command, because nothing else checks the model's work. Set one in Settings (gear icon).")
 
-  // Undo needs git. Ask before creating a repo in someone's folder.
-  if (!(await isRepo(root))) {
+  // Undo needs git. Ask before creating a repo in someone's folder. A PC without git simply runs without undo.
+  const git = await hasGit()
+  if (git && !(await isRepo(root))) {
     const r = await dialog.showMessageBox(BrowserWindow.fromWebContents(e.sender)!, {
       type: 'question', buttons: ['Initialize git', 'Continue without undo'], defaultId: 0, cancelId: 1,
       message: "This folder isn't a git repository.", detail: 'Forge uses git to snapshot your files before each run, so you can undo it. Initialize one here?',
@@ -222,8 +232,8 @@ ipcMain.handle('agent:send', async (e, p: { chatId: string; text: string; mode: 
   changed()
 
   let cp: Checkpoint | null = null
-  if (await isRepo(root)) cp = await createCheckpoint(root)
-  else emit(session, { type: 'note', text: 'No git repository: this run cannot be undone.' })
+  if (git && (await isRepo(root))) cp = await createCheckpoint(root)
+  else emit(session, { type: 'note', text: git ? 'No git repository: this run cannot be undone.' : 'Git is not installed on this computer, so this run cannot be undone. Install git to get Undo.' })
 
   // Not awaited: the run carries on in the background and the screen follows it through events.
   runAgent({
@@ -324,6 +334,7 @@ app.whenReady().then(() => {
   win = new BrowserWindow({
     autoHideMenuBar: true, // no File/Edit/View bar: this is a chat app, not an editor
     title: 'Forge',
+  icon: join(here, '../../build/icon.png'),
     width: 1280,
     height: 820,
     backgroundColor: '#18181b',

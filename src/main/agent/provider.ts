@@ -1,4 +1,4 @@
-import { Agent, fetch as undiciFetch } from 'undici'
+import { patientFetch } from '../net'
 import { parseTextToolCalls } from './guards'
 import type { ToolDef } from './tools'
 
@@ -18,11 +18,6 @@ export interface Provider {
   // hints.explore asks for a more varied answer, used to break a loop where the model repeats itself.
   chat(messages: Message[], tools: ToolDef[], onText: (t: string) => void, signal: AbortSignal, hints?: { explore?: boolean }): Promise<Turn>
 }
-
-// Node's built-in fetch gives up after 5 minutes without a byte. A local model writing a big file as one tool call sends nothing
-// until it is finished (minutes on a CPU), so the model connection must wait as long as the model needs.
-const patient = new Agent({ headersTimeout: 0, bodyTimeout: 0, connectTimeout: 10_000 })
-const patientFetch = (url: string, init: RequestInit) => undiciFetch(url, { ...(init as object), dispatcher: patient } as never) as unknown as Promise<Response>
 
 const safeJson = (s: string): unknown => {
   try {

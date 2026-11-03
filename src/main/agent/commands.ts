@@ -10,6 +10,11 @@ const DENY: [RegExp, string][] = [
   [/\bdd\s+if=/, 'dd'],
   [/:\(\)\s*\{/, 'fork bomb'],
   [/\b(curl|wget)\b[^|;]*\|\s*(sudo\s+)?(sh|bash|zsh)\b/, 'pipe download to shell'],
+  // Windows
+  [/\b(rd|rmdir)\s+(\/s\s+|\/q\s+)+[a-z]:\\?(\s|$)/i, 'recursive delete of a drive'],
+  [/\bdel\s+(\/[fsq]\s+)+[a-z]:\\/i, 'recursive delete of a drive'],
+  [/\bformat\s+[a-z]:/i, 'format a drive'],
+  [/\b(iwr|irm|invoke-webrequest|invoke-restmethod)\b[^|;]*\|\s*(iex|invoke-expression)\b/i, 'pipe download to PowerShell'],
 ]
 
 export function blocked(cmd: string): string | null {
