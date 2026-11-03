@@ -17,7 +17,11 @@ export type AgentEvent =
   | { type: 'usage'; input: number; output: number; tps: number; ctxLimit?: number; estimated?: boolean }
   | { type: 'verify'; command: string; ok: boolean; output: string }
   | { type: 'note'; text: string }
-  | { type: 'changes'; checkpoint: string; files: { path: string; status: 'added' | 'modified' | 'deleted'; added: number; removed: number }[] }
+  | { type: 'changes'; checkpoint: string; files: { path: string; status: 'added' | 'modified' | 'deleted'; added: number; removed: number; previewable?: boolean }[] }
+  // Plain-language sentence per changed file, written by the model after the run (best effort), so it arrives after `changes`.
+  | { type: 'summaries'; checkpoint: string; items: Record<string, string>; by: 'model' }
+  // After Undo (all files or one): what was put back and what is still changed from that checkpoint.
+  | { type: 'restored'; checkpoint: string; paths: string[]; remaining: { path: string; status: 'added' | 'modified' | 'deleted'; added: number; removed: number; previewable?: boolean }[] }
   | { type: 'done'; reason: 'finished' | 'unverified' | 'stopped' | 'stuck' | 'max_steps'; steps: number }
   | { type: 'error'; message: string }
 

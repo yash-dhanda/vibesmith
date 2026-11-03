@@ -113,3 +113,20 @@ async function revert(root: string, cp: Checkpoint, list: Change[]): Promise<str
   if (restore.length) await git(root, ['restore', `--source=${cp.tree}`, '--worktree', '--', ...restore])
   return list.map((c) => c.path)
 }
+
+// A file as it was when the checkpoint was taken, or null if it did not exist then. Paths are relative to the project folder.
+export async function fileAt(root: string, cp: Checkpoint, path: string): Promise<string | null> {
+  if (normalize(path).startsWith('..')) return null
+  try {
+    return await git(root, ['show', `${cp.tree}:./${path}`])
+  } catch {
+    return null
+  }
+}
+
+// The run's diff for one file, for describing it. Empty when nothing differs.
+export async function diffOf(root: string, cp: Checkpoint, path: string, unified = 1): Promise<string> {
+  if (normalize(path).startsWith('..')) return ''
+  const now = await snapshotTree(root)
+  return git(root, ['diff-tree', '-p', `--unified=${unified}`, '--relative', '--no-renames', cp.tree, now, '--', path]).catch(() => '')
+}

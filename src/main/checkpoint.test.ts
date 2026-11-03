@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { changesSince, createCheckpoint, initRepo, isRepo, undoFile, undoTo } from './checkpoint'
+import { changesSince, createCheckpoint, diffOf, fileAt, initRepo, isRepo, undoFile, undoTo } from './checkpoint'
 
 let dir: string
 const w = (f: string, t: string) => {
@@ -47,6 +47,19 @@ describe('checkpoint', () => {
       { path: 'gone.txt', status: 'deleted', added: 0, removed: 1 },
       { path: 'src/new.js', status: 'added', added: 2, removed: 0 },
     ])
+  })
+
+  it('fileAt and diffOf show how a file was and what changed', async () => {
+    const cp = await createCheckpoint(dir)
+    w('edit.txt', 'one\nTWO\n')
+    w('fresh.txt', 'new')
+    expect(await fileAt(dir, cp, 'edit.txt')).toBe('one\ntwo\n')
+    expect(await fileAt(dir, cp, 'fresh.txt')).toBeNull()
+    expect(await fileAt(dir, cp, '../etc/passwd')).toBeNull()
+    const d = await diffOf(dir, cp, 'edit.txt')
+    expect(d).toContain('-two')
+    expect(d).toContain('+TWO')
+    expect(await diffOf(dir, cp, '../x')).toBe('')
   })
 
   it('undoFile puts back one file and leaves the rest of the run alone', async () => {

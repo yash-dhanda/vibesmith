@@ -13,7 +13,8 @@ import { applyUserPlan, planFromTranscript, planNote, type PlanState } from './a
 import { runVerify } from './agent/commands'
 import { runAgent, SYSTEM_PROMPT, type AgentEvent, type Mode } from './agent/loop'
 import { ToolBox } from './agent/tools'
-import { changesSince, createCheckpoint, hasGit, initRepo, isRepo, undoFile, undoTo, type Checkpoint } from './checkpoint'
+import { changesSince, createCheckpoint, diffOf, fileAt, hasGit, initRepo, isRepo, undoFile, undoTo, type Change, type Checkpoint } from './checkpoint'
+import { summarizeChanges } from './agent/summarize'
 import { ChatStore, compact, titleFrom, type Chat, type ChatListItem, type ChatStatus } from './chatStore'
 import { clearKey, keyStatus, setKey, type KeyProvider } from './keys'
 import { listModels, makeProvider, ollamaStatus } from './models'
@@ -128,6 +129,19 @@ function emit(s: Session, ev: AgentEvent) {
     win?.webContents.send('usage:changed')
   }
   scheduleSave(s)
+}
+
+const withPreview = (files: Change[]) => files.map((f) => ({ ...f, previewable: f.status !== 'deleted' && isPreviewable(f.path) }))
+
+// After a run, ask the model for one plain sentence per changed file. Slow or failing models just give none.
+async function describeChanges(s: Session, provider: ReturnType<typeof makeProvider>, root: string, cp: Checkpoint, files: Change[]) {
+  const list = files.slice(0, 12)
+  if (!list.length) return
+  const withExcerpt = await Promise.all(
+    list.map(async (f) => ({ ...f, excerpt: f.status === 'added' ? ((await readFile(join(root, f.path), 'utf8').catch(() => '')) as string).split('\n').slice(0, 25).join('\n') : (await diffOf(root, cp, f.path)).split('\n').slice(0, 30).join('\n') })),
+  )
+  const items = await summarizeChanges(provider, withExcerpt, AbortSignal.timeout(45_000))
+  if (Object.keys(items).length) emit(s, { type: 'summaries', checkpoint: cp.id, items, by: 'model' })
 }
 
 function notify(title: string, body: string, chatId: string) {
@@ -320,7 +334,8 @@ ipcMain.handle('agent:send', async (e, p: { chatId: string; text: string; mode: 
       const files = cp ? await changesSince(root, cp) : []
       if (cp && files.length) {
         chat.checkpoints[cp.id] = cp
-        emit(session, { type: 'changes', checkpoint: cp.id, files })
+        emit(session, { type: 'changes', checkpoint: cp.id, files: withPreview(files) })
+        void describeChanges(session, provider, root, cp, files)
       }
     })
     .catch((err) => emit(session, { type: 'error', message: (err as Error).message }))
@@ -338,6 +353,7 @@ ipcMain.handle('agent:undo', async (_e, chatId: string, id: string) => {
   if (!s || s.run || !cp || !s.chat.project) throw new Error('nothing to undo')
   const touched = await undoTo(s.chat.project, cp)
   delete s.chat.checkpoints[id]
+  emit(s, { type: 'restored', checkpoint: id, paths: touched, remaining: [] })
   s.chat.messages.push({ role: 'user', content: '[The user undid your last changes. Files are back to how they were before your edits. Re-read a file before editing it again.]' })
   s.dirty = true
   flush(s)
@@ -359,15 +375,31 @@ ipcMain.handle('agent:plan-update', (_e, chatId: string, p: { revision: number; 
   return { revision: r.plan.revision, items: r.plan.items, conflict: r.conflict }
 })
 
+// Before and after of one changed file, for a visual comparison.
+const DETAIL_MAX = 120_000
+ipcMain.handle('agent:change-detail', async (_e, chatId: string, id: string, path: string) => {
+  const s = sessionFor(chatId)
+  const cp = s?.chat.checkpoints[id]
+  if (!s || !cp || !s.chat.project || typeof path !== 'string') throw new Error('that change is no longer available')
+  const root = s.chat.project
+  const before = await fileAt(root, cp, path)
+  const abs = resolveIn(root, path)
+  const after = existsSync(abs) ? await readFile(abs, 'utf8') : null
+  const binary = (before ?? '').includes('\0') || (after ?? '').includes('\0')
+  const cut = (t: string | null) => (binary ? '' : (t ?? '').slice(0, DETAIL_MAX))
+  return { before: cut(before), after: cut(after), existedBefore: before !== null, existsNow: after !== null, binary, truncated: !binary && ((before ?? '').length > DETAIL_MAX || (after ?? '').length > DETAIL_MAX) }
+})
+
 ipcMain.handle('agent:undo-file', async (_e, chatId: string, id: string, path: string) => {
   const s = sessions.get(chatId)
   const cp = s?.chat.checkpoints[id]
   if (!s || s.run || !cp || !s.chat.project || typeof path !== 'string') throw new Error('nothing to undo')
   const left = await undoFile(s.chat.project, cp, path)
+  emit(s, { type: 'restored', checkpoint: id, paths: [path], remaining: withPreview(left) })
   s.chat.messages.push({ role: 'user', content: `[The user undid your changes to ${path}. That file is back to how it was before your edits. Re-read it before editing it again.]` })
   s.dirty = true
   flush(s)
-  return left
+  return withPreview(left)
 })
 
 ipcMain.on('agent:approve', (_e, chatId: string, id: string, ok: boolean) => {

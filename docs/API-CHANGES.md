@@ -40,3 +40,11 @@ Claude appends every new `window.forge` call or event here. Additive only.
 - **`forge.projectBriefSet(chatId, { revision, name?, description?, priorities? }): Promise<brief & { conflict: boolean }>`**. Pass the `revision` you last saw. A field you leave out keeps its value (`priorities` too: pass the full list to change it; keep each `id`, omit it for a new one). An empty `name` goes back to the folder name. `conflict: true` = stale revision, nothing saved, the returned fields are the current brief.
 - **`forge.onProjectBriefChanged(cb({ project, brief }))`** fires after every successful save (so a second window or chat in the same folder updates). Match on the chat's project folder.
 - Limits: name 60 chars, description 400, 20 priorities of 120 chars. Priorities are not sent to the model by Forge: the renderer still adds the included ones to the next message (as today).
+
+## 2026-11-03 — roadmap #3: change descriptions, before/after, restored events
+
+- **`changes.files[].previewable?: boolean`** (not deleted and an openable type: page, image, document). `beforeLabel/afterLabel` were not added: derive them from `status` as you do now.
+- **New event `{ type: 'summaries', checkpoint, items: Record<path, string>, by: 'model' }`.** One plain sentence per changed file, written by the model after the run. It arrives AFTER `changes` (seconds later, sometimes never: only when the run changed 1-12 files and the model answers within 45 s), so show the card straight away and fill sentences in when this lands. Always label it as model-written. It is stored in the transcript.
+- **`forge.changeDetail(chatId, checkpoint, path): Promise<{ before, after, existedBefore, existsNow, binary, truncated }>`** — file text as it was before the run and as it is now (each capped at 120k chars; `binary` files return empty strings). Rejects if the checkpoint is gone (after "Undo this run").
+- **New event `{ type: 'restored', checkpoint, paths, remaining }`** after either Undo. `remaining` has the same shape as `changes.files` (empty after Undo-all). Stored in the transcript: when you replay history, apply `restored` to the earlier `changes` card for that checkpoint (drop the paths no longer in `remaining`).
+- `agentUndoFile` now returns files with `previewable` too.

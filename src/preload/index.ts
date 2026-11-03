@@ -27,6 +27,7 @@ const api = {
   agentApprove: (chatId: string, id: string, ok: boolean) => ipcRenderer.send('agent:approve', chatId, id, ok),
   agentUndo: (chatId: string, id: string): Promise<string[]> => ipcRenderer.invoke('agent:undo', chatId, id),
   planUpdate: (chatId: string, p: { revision: number; items: { id?: string; text: string; status?: 'todo' | 'doing' | 'done'; skipped?: boolean }[] }): Promise<{ revision: number; items: { id: string; text: string; status: 'todo' | 'doing' | 'done'; skipped: boolean }[]; conflict: boolean }> => ipcRenderer.invoke('agent:plan-update', chatId, p),
+  changeDetail: (chatId: string, checkpoint: string, path: string): Promise<{ before: string; after: string; existedBefore: boolean; existsNow: boolean; binary: boolean; truncated: boolean }> => ipcRenderer.invoke('agent:change-detail', chatId, checkpoint, path),
   agentUndoFile: (chatId: string, id: string, path: string): Promise<{ path: string; status: 'added' | 'modified' | 'deleted'; added: number; removed: number }[]> => ipcRenderer.invoke('agent:undo-file', chatId, id, path),
   onAgentEvent: (cb: (m: { chatId: string; ev: AgentEvent }) => void) => ipcRenderer.on('agent:event', (_e, m: { chatId: string; ev: AgentEvent }) => cb(m)),
   agentModels: (): Promise<{ id: string; label: string; group: string }[]> => ipcRenderer.invoke('agent:models'),
