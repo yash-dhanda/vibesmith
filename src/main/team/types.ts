@@ -27,6 +27,8 @@ export type Task = {
   sessions: Partial<Record<AgentName, string>> // resume handles, so a restart or a fix round keeps the agent's memory
   branch: string | null
   worktree: string | null
+  base?: string // the team branch commit this task's worktree started from
+  reviewSession?: string // the reviewer's resume handle, so round 2 remembers round 1
   summary: string // the author's closing words
   handoff: string // what the next task needs to know (recorded through the mailbox, or the summary)
   changed: { path: string; status: 'added' | 'modified' | 'deleted'; added: number; removed: number }[]
