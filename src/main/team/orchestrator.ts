@@ -63,6 +63,7 @@ type Live = {
 const other = (a: AgentName): AgentName => (a === 'claude' ? 'codex' : 'claude')
 const id = (p: string) => `${p}${randomUUID().slice(0, 8)}`
 const MAX_PROPOSALS = 6
+const MAX_MESSAGES = 1500 // the oldest fall off; decisions and handoffs are kept on the run and the project memory
 
 export class TeamOrchestrator {
   private live = new Map<string, Live>()
@@ -95,6 +96,7 @@ export class TeamOrchestrator {
     return this.d.store.events(runId, limit)
   }
   shutdown() {
+    this.flush()
     for (const l of this.live.values()) {
       l.stop = 'pause'
       l.ctl.abort()
@@ -130,7 +132,7 @@ export class TeamOrchestrator {
     await createRunBranch(project, integrationBranch, baseCommit, integrationWorktree)
     const run: Run = { id: runId, project, goal: goal.trim(), status: 'planning', createdAt: Date.now(), updatedAt: Date.now(), baseCommit, integrationBranch, integrationWorktree, plan: { summary: '', plannedBy: null }, tasks: [], messages: [], decisions: [], errors: [], approvals: [], usage: { claude: emptyUsage(), codex: emptyUsage() }, config }
     this.runs.set(runId, run)
-    this.d.store.save(run)
+    this.saveNow(run)
     const live = this.newLive(available)
     this.live.set(runId, live)
     this.out(run, { type: 'run', runId, status: 'planning' })
@@ -271,7 +273,7 @@ export class TeamOrchestrator {
   private async resume2(run: Run) {
     if (run.status === 'paused' || run.status === 'interrupted' || run.status === 'failed') {
       run.status = run.status === 'failed' ? 'paused' : run.status
-      this.d.store.save(run)
+      this.save(run)
       await this.resume(run.id)
     } else this.touch(run)
     this.pump(run)
@@ -293,7 +295,7 @@ export class TeamOrchestrator {
     for (const k of ['maxTokens', 'maxMinutes', 'maxAgentRuns', 'maxCostUsd'] as const) if (b[k]) b[k] = Math.ceil(b[k]! * factor * 100) / 100
     const used = Math.max(0, ...Object.values(run.limits ?? {}).map((l) => l?.primaryPct ?? 0))
     if (run.config.maxLimitPercent && used >= run.config.maxLimitPercent) run.config.maxLimitPercent = Math.min(100, Math.ceil(used) + 5)
-    this.d.store.save(run)
+    this.save(run)
     if (run.status === 'paused') void this.resume(runId)
   }
 
@@ -325,7 +327,7 @@ export class TeamOrchestrator {
       const tree = (await git(run.project, ['rev-parse', `refs/forge/${run.appliedCheckpoint}^{tree}`])).trim()
       const paths = await undoTo(run.project, { id: run.appliedCheckpoint, tree })
       run.undone = true
-      this.d.store.save(run)
+      this.save(run)
       this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: `Undone: ${paths.length} file${paths.length === 1 ? '' : 's'} put back.` })
       return { ok: true, paths, message: 'Undone.' }
     } catch (e) {
@@ -352,6 +354,28 @@ export class TeamOrchestrator {
     if (!l) this.live.set(run.id, (l = this.newLive(['claude', 'codex'])))
     return l
   }
+  // The run file is rewritten as things change. Doing that on every message and tool call makes long runs quadratic, so ordinary
+  // changes are written at most every 250 ms; status changes and shutdown write at once.
+  private dirty = new Map<string, Run>()
+  private saveTimer: NodeJS.Timeout | null = null
+  private save(run: Run) {
+    this.dirty.set(run.id, run)
+    if (!this.saveTimer) {
+      this.saveTimer = setTimeout(() => this.flush(), 250)
+      this.saveTimer.unref?.()
+    }
+  }
+  private saveNow(run: Run) {
+    this.dirty.delete(run.id)
+    this.d.store.save(run)
+  }
+  flush() {
+    if (this.saveTimer) clearTimeout(this.saveTimer)
+    this.saveTimer = null
+    for (const r of this.dirty.values()) this.d.store.save(r)
+    this.dirty.clear()
+  }
+
   // Live typing (deltas, growing files) arrives in bursts of tiny events. They are merged for 100 ms before reaching the screen and
   // are not written to the log: the finished text, tool results and task diff are.
   private streamBuf = new Map<string, RunEvent>()
@@ -433,13 +457,13 @@ export class TeamOrchestrator {
     }
   }
   private touch(run: Run, task?: Task) {
-    this.d.store.save(run)
+    this.save(run)
     if (task) this.out(run, { type: 'task', runId: run.id, task })
   }
   private setStatus(run: Run, status: RunStatus, reason?: string) {
     run.status = status
     run.pausedReason = reason
-    this.d.store.save(run)
+    this.saveNow(run)
     this.out(run, { type: 'run', runId: run.id, status, reason })
   }
   private fail(run: Run, message: string) {
@@ -454,7 +478,8 @@ export class TeamOrchestrator {
   private post(run: Run, m: { from: Message['from']; to: Message['to']; kind: MessageKind; body: string; taskId?: string }) {
     const msg: Message = { id: id('m'), at: Date.now(), readBy: [], ...m }
     run.messages.push(msg)
-    this.d.store.save(run)
+    if (run.messages.length > MAX_MESSAGES) run.messages.splice(0, run.messages.length - MAX_MESSAGES)
+    this.save(run)
     this.out(run, { type: 'message', runId: run.id, message: msg })
     return msg
   }
@@ -472,7 +497,7 @@ export class TeamOrchestrator {
     a.status = status
     a.answer = answer
     a.answeredAt = Date.now()
-    this.d.store.save(run)
+    this.save(run)
     this.out(run, { type: 'approval', runId: run.id, approval: a })
   }
 
@@ -480,7 +505,7 @@ export class TeamOrchestrator {
     const live = this.liveOf(run)
     const a: Approval = { id: id('a'), status: 'pending', at: Date.now(), ...p }
     run.approvals.push(a)
-    this.d.store.save(run)
+    this.save(run)
     this.out(run, { type: 'approval', runId: run.id, approval: a })
     return new Promise((res) => live.pending.set(a.id, res))
   }
@@ -527,7 +552,7 @@ export class TeamOrchestrator {
       u.runs++
     }
     this.out(run, { type: 'usage', runId: run.id, usage: run.usage })
-    this.d.store.save(run)
+    this.save(run)
     return res
   }
 
@@ -878,7 +903,7 @@ export class TeamOrchestrator {
       this.setStatus(run, 'awaiting_approval')
       const a: Approval = { id: id('a'), kind: 'final', status: 'pending', at: Date.now(), title: 'Apply the result to your project?', detail: `${files.length} file${files.length === 1 ? '' : 's'} changed.${verify.ok === false ? ' The final check FAILED.' : ''}` }
       run.approvals.push(a)
-      this.d.store.save(run)
+      this.save(run)
       this.out(run, { type: 'approval', runId: run.id, approval: a })
     } catch (e) {
       this.fail(run, (e as Error).message)
@@ -912,7 +937,7 @@ export class TeamOrchestrator {
       for (const t of run.tasks) if (t.worktree) (await removeWorktree(run.project, t.worktree, t.branch ?? undefined), (t.worktree = null))
       await removeWorktree(run.project, run.integrationWorktree, deleteBranch ? run.integrationBranch : undefined)
     })
-    this.d.store.save(run)
+    this.save(run)
   }
 
   // ------------------------------------------------------------------ what agents ask for through the mailbox
@@ -931,7 +956,7 @@ export class TeamOrchestrator {
       }
       case 'inbox': {
         const { inbox, steer } = this.drainInbox(run, ctx.agent)
-        this.d.store.save(run)
+        this.save(run)
         return [...steer.map((b) => ({ from: 'user', kind: 'instruction', body: b })), ...inbox.map((m) => ({ from: m.from, kind: m.kind, body: m.body }))]
       }
       case 'context': {

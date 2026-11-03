@@ -253,6 +253,7 @@ describe('team orchestrator', () => {
     await until(x.orch, run.id, (r) => r.tasks[0]?.status === 'running')
     x.orch.pause(run.id, true) // the same state a crash leaves, as far as the saved file goes
     await until(x.orch, run.id, (r) => r.tasks[0].status === 'interrupted')
+    x.orch.flush()
     const saved = x.store.load(run.id)!
     saved.status = 'running'
     saved.tasks[0].status = 'running'
@@ -396,6 +397,23 @@ describe('mailbox operations agents call', () => {
     expect((await call(x, run, 'context', { query: 'which storage database' })) as string[]).toEqual(expect.arrayContaining([expect.stringContaining('sqlite')]))
     x.orch.steer(run.id, 'please keep it simple')
     expect((await call(x, run, 'inbox', {}, 'claude', 't2')) as any[]).toEqual([{ from: 'user', kind: 'instruction', body: 'please keep it simple' }])
+    await x.orch.cancel(run.id)
+  })
+
+  it('writes the run file in batches, not once per message, and caps the message log', async () => {
+    const x = h({ delayMs: 500, plan: { tasks: [T('a', { agent: 'codex' })] } })
+    const run = await x.orch.start(x.proj, 'busy')
+    await until(x.orch, run.id, (r) => r.tasks.length === 1)
+    x.orch.flush()
+    let saves = 0
+    const orig = x.store.save.bind(x.store)
+    x.store.save = (r: Run) => (saves++, orig(r))
+    for (let i = 0; i < 1700; i++) await (x.orch as any).onHub('post', { to: 'all', kind: 'note', body: `m${i}` }, { runId: run.id, taskId: 't1', agent: 'codex' })
+    x.orch.flush()
+    expect(saves).toBeLessThan(40)
+    const r = x.orch.get(run.id)!
+    expect(r.messages.length).toBe(1500)
+    expect(r.messages.at(-1)!.body).toBe('m1699') // the newest are kept
     await x.orch.cancel(run.id)
   })
 
