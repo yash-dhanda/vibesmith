@@ -13,12 +13,12 @@ export type AgentEvent =
   | { type: 'delta'; text: string }
   | { type: 'tool'; id: string; name: string; args: unknown; needsApproval: boolean; label?: string }
   // Where the model runs and how it is doing. Sent when a run starts and again after the first reply (then the model is loaded
-  // and `queueSeconds` is known: how long the user waited before it began answering). No cost fields: Forge has no verified prices.
-  | { type: 'runtime'; location: 'local' | 'remote' | 'cloud'; model: string; modelLoaded: boolean; gpuPercent?: number; queueSeconds?: number }
+  // and `queueSeconds` is known: how long the user waited before it began answering). `price` (US dollars per million tokens, an estimate) is set for cloud models Forge has a price for.
+  | { type: 'runtime'; location: 'local' | 'remote' | 'cloud'; model: string; modelLoaded: boolean; gpuPercent?: number; queueSeconds?: number; price?: { input: number; output: number; currency: 'USD'; asOf: string } }
   | { type: 'plan'; revision: number; items: PlanStep[] }
   | { type: 'tool_result'; id: string; text: string; ok: boolean }
   | { type: 'turn_end' }
-  | { type: 'usage'; input: number; output: number; tps: number; ctxLimit?: number; estimated?: boolean }
+  | { type: 'usage'; input: number; output: number; tps: number; ctxLimit?: number; estimated?: boolean; costUsd?: number }
   | { type: 'verify'; command: string; ok: boolean; output: string }
   | { type: 'note'; text: string }
   | { type: 'changes'; checkpoint: string; files: { path: string; status: 'added' | 'modified' | 'deleted'; added: number; removed: number; previewable?: boolean }[] }

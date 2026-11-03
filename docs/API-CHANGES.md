@@ -100,3 +100,9 @@ A sandboxed native view (Electron `WebContentsView`) laid over the window: no Fo
 - **`forge.previewReload(chatId)`**, **`forge.previewDetach(chatId)`** (when the pane closes or the chat switches: detach, or the view stays on screen over the new chat). It is detached when a chat is deleted and at quit.
 - **`forge.onPreviewStatus(cb({ chatId, state: 'loading'|'ready'|'error'|'closed', url, title, error? }))`** for the pane's header and loading state.
 - Pages from `source:'page'` reload themselves when the agent edits files (debounced); `source:'run'` servers use their own hot reload.
+
+## 2026-11-03 — cloud cost estimates
+
+- `usage` events gain `costUsd?: number`: the estimated dollar cost of that one model call. Absent for local models and for cloud models without a known price. Sum it across a run for a total.
+- `runtime` events for cloud models gain `price?: { input, output, currency: 'USD', asOf }` (dollars per million tokens, as of a date). Show it as an estimate ("about", "~"), never as a bill.
+- Only the three Claude models Forge lists are priced. OpenAI and OpenRouter models show no cost.

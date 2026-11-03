@@ -5,6 +5,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PRICES_AS_OF, costOf, priceFor } from './pricing'
 import { getRoot, inRoot, resolveIn, setRoot } from './project'
 import { isPreviewable } from './preview'
 import { PreviewServer } from './previewServer'
@@ -143,7 +144,10 @@ function emit(s: Session, ev: AgentEvent) {
 }
 
 async function runtimeEvent(model: string, queueSeconds?: number): Promise<Extract<AgentEvent, { type: 'runtime' }>> {
-  if (!model.startsWith('ollama:')) return { type: 'runtime', location: 'cloud', model, modelLoaded: true, ...(queueSeconds === undefined ? {} : { queueSeconds }) }
+  if (!model.startsWith('ollama:')) {
+    const price = priceFor(model)
+    return { type: 'runtime', location: 'cloud', model, modelLoaded: true, ...(queueSeconds === undefined ? {} : { queueSeconds }), ...(price ? { price: { ...price, currency: 'USD' as const, asOf: PRICES_AS_OF } } : {}) }
+  }
   const name = model.slice('ollama:'.length).replace(/:latest$/, '')
   const st = await ollamaStatus().catch(() => null)
   const m = st?.loaded.find((l) => l.name.replace(/:latest$/, '') === name)
@@ -414,7 +418,8 @@ ipcMain.handle('agent:send', async (e, p: { chatId: string; text: string; attach
     provider,
     tools,
     emit: (ev) => {
-      emit(session, ev)
+      const price = ev.type === 'usage' ? priceFor(p.model) : null
+      emit(session, ev.type === 'usage' && price ? { ...ev, costUsd: costOf(price, ev.input, ev.output) } : ev)
       // After the first reply the model is loaded: say so, and how long the user waited for it to start.
       if (ev.type === 'usage' && !run.refreshed) {
         run.refreshed = true
