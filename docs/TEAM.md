@@ -49,6 +49,9 @@ Each agent is started with the `forge_team` MCP server (`team-mcp.js`, run by th
 |---|---|
 | Codex adapter, resume, MCP mailbox, approvals | verified live |
 | Orchestrator (all of the above) | covered by tests with scripted agents on real git; one live run with Codex as the whole team (`src/eval/team-live.eval.ts`) |
+| Review reject -> fix -> re-review loop | verified live with both agents (Claude fixed its own task through its resumed session, Codex fixed theirs) |
+| Claude Code builds (write mode) | verified live in a team run: task built by Claude, reviewed by Codex |
 | Claude Code adapter | verified live: stream parsing, MCP mailbox, permission prompts routed to Forge policy, review and planning in a full two-agent run |
 | Codex `app-server` (default Codex mode) | verified live: mid-turn steering (the agent changed course), MCP mailbox, plan-allowance readout, full team run in 82 s. Its approval requests are routed to you; none appeared in the live runs because the sandbox already contains the agent. If the server cannot start, the run falls back to `codex exec` |
-| Screens | not started |
+| Windows | the launcher for npm `.cmd` shims is unit-tested with a fake file system only; never run on Windows |
+| Screens | being built by Codex from the documented hooks |
