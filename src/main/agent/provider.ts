@@ -1,3 +1,4 @@
+import { parseTextToolCalls } from './guards'
 import type { ToolDef } from './tools'
 
 export type ToolCall = { name: string; args: unknown }
@@ -9,6 +10,14 @@ export type Message =
 export interface Provider {
   // Streams text through onText; resolves with the full turn once the model stops.
   chat(messages: Message[], tools: ToolDef[], onText: (t: string) => void, signal: AbortSignal): Promise<{ content: string; toolCalls: ToolCall[] }>
+}
+
+const safeJson = (s: string): unknown => {
+  try {
+    return JSON.parse(s)
+  } catch {
+    return {}
+  }
 }
 
 type OllamaLine = { message?: { content?: string; tool_calls?: { function: { name: string; arguments: unknown } }[] }; error?: string }
@@ -55,7 +64,11 @@ export function ollama(opts: { model: string; host?: string; numCtx?: number }):
           content += j.message.content
           onText(j.message.content)
         }
-        for (const c of j.message?.tool_calls ?? []) toolCalls.push({ name: c.function.name, args: c.function.arguments })
+        for (const c of j.message?.tool_calls ?? []) {
+          let args = c.function.arguments
+          if (typeof args === 'string') args = safeJson(args)
+          toolCalls.push({ name: c.function.name, args })
+        }
       }
       for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
         buf += decoder.decode(chunk, { stream: true })
@@ -64,6 +77,11 @@ export function ollama(opts: { model: string; host?: string; numCtx?: number }):
         lines.forEach(take)
       }
       take(buf)
+      // Some models write the call as text instead of using the tool-call channel.
+      if (!toolCalls.length) {
+        const t = parseTextToolCalls(content)
+        if (t.calls.length) return { content: t.content, toolCalls: t.calls }
+      }
       return { content, toolCalls }
     },
   }

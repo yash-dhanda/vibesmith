@@ -1,5 +1,6 @@
 import type { Message, Provider } from './provider'
 import { isAllowlisted } from './commands'
+import { resolveToolName } from './guards'
 import { ToolBox, toolDefs } from './tools'
 
 export type Mode = 'ask-all' | 'auto-edit' | 'full-auto'
@@ -51,11 +52,13 @@ export async function runAgent(o: RunOpts): Promise<void> {
       if (o.signal.aborted) return done('stopped')
       steps++
       const turn = await o.provider.chat(o.messages, toolDefs, (text) => o.emit({ type: 'delta', text }), o.signal)
-      o.messages.push({ role: 'assistant', content: turn.content, toolCalls: turn.toolCalls.length ? turn.toolCalls : undefined })
+      // Resolve near-miss names (read, cat, write_file) BEFORE the gate, so an alias can never dodge approval.
+      const calls = turn.toolCalls.map((c) => ({ ...c, name: resolveToolName(c.name) ?? c.name }))
+      o.messages.push({ role: 'assistant', content: turn.content, toolCalls: calls.length ? calls : undefined })
       o.emit({ type: 'turn_end' })
-      if (!turn.toolCalls.length) return done('finished')
+      if (!calls.length) return done('finished')
 
-      for (const call of turn.toolCalls) {
+      for (const call of calls) {
         const id = `${steps}-${Math.random().toString(36).slice(2, 8)}`
         const ask = needsApproval(call.name, o.mode, call.args)
         o.emit({ type: 'tool', id, name: call.name, args: call.args, needsApproval: ask })

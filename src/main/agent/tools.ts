@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto'
-import { readdir, readFile, writeFile } from 'node:fs/promises'
+import { readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { getRoot, inRoot } from '../project'
 import { runCommand } from './commands'
+import { checkSyntax, findLoose, reindent, resolveToolName } from './guards'
 
 export type ToolDef = {
   name: string
@@ -56,6 +57,7 @@ export class ToolBox {
   private seen = new Map<string, string>()
 
   async run(name: string, args: unknown, signal: AbortSignal = new AbortController().signal): Promise<string> {
+    name = resolveToolName(name) ?? name
     const def = toolDefs.find((t) => t.name === name)
     if (!def) return `ERROR: unknown tool "${name}". Available: ${toolDefs.map((t) => t.name).join(', ')}`
     const a = (args && typeof args === 'object' ? args : {}) as Record<string, unknown>
@@ -115,28 +117,45 @@ export class ToolBox {
   }
 
   private async edit(path: string, oldText: string, newText: string) {
-    let real: string
-    let current: string | null
-    real = inRoot(path)
-    try {
-      current = await readFile(real, 'utf8')
-    } catch {
-      current = null
-    }
+    const real = inRoot(path)
+    const current = await readFile(real, 'utf8').catch(() => null)
     if (current === null) {
       if (oldText !== '') return `ERROR: ${path} does not exist. To create it, pass an empty old_text.`
-      await writeFile(real, newText)
-      this.seen.set(real, hash(newText))
-      return `created ${path} (${newText.length} chars)`
+      return this.commit(path, real, null, newText, '')
     }
     if (this.seen.get(real) !== hash(current)) return `ERROR: read ${path} first (not read this run, or it changed since).`
     if (oldText === '') return `ERROR: ${path} already exists; old_text must not be empty.`
+
+    // Tier 1: exact. Tier 2: same lines ignoring whitespace. Both must match exactly once.
     const first = current.indexOf(oldText)
-    if (first === -1) return `ERROR: old_text not found in ${path}. Re-read the file and copy the text exactly.`
-    if (current.indexOf(oldText, first + 1) !== -1) return `ERROR: old_text matches more than once in ${path}. Add surrounding lines to make it unique.`
-    const next = current.slice(0, first) + newText + current.slice(first + oldText.length)
-    await writeFile(real, next)
-    this.seen.set(real, hash(next))
-    return `edited ${path}: replaced ${oldText.length} chars with ${newText.length} chars`
+    if (first !== -1) {
+      if (current.indexOf(oldText, first + 1) !== -1) return `ERROR: old_text matches more than once in ${path}. Add surrounding lines to make it unique.`
+      return this.commit(path, real, current, current.slice(0, first) + newText + current.slice(first + oldText.length), '')
+    }
+    const loose = findLoose(current, oldText)
+    if (loose.length === 0) return `ERROR: old_text not found in ${path}. Re-read the file and copy the text exactly.`
+    if (loose.length > 1) return `ERROR: old_text matches ${loose.length} places in ${path} (ignoring whitespace). Add surrounding lines to make it unique.`
+    const [m] = loose
+    const replacement = reindent(newText, oldText, m.indent).replace(/\n$/, '')
+    return this.commit(path, real, current, current.slice(0, m.start) + replacement + current.slice(m.end), ' (matched ignoring whitespace differences)')
+  }
+
+  // Writes, then syntax-checks. A new error caused by this edit reverts the file.
+  private async commit(path: string, real: string, before: string | null, after: string, note: string) {
+    await writeFile(real, after)
+    const err = await checkSyntax(real)
+    if (err) {
+      if (before === null) await rm(real)
+      else await writeFile(real, before)
+      const brokenBefore = before !== null && (await checkSyntax(real))
+      if (!brokenBefore) {
+        if (before !== null) this.seen.set(real, hash(before))
+        return `ERROR: this edit would leave ${path} with a syntax error, so it was NOT applied:\n${err}\nFix the new_text and try again.`
+      }
+      await writeFile(real, after) // file was already broken before this edit, so the edit is not to blame
+      note += ' (file already had a syntax error before this edit)'
+    }
+    this.seen.set(real, hash(after))
+    return before === null ? `created ${path} (${after.length} chars)` : `edited ${path}${note}`
   }
 }

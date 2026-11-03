@@ -74,6 +74,13 @@ describe('runAgent', () => {
     expect(events.find((e) => e.type === 'tool' && e.name === 'edit_file')).toMatchObject({ needsApproval: false })
   })
 
+  it('an aliased tool name cannot dodge approval', async () => {
+    const aliased: ToolCall[] = [{ name: 'write_file', args: { path: 'a.txt', old_text: 'hello', new_text: 'bye' } }]
+    const { events } = await run([read, aliased], 'ask-all', false)
+    expect(events.find((e) => e.type === 'tool' && e.name === 'edit_file')).toMatchObject({ needsApproval: true })
+    expect(readFileSync(join(dir, 'a.txt'), 'utf8')).toBe('hello\n')
+  })
+
   it('stops when the same failing call repeats 3 times', async () => {
     const bad: ToolCall[] = [{ name: 'read_file', args: { path: 'missing.txt' } }]
     const { events } = await run([bad, bad, bad, bad, bad], 'ask-all', true)
