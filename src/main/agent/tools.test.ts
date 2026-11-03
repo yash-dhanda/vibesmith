@@ -23,6 +23,21 @@ describe('ToolBox', () => {
     expect(await box.run('read_file', { path: 'a.txt' })).toBe('one\ntwo\nthree\n')
   })
 
+  it('searches by regex, skips node_modules and binary files', async () => {
+    mkdirSync(join(dir, 'node_modules'))
+    writeFileSync(join(dir, 'node_modules/x.js'), 'two')
+    writeFileSync(join(dir, 'bin.dat'), Buffer.from([116, 119, 111, 0, 1]))
+    writeFileSync(join(dir, 'sub/b.txt'), 'nothing\ntwo again\n')
+    expect(await box.run('search', { pattern: 'tw[o]' })).toBe('a.txt:2: two\nsub/b.txt:2: two again')
+    expect(await box.run('search', { pattern: 'zzz' })).toBe('no matches')
+    expect(await box.run('search', { pattern: '(' })).toMatch(/invalid regular expression/)
+  })
+
+  it('runs commands in the project folder', async () => {
+    expect(await box.run('run_command', { command: 'ls' })).toMatch(/a\.txt/)
+    expect(await box.run('run_command', { command: 'sudo ls' })).toMatch(/blocked/)
+  })
+
   it('rejects unknown tools and bad args without throwing', async () => {
     expect(await box.run('rm_rf', {})).toMatch(/unknown tool/)
     expect(await box.run('read_file', {})).toMatch(/needs string argument "path"/)

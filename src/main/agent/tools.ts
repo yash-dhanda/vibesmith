@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto'
 import { readdir, readFile, writeFile } from 'node:fs/promises'
-import { inRoot } from '../project'
+import { join } from 'node:path'
+import { getRoot, inRoot } from '../project'
+import { runCommand } from './commands'
 
 export type ToolDef = {
   name: string
@@ -18,6 +20,16 @@ export const toolDefs: ToolDef[] = [
     name: 'read_file',
     description: 'Read a text file from the project. Always read a file before editing it.',
     parameters: { type: 'object', properties: { path: { type: 'string', description: 'File relative to project root' } }, required: ['path'] },
+  },
+  {
+    name: 'search',
+    description: 'Search project files for a regular expression. Returns up to 100 matching lines as path:line: text.',
+    parameters: { type: 'object', properties: { pattern: { type: 'string', description: 'JavaScript regular expression' } }, required: ['pattern'] },
+  },
+  {
+    name: 'run_command',
+    description: 'Run a shell command in the project folder (tests, builds, git). Times out after 60 seconds. Output is truncated to the last 10000 characters.',
+    parameters: { type: 'object', properties: { command: { type: 'string', description: 'Shell command' } }, required: ['command'] },
   },
   {
     name: 'edit_file',
@@ -43,7 +55,7 @@ export class ToolBox {
   // path -> content hash at last read; edit_file needs a fresh entry (read-before-edit, enforced in code)
   private seen = new Map<string, string>()
 
-  async run(name: string, args: unknown): Promise<string> {
+  async run(name: string, args: unknown, signal: AbortSignal = new AbortController().signal): Promise<string> {
     const def = toolDefs.find((t) => t.name === name)
     if (!def) return `ERROR: unknown tool "${name}". Available: ${toolDefs.map((t) => t.name).join(', ')}`
     const a = (args && typeof args === 'object' ? args : {}) as Record<string, unknown>
@@ -51,6 +63,8 @@ export class ToolBox {
     try {
       if (name === 'list_dir') return await this.list(a.path as string)
       if (name === 'read_file') return await this.read(a.path as string)
+      if (name === 'search') return await this.search(a.pattern as string)
+      if (name === 'run_command') return await runCommand(a.command as string, getRoot()!, signal)
       return await this.edit(a.path as string, a.old_text as string, a.new_text as string)
     } catch (e) {
       return `ERROR: ${(e as Error).message}`
@@ -64,6 +78,34 @@ export class ToolBox {
       .sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name))
       .map((d) => d.name + (d.isDirectory() ? '/' : ''))
     return lines.join('\n') || '(empty)'
+  }
+
+  private async search(pattern: string) {
+    let re: RegExp
+    try {
+      re = new RegExp(pattern)
+    } catch (e) {
+      return `ERROR: invalid regular expression: ${(e as Error).message}`
+    }
+    const root = getRoot()!
+    const hits: string[] = []
+    const walk = async (dir: string): Promise<void> => {
+      for (const d of await readdir(join(root, dir), { withFileTypes: true })) {
+        if (hits.length >= 100) return
+        if (d.name === '.git' || d.name === 'node_modules' || d.isSymbolicLink()) continue
+        const rel = dir ? `${dir}/${d.name}` : d.name
+        if (d.isDirectory()) await walk(rel)
+        else {
+          const buf = await readFile(join(root, rel)).catch(() => null)
+          if (!buf || buf.length > 1_000_000 || buf.includes(0)) continue // skip unreadable, big and binary files
+          buf.toString('utf8').split('\n').forEach((line, i) => {
+            if (hits.length < 100 && re.test(line)) hits.push(`${rel}:${i + 1}: ${line.slice(0, 200)}`)
+          })
+        }
+      }
+    }
+    await walk('')
+    return hits.length ? hits.join('\n') : 'no matches'
   }
 
   private async read(path: string) {

@@ -79,7 +79,7 @@ function setRunning(on: boolean) {
   modeSel.disabled = modelSel.disabled = on
 }
 
-const VERB: Record<string, string> = { list_dir: 'Listed', read_file: 'Read', edit_file: 'Edited' }
+const VERB: Record<string, string> = { list_dir: 'Listed', read_file: 'Read', edit_file: 'Edited', search: 'Searched', run_command: 'Ran' }
 
 function diff(oldText: string, newText: string): HTMLElement {
   const box = h('div')
@@ -96,7 +96,7 @@ function diff(oldText: string, newText: string): HTMLElement {
 
 function toolCard(ev: Extract<AgentEvent, { type: 'tool' }>) {
   const a = (ev.args ?? {}) as Record<string, string>
-  const path = typeof a.path === 'string' ? a.path : ''
+  const path = [a.path, a.pattern, a.command].find((v) => typeof v === 'string') ?? ''
   const isEdit = ev.name === 'edit_file'
   const verb = isEdit && a.old_text === '' ? 'Created' : (VERB[ev.name] ?? ev.name)
 
@@ -107,6 +107,7 @@ function toolCard(ev: Extract<AgentEvent, { type: 'tool' }>) {
   const body = h('div', 'tool-body')
   body.hidden = true
   if (isEdit) body.append(diff(String(a.old_text ?? ''), String(a.new_text ?? '')))
+  if (ev.name === 'run_command') body.append(h('pre', '', `$ ${path}`))
   head.onclick = () => (body.hidden = !body.hidden)
   card.append(head, body)
 

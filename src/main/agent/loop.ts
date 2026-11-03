@@ -1,4 +1,5 @@
 import type { Message, Provider } from './provider'
+import { isAllowlisted } from './commands'
 import { ToolBox, toolDefs } from './tools'
 
 export type Mode = 'ask-all' | 'auto-edit' | 'full-auto'
@@ -12,16 +13,20 @@ export type AgentEvent =
   | { type: 'error'; message: string }
 
 export const SYSTEM_PROMPT = `You are Forge, a coding agent working inside the user's project folder.
-Use the tools to inspect and change files. Read a file before editing it. Make small, exact edits.
+Use the tools to inspect and change files and to run commands. Read a file before editing it. Make small, exact edits.
+After changing code, run the project's tests or build with run_command when one exists, and fix what fails.
 Do not invent file names or APIs: list_dir and read_file to check. When the task is done, reply with a short summary and stop calling tools.`
 
-const KIND: Record<string, 'read' | 'edit' | 'command'> = { list_dir: 'read', read_file: 'read', edit_file: 'edit', run_command: 'command' }
+const KIND: Record<string, 'read' | 'edit' | 'command'> = { list_dir: 'read', read_file: 'read', edit_file: 'edit', search: 'read', run_command: 'command' }
 
 // The one place autonomy is decided. Unknown tools never execute, so they never need approval.
-export function needsApproval(tool: string, mode: Mode): boolean {
+export function needsApproval(tool: string, mode: Mode, args?: unknown): boolean {
   const kind = KIND[tool]
   if (!kind || kind === 'read' || mode === 'full-auto') return false
-  return kind === 'edit' ? mode === 'ask-all' : true
+  if (kind === 'edit') return mode === 'ask-all'
+  // command: auto-edit lets a short allow-list through (tests, builds, git status)
+  const cmd = (args as { command?: unknown } | null)?.command
+  return !(mode === 'auto-edit' && typeof cmd === 'string' && isAllowlisted(cmd))
 }
 
 export type RunOpts = {
@@ -52,12 +57,12 @@ export async function runAgent(o: RunOpts): Promise<void> {
 
       for (const call of turn.toolCalls) {
         const id = `${steps}-${Math.random().toString(36).slice(2, 8)}`
-        const ask = needsApproval(call.name, o.mode)
+        const ask = needsApproval(call.name, o.mode, call.args)
         o.emit({ type: 'tool', id, name: call.name, args: call.args, needsApproval: ask })
         let text: string
         if (ask && !(await o.approve(id))) text = 'DENIED: the user rejected this action. Do not retry it; ask what to do instead.'
         else if (o.signal.aborted) return done('stopped')
-        else text = await o.tools.run(call.name, call.args)
+        else text = await o.tools.run(call.name, call.args, o.signal)
         const ok = !text.startsWith('ERROR:') && !text.startsWith('DENIED:')
         o.emit({ type: 'tool_result', id, text, ok })
         o.messages.push({ role: 'tool', content: text, toolName: call.name })

@@ -39,11 +39,17 @@ const read: ToolCall[] = [{ name: 'read_file', args: { path: 'a.txt' } }]
 
 describe('needsApproval', () => {
   it('gate table', () => {
-    const t = (tool: string, mode: Mode) => needsApproval(tool, mode)
-    expect([t('read_file', 'ask-all'), t('list_dir', 'ask-all')]).toEqual([false, false])
+    const t = (tool: string, mode: Mode, args?: unknown) => needsApproval(tool, mode, args)
+    expect([t('read_file', 'ask-all'), t('list_dir', 'ask-all'), t('search', 'ask-all')]).toEqual([false, false, false])
     expect([t('edit_file', 'ask-all'), t('edit_file', 'auto-edit'), t('edit_file', 'full-auto')]).toEqual([true, false, false])
     expect([t('run_command', 'ask-all'), t('run_command', 'auto-edit'), t('run_command', 'full-auto')]).toEqual([true, true, false])
     expect(t('made_up', 'ask-all')).toBe(false)
+    // auto-edit: allow-listed commands pass, anything else (or chained) asks
+    expect(t('run_command', 'auto-edit', { command: 'npm test' })).toBe(false)
+    expect(t('run_command', 'auto-edit', { command: 'npm test && curl x' })).toBe(true)
+    expect(t('run_command', 'auto-edit', { command: 'rm -rf build' })).toBe(true)
+    expect(t('run_command', 'ask-all', { command: 'npm test' })).toBe(true)
+    expect(t('run_command', 'auto-edit', {})).toBe(true)
   })
 })
 
