@@ -6,7 +6,8 @@ import type { Message } from './agent/provider'
 import type { Checkpoint } from './checkpoint'
 
 // One JSON file per chat plus a small index, so the sidebar never has to read every conversation.
-export type TranscriptItem = { type: 'user'; text: string } | AgentEvent
+export type AttachmentInfo = { id: string; name: string; kind: 'image' | 'text'; size: number }
+export type TranscriptItem = { type: 'user'; text: string; attachments?: AttachmentInfo[] } | AgentEvent
 export type Chat = {
   id: string
   title: string
@@ -37,7 +38,7 @@ export function compact(items: TranscriptItem[]): TranscriptItem[] {
   return out
 }
 
-const SAFE_ID = /^[\w-]+$/
+export const SAFE_ID = /^[\w-]+$/
 
 export class ChatStore {
   constructor(private dir: string) {

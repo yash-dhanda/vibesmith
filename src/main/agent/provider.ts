@@ -2,11 +2,12 @@ import { patientFetch } from '../net'
 import { parseTextToolCalls } from './guards'
 import type { ToolDef } from './tools'
 import { getHost } from '../ollamaHost'
+import { imageB64, type ImageRef } from './images'
 
 export type ToolCall = { name: string; args: unknown; id?: string }
 export type Message =
   | { role: 'system'; content: string }
-  | { role: 'user'; content: string }
+  | { role: 'user'; content: string; images?: ImageRef[] }
   | { role: 'assistant'; content: string; toolCalls?: ToolCall[] }
   | { role: 'tool'; content: string; toolName: string; toolCallId?: string }
 
@@ -54,7 +55,9 @@ export function ollama(opts: { model: string; host?: string; numCtx?: number; te
             ? { role: 'assistant', content: m.content, tool_calls: m.toolCalls?.map((c) => ({ function: { name: c.name, arguments: c.args } })) }
             : m.role === 'tool'
               ? { role: 'tool', content: m.content, tool_name: m.toolName }
-              : m,
+              : m.role === 'user' && m.images?.length
+                ? { role: 'user', content: m.content, images: m.images.map(imageB64) }
+                : { role: m.role, content: m.content },
         ),
       }
       let res: Response

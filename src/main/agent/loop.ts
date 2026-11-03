@@ -2,6 +2,7 @@ import type { Message, Provider, Turn, Usage } from './provider'
 import { isAllowlisted } from './commands'
 import { estimateTokens, trimMessages } from './context'
 import { resolveToolName } from './guards'
+import { onlyLatestImages } from './images'
 import { describeTool, parsePlan } from './narrate'
 import { mergeAgentPlan, planNote, type PlanState, type PlanStep } from './plan'
 import { ToolBox, toolDefs } from './tools'
@@ -153,7 +154,7 @@ export async function runAgent(o: RunOpts): Promise<void> {
       const reflecting = holdNext
       holdNext = false
       let held = ''
-      const turn = await o.provider.chat(o.messages, toolDefs, (text) => (reflecting ? (held += text) : o.emit({ type: 'delta', text })), o.signal, { explore })
+      const turn = await o.provider.chat(onlyLatestImages(o.messages), toolDefs, (text) => (reflecting ? (held += text) : o.emit({ type: 'delta', text })), o.signal, { explore })
       explore = false
       if (reflecting && (turn.toolCalls.length || held.trim().length > 60)) o.emit({ type: 'delta', text: held })
       const u = turn.usage ?? estimateUsage(o.messages, turn)

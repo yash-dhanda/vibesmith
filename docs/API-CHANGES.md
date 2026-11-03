@@ -61,3 +61,11 @@ Claude appends every new `window.forge` call or event here. Additive only.
 - **Edit and resend** = `chatsRewind(id, n, restore)` then `agentSend({ chatId, text: editedText, ... })`. **Try again** = rewind to the last user message with its own `text` returned, then `agentSend` with it. There is no separate retry call: you already hold model/mode/limits.
 - `restoreFiles: true` is "undo the files too" (ask the user: "Also undo the file changes from that attempt?"). With false, the files keep whatever the earlier attempt wrote, and the model is told to re-read before editing.
 - The plan resets to whatever plan was in the kept part of the chat.
+
+## 2026-11-03 — roadmap #6: attachments
+
+- **`forge.attachmentsAdd(chatId, files: { name: string; data: Uint8Array }[]): Promise<{ id, name, kind: 'image'|'text', size }[]>`**. Read each dropped/pasted `File` with `new Uint8Array(await file.arrayBuffer())`. Pictures: png, jpg, jpeg, gif, webp up to 15 MB. Text: any text or code file up to 1 MB (detected by content, not extension). Up to 8 per call. A refused file rejects the whole call with a message fit to show ("tool.exe is not a picture or a text file…"); nothing is stored then. For a pasted screenshot, name it `screenshot.png`. Files are kept in the app's data folder per chat, never in the user's project.
+- **`forge.attachmentsPreview(chatId, id): Promise<string | null>`** returns a `data:` URL for an image (for thumbnails; CSP already allows `img-src data:`), null for text files.
+- **`agentSend({ ..., attachments?: string[] })`** takes the attachment ids to put on this message. Text files are pasted into the message for the model; pictures are sent as pictures. `agentSend` rejects with "This model can't look at pictures…" when a picture is attached and the model is a local one without vision (cloud models are assumed to see). Show that message and offer the model picker.
+- **Transcript `user` items now may carry `attachments?: { id, name, kind, size }[]`** (use `attachmentsPreview` for thumbnails). Reopened chats replay them. Deleting the chat deletes its attachments.
+- Only the newest message with pictures re-sends them on later model calls (older ones keep their text), to keep long chats fast.

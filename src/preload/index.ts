@@ -23,7 +23,9 @@ const api = {
   onChatsChanged: (cb: () => void) => ipcRenderer.on('chats:changed', () => cb()),
   onChatsFocus: (cb: (id: string) => void) => ipcRenderer.on('chats:focus', (_e, id: string) => cb(id)),
   // agent
-  agentSend: (p: { chatId: string; text: string; mode: Mode; model: string; numCtx?: number; maxSteps?: number; maxMinutes?: number }): Promise<void> => ipcRenderer.invoke('agent:send', p),
+  agentSend: (p: { chatId: string; text: string; attachments?: string[]; mode: Mode; model: string; numCtx?: number; maxSteps?: number; maxMinutes?: number }): Promise<void> => ipcRenderer.invoke('agent:send', p),
+  attachmentsAdd: (chatId: string, files: { name: string; data: Uint8Array }[]): Promise<{ id: string; name: string; kind: 'image' | 'text'; size: number }[]> => ipcRenderer.invoke('attachments:add', chatId, files),
+  attachmentsPreview: (chatId: string, id: string): Promise<string | null> => ipcRenderer.invoke('attachments:preview', chatId, id),
   agentStop: (chatId: string) => ipcRenderer.send('agent:stop', chatId),
   agentApprove: (chatId: string, id: string, ok: boolean) => ipcRenderer.send('agent:approve', chatId, id, ok),
   agentUndo: (chatId: string, id: string): Promise<string[]> => ipcRenderer.invoke('agent:undo', chatId, id),

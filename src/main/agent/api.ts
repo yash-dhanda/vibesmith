@@ -1,4 +1,5 @@
 import type { Message, Provider, ToolCall, Usage } from './provider'
+import { imageB64 } from './images'
 
 type FetchFn = (url: string, init: RequestInit) => Promise<Response>
 type Turn = { content: string; toolCalls: ToolCall[]; usage?: Usage }
@@ -56,7 +57,7 @@ async function post(f: FetchFn, who: string, url: string, headers: Record<string
 }
 
 // ---- Anthropic Messages API ----
-type AnthropicBlock = { type: 'text'; text: string } | { type: 'tool_use'; id: string; name: string; input: unknown } | { type: 'tool_result'; tool_use_id: string; content: string }
+type AnthropicBlock = { type: 'text'; text: string } | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } } | { type: 'tool_use'; id: string; name: string; input: unknown } | { type: 'tool_result'; tool_use_id: string; content: string }
 type AnthropicMsg = { role: 'user' | 'assistant'; content: string | AnthropicBlock[] }
 
 export function toAnthropic(messages: Message[]): { system: string; messages: AnthropicMsg[] } {
@@ -69,7 +70,8 @@ export function toAnthropic(messages: Message[]): { system: string; messages: An
       if (m.content) blocks.push({ type: 'text', text: m.content })
       for (const c of m.toolCalls ?? []) blocks.push({ type: 'tool_use', id: c.id ?? '', name: c.name, input: c.args })
       out.push({ role: 'assistant', content: blocks.length ? blocks : '(no output)' })
-    } else if (m.role === 'user') out.push({ role: 'user', content: m.content })
+    } else if (m.role === 'user')
+      out.push({ role: 'user', content: m.images?.length ? [...m.images.map((r) => ({ type: 'image' as const, source: { type: 'base64' as const, media_type: r.mime, data: imageB64(r) } })), { type: 'text' as const, text: m.content }] : m.content })
     else {
       // consecutive tool results must share one user message
       const block: AnthropicBlock = { type: 'tool_result', tool_use_id: m.toolCallId ?? '', content: m.content }
@@ -139,7 +141,9 @@ export function toOpenAI(messages: Message[]): unknown[] {
         ...(m.toolCalls?.length && { tool_calls: m.toolCalls.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: JSON.stringify(c.args ?? {}) } })) }),
       }
     if (m.role === 'tool') return { role: 'tool', tool_call_id: m.toolCallId, content: m.content }
-    return m
+    if (m.role === 'user' && m.images?.length)
+      return { role: 'user', content: [{ type: 'text', text: m.content }, ...m.images.map((r) => ({ type: 'image_url', image_url: { url: `data:${r.mime};base64,${imageB64(r)}` } }))] }
+    return { role: m.role, content: m.content }
   })
 }
 

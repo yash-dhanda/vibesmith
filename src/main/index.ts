@@ -19,7 +19,8 @@ import { changesSince, createCheckpoint, diffOf, fileAt, hasGit, initRepo, isRep
 import { summarizeChanges } from './agent/summarize'
 import { ChatStore, compact, titleFrom, type Chat, type ChatListItem, type ChatStatus } from './chatStore'
 import { clearKey, keyStatus, setKey, type KeyProvider } from './keys'
-import { listModels, makeProvider, ollamaStatus } from './models'
+import { listModels, makeProvider, modelSupportsVision, ollamaStatus } from './models'
+import { AttachmentStore, inlineText } from './attachments'
 import { getVerify, setVerify } from './settings'
 import { registerLibrary } from './library'
 import { UsageStore } from './usageStore'
@@ -209,6 +210,7 @@ ipcMain.handle('chats:rename', (_e, id: string, title: string) => {
 
 ipcMain.handle('chats:delete', (_e, id: string) => {
   stopPreview(id)
+  attachments().removeChat(id)
   if (sessions.get(id)?.run) throw new Error('Stop this chat first.')
   store.delete(id)
   sessions.delete(id)
@@ -264,13 +266,30 @@ ipcMain.handle('open:folder', async (_e, chatId: string) => {
   if (err) throw new Error(err)
 })
 
+// ---- attachments: pictures and text files on a message ----
+let attStore: AttachmentStore
+const attachments = () => (attStore ??= new AttachmentStore(join(app.getPath('userData'), 'attachments')))
+ipcMain.handle('attachments:add', (_e, chatId: string, files: { name: string; data: Uint8Array }[]) =>
+  attachments().add(chatId, Array.isArray(files) ? files : []).map(({ id, name, kind, size }) => ({ id, name, kind, size })),
+)
+// A small picture for the chip in the composer or the thread.
+ipcMain.handle('attachments:preview', (_e, chatId: string, id: string) => {
+  const a = attachments().find(chatId, id)
+  return a?.kind === 'image' ? attachments().dataUrl(a) : null
+})
+
 // ---- the agent ----
-ipcMain.handle('agent:send', async (e, p: { chatId: string; text: string; mode: Mode; model: string; numCtx?: number; maxSteps?: number; maxMinutes?: number }) => {
+ipcMain.handle('agent:send', async (e, p: { chatId: string; text: string; attachments?: string[]; mode: Mode; model: string; numCtx?: number; maxSteps?: number; maxMinutes?: number }) => {
   let s = sessionFor(p.chatId)
   if (s?.run) throw new Error('This chat is still working. Wait for it, or press stop.')
   const root = s ? s.chat.project : getRoot()
   if (!root) throw new Error('Choose a folder to work in first.')
   if (!existsSync(root)) throw new Error(`The folder ${root} no longer exists.`)
+  // Attachments: text files go into the message, pictures go to the model as pictures (only if it can see).
+  const atts = (Array.isArray(p.attachments) ? p.attachments : []).slice(0, 8).map((id) => attachments().find(p.chatId, id))
+  if (atts.some((a) => !a)) throw new Error('An attached file is no longer available. Attach it again.')
+  const found = atts as NonNullable<(typeof atts)[number]>[]
+  if (found.some((a) => a.kind === 'image') && !(await modelSupportsVision(p.model))) throw new Error("This model can't look at pictures. Pick a model that can see (for example Qwen 3.5), or remove the picture.")
   const provider = makeProvider(p.model, p.numCtx) // throws a readable error (e.g. missing key) before anything is recorded
   const verifyCmd = getVerify(root).effective
   if (p.mode === 'full-auto' && !verifyCmd) throw new Error("Full auto needs a verify command, because nothing else checks the model's work. Set one in Settings (gear icon).")
@@ -300,8 +319,11 @@ ipcMain.handle('agent:send', async (e, p: { chatId: string; text: string; mode: 
   const session = s
   const { chat, tools } = session
   if (!chat.transcript.length) chat.title = titleFrom(p.text)
-  chat.transcript.push({ type: 'user', text: p.text })
-  chat.messages.push({ role: 'user', content: p.text })
+  const info = found.map(({ id, name, kind, size }) => ({ id, name, kind, size }))
+  chat.transcript.push({ type: 'user', text: p.text, ...(info.length ? { attachments: info } : {}) })
+  const images = found.filter((a) => a.kind === 'image').map((a) => ({ mime: a.mime, path: a.path }))
+  const inlined = found.filter((a) => a.kind === 'text').map((a) => ((t) => inlineText(a.name, t.text, t.cut))(attachments().text(a))).join('')
+  chat.messages.push({ role: 'user', content: p.text + inlined, ...(images.length ? { images } : {}) })
   session.dirty = true
   flush(session)
 

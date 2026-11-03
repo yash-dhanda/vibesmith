@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { anthropic, openai, openrouter, toAnthropic, toOpenAI } from './api'
 import { ollama } from './provider'
@@ -184,5 +187,38 @@ describe('ollama provider over a real connection', () => {
     } finally {
       server.close()
     }
+  })
+})
+
+describe('pictures in messages', () => {
+  const png = Buffer.from([137, 80, 78, 71])
+  const withImage = (): Message[] => {
+    const dir = mkdtempSync(join(tmpdir(), 'forge-img-'))
+    const path = join(dir, 'a.png')
+    writeFileSync(path, png)
+    return [{ role: 'user', content: 'what is this?', images: [{ mime: 'image/png', path }] }]
+  }
+  const b64 = png.toString('base64')
+  it('OpenAI-compatible: text plus an image_url data URL', () => {
+    expect(toOpenAI(withImage())).toEqual([{ role: 'user', content: [{ type: 'text', text: 'what is this?' }, { type: 'image_url', image_url: { url: `data:image/png;base64,${b64}` } }] }])
+  })
+  it('Anthropic: image block before the text', () => {
+    expect(toAnthropic(withImage()).messages).toEqual([{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: b64 } }, { type: 'text', text: 'what is this?' }] }])
+  })
+  it('Ollama: base64 images on the user message, and no file paths leak into the request', async () => {
+    let body = ''
+    const p = ollama({ model: 'm', fetchFn: async (_u, init) => ((body = String(init.body)), new Response('{"message":{"content":"x"},"done":true,"eval_count":1}\n')) })
+    await p.chat(withImage(), [], () => {}, new AbortController().signal)
+    const sent = JSON.parse(body).messages[0]
+    expect(sent).toEqual({ role: 'user', content: 'what is this?', images: [b64] })
+  })
+})
+
+describe('onlyLatestImages', () => {
+  it('keeps pictures on the newest message that has them only', async () => {
+    const { onlyLatestImages } = await import('./images')
+    const img = [{ mime: 'image/png', path: '/x.png' }]
+    const out = onlyLatestImages([{ role: 'user', content: 'a', images: img }, { role: 'assistant', content: 'ok' }, { role: 'user', content: 'b', images: img }, { role: 'user', content: 'c' }])
+    expect(out.map((m) => !!(m as { images?: unknown }).images)).toEqual([false, false, true, false])
   })
 })
