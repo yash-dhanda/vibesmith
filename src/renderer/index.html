@@ -75,6 +75,19 @@
     .approve .yes { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 
     .note { color: var(--muted); font-size: 12px; }
+    .errtext { color: var(--err); font-size: 12px; }
+    dialog { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 14px; padding: 0; width: min(460px, 92vw); }
+    dialog::backdrop { background: rgba(0, 0, 0, .55); }
+    .dlg { padding: 18px 20px 14px; display: grid; gap: 10px; }
+    .dlg h3 { margin: 0; font-size: 15px; }
+    .dlg p { margin: 0; }
+    .keyrow { display: grid; grid-template-columns: 90px 1fr auto auto; gap: 8px; align-items: center; margin-top: 6px; }
+    .keyrow label { color: var(--muted); }
+    .dlg input { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; color: var(--text); min-width: 0; width: 100%; }
+    .dlg input:focus { outline: 0; border-color: var(--accent); }
+    .dlg button { border-radius: 8px; padding: 5px 12px; border: 1px solid var(--border); background: var(--panel-2); }
+    .dlg .close { justify-self: end; margin-top: 6px; }
+    .modelrow { display: grid; grid-template-columns: 90px 1fr; gap: 8px; align-items: center; }
     .errcard { border: 1px solid #5a2e33; background: #2a1a1d; color: var(--err); border-radius: 10px; padding: 8px 12px; }
 
     #composer { margin: 8px 12px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 14px; padding: 10px 10px 8px; }
@@ -96,7 +109,7 @@
     <div id="side"><button class="open" id="open">Open folder</button><div id="tree"></div></div>
     <div id="main"><div id="tabs"></div><div id="editor"></div><div id="term"></div></div>
     <aside id="chat">
-      <header><span>Agent</span><button class="icon-btn" id="new" title="New chat">＋</button></header>
+      <header><span>Agent</span><span><button class="icon-btn" id="gear" title="API keys">⚙</button><button class="icon-btn" id="new" title="New chat">＋</button></span></header>
       <div id="thread"></div>
       <div id="composer">
         <textarea id="prompt" rows="1" placeholder="Ask Forge to change your code…  (Enter to send, Shift+Enter for a new line)"></textarea>
@@ -113,6 +126,7 @@
       </div>
     </aside>
   </div>
+  <dialog id="settings"></dialog>
   <script type="module" src="./main.ts"></script>
 </body>
 </html>

@@ -39,6 +39,8 @@ function md(src: string): string {
     .join('')
 }
 
+const cleanErr = (e: unknown) => String((e as Error).message).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+
 // ---- thread ----
 let emptyEl: HTMLElement | null = null
 let reply: { el: HTMLElement; text: string } | null = null
@@ -199,19 +201,99 @@ async function send() {
   try {
     await window.forge.agentSend({ text, mode: modeSel.value as Mode, model: modelSel.value })
   } catch (e) {
-    add(h('div', 'errcard', String((e as Error).message).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')))
+    add(h('div', 'errcard', cleanErr(e)))
     setRunning(false)
   }
 }
 
+const CLOUD = { openai: 'OpenAI', openrouter: 'OpenRouter' } as const
+const customIds = (p: string): string[] => {
+  try {
+    return JSON.parse(localStorage.getItem('forge.custom.' + p) ?? '[]')
+  } catch {
+    return []
+  }
+}
+
 async function loadModels() {
-  const names = await window.forge.agentModels()
+  const [list, keys] = await Promise.all([window.forge.agentModels(), window.forge.keysStatus()])
+  for (const p of ['openai', 'openrouter'] as const) if (keys[p]) for (const id of customIds(p)) list.push({ id: `${p}:${id}`, label: id, group: CLOUD[p] })
   let saved = ''
   try {
     saved = localStorage.getItem('forge.model') ?? ''
   } catch {}
-  modelSel.replaceChildren(...(names.length ? names : ['qwen3:8b']).map((n) => new Option(n, n)))
-  if (names.includes(saved)) modelSel.value = saved
+  modelSel.replaceChildren()
+  const groups = new Map<string, HTMLOptGroupElement>()
+  for (const m of list) {
+    let g = groups.get(m.group)
+    if (!g) {
+      g = document.createElement('optgroup')
+      g.label = m.group
+      groups.set(m.group, g)
+      modelSel.append(g)
+    }
+    g.append(new Option(m.label, m.id))
+  }
+  if (!list.length) modelSel.append(new Option('qwen3:8b (Ollama not running)', 'ollama:qwen3:8b'))
+  if (list.some((m) => m.id === saved)) modelSel.value = saved
+}
+
+async function openSettings() {
+  const dlg = $<HTMLDialogElement>('settings')
+  const render = async () => {
+    const keys = await window.forge.keysStatus()
+    const box = h('div', 'dlg')
+    box.append(h('h3', '', 'API keys'), h('p', 'note', 'Stored encrypted by your OS keychain. A key is only sent to the provider you pick. Local Ollama models need no key.'))
+    for (const [p, name] of [['anthropic', 'Anthropic'], ['openai', 'OpenAI'], ['openrouter', 'OpenRouter']] as const) {
+      const row = h('div', 'keyrow')
+      const input = document.createElement('input')
+      input.type = 'password'
+      input.autocomplete = 'off'
+      input.placeholder = keys[p] ? '•••••••• saved (paste to replace)' : 'Paste API key'
+      const msg = h('div', 'errtext')
+      const save = h('button', '', 'Save')
+      save.onclick = async () => {
+        try {
+          await window.forge.keysSet(p, input.value)
+          await loadModels()
+          await render()
+        } catch (e) {
+          msg.textContent = cleanErr(e)
+        }
+      }
+      row.append(h('label', '', name), input, save)
+      if (keys[p]) {
+        const rm = h('button', '', 'Remove')
+        rm.onclick = async () => {
+          await window.forge.keysClear(p)
+          await loadModels()
+          await render()
+        }
+        row.append(rm)
+      }
+      box.append(row, msg)
+      if (p !== 'anthropic') {
+        const mrow = h('div', 'modelrow')
+        const ids = document.createElement('input')
+        ids.placeholder = 'Model IDs, comma-separated'
+        ids.value = customIds(p).join(', ')
+        ids.onchange = () => {
+          try {
+            localStorage.setItem('forge.custom.' + p, JSON.stringify(ids.value.split(',').map((s) => s.trim()).filter(Boolean)))
+          } catch {}
+          loadModels()
+        }
+        mrow.append(h('label', 'note', 'Models'), ids)
+        box.append(mrow)
+      }
+    }
+    const close = h('button', 'close', 'Done')
+    close.onclick = () => dlg.close()
+    box.append(close)
+    dlg.replaceChildren(box)
+  }
+  await render()
+  dlg.showModal()
 }
 
 export function initChat(opts: { onFileChanged: (path: string) => void }) {
@@ -232,6 +314,7 @@ export function initChat(opts: { onFileChanged: (path: string) => void }) {
     }
   }
   sendBtn.onclick = () => (running ? window.forge.agentStop() : send())
+  $('gear').onclick = openSettings
   $('new').onclick = () => {
     if (running) return
     window.forge.agentNew()

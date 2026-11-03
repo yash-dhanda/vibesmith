@@ -87,6 +87,25 @@ describe('runAgent', () => {
     expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'stuck' })
   })
 
+  it('stops when the same successful call keeps returning the same result', async () => {
+    const search: ToolCall[] = [{ name: 'search', args: { pattern: 'nothing-here' } }]
+    const { events } = await run([search, search, search, search, search], 'ask-all', true)
+    expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'stuck', steps: 3 })
+  })
+
+  it('nudges the model on the second identical result, before giving up', async () => {
+    const search: ToolCall[] = [{ name: 'search', args: { pattern: 'nothing-here' } }]
+    const { messages } = await run([search, search, search], 'ask-all', true)
+    const toolMsgs = messages.filter((m) => m.role === 'tool').map((m) => m.content)
+    expect(toolMsgs[0]).toBe('no matches')
+    expect(toolMsgs[1]).toMatch(/^no matches\n\[Forge: you made this exact call twice/)
+  })
+
+  it('does not call it stuck when the result changes between identical calls', async () => {
+    const { events } = await run([read, edit, read, edit, read], 'full-auto', true)
+    expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'finished' })
+  })
+
   it('stops at the step cap', async () => {
     const events: AgentEvent[] = []
     await runAgent({

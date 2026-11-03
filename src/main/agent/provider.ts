@@ -1,11 +1,12 @@
 import { parseTextToolCalls } from './guards'
 import type { ToolDef } from './tools'
 
-export type ToolCall = { name: string; args: unknown }
+export type ToolCall = { name: string; args: unknown; id?: string }
 export type Message =
-  | { role: 'system' | 'user'; content: string }
+  | { role: 'system'; content: string }
+  | { role: 'user'; content: string }
   | { role: 'assistant'; content: string; toolCalls?: ToolCall[] }
-  | { role: 'tool'; content: string; toolName: string }
+  | { role: 'tool'; content: string; toolName: string; toolCallId?: string }
 
 export interface Provider {
   // Streams text through onText; resolves with the full turn once the model stops.

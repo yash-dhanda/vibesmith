@@ -16,7 +16,7 @@ export type AgentEvent =
 export const SYSTEM_PROMPT = `You are Forge, a coding agent working inside the user's project folder.
 Use the tools to inspect and change files and to run commands. Read a file before editing it. Make small, exact edits.
 After changing code, run the project's tests or build with run_command when one exists, and fix what fails.
-Do not invent file names or APIs: list_dir and read_file to check. When the task is done, reply with a short summary and stop calling tools.`
+When a command or test fails, read the files named in its output before searching. Do not invent file names or APIs: list_dir and read_file to check. When the task is done, reply with a short summary and stop calling tools.`
 
 const KIND: Record<string, 'read' | 'edit' | 'command'> = { list_dir: 'read', read_file: 'read', edit_file: 'edit', search: 'read', run_command: 'command' }
 
@@ -43,7 +43,8 @@ export type RunOpts = {
 
 export async function runAgent(o: RunOpts): Promise<void> {
   const max = o.maxSteps ?? 50
-  const failures = new Map<string, number>()
+  // Per call signature: the last result and how many times in a row it came back identical.
+  const repeats = new Map<string, { result: string; n: number }>()
   let steps = 0
   const done = (reason: 'finished' | 'stopped' | 'stuck' | 'max_steps') => o.emit({ type: 'done', reason, steps })
 
@@ -53,7 +54,7 @@ export async function runAgent(o: RunOpts): Promise<void> {
       steps++
       const turn = await o.provider.chat(o.messages, toolDefs, (text) => o.emit({ type: 'delta', text }), o.signal)
       // Resolve near-miss names (read, cat, write_file) BEFORE the gate, so an alias can never dodge approval.
-      const calls = turn.toolCalls.map((c) => ({ ...c, name: resolveToolName(c.name) ?? c.name }))
+      const calls = turn.toolCalls.map((c, i) => ({ ...c, id: c.id ?? `call_${steps}_${i}`, name: resolveToolName(c.name) ?? c.name }))
       o.messages.push({ role: 'assistant', content: turn.content, toolCalls: calls.length ? calls : undefined })
       o.emit({ type: 'turn_end' })
       if (!calls.length) return done('finished')
@@ -67,15 +68,19 @@ export async function runAgent(o: RunOpts): Promise<void> {
         else if (o.signal.aborted) return done('stopped')
         else text = await o.tools.run(call.name, call.args, o.signal)
         const ok = !text.startsWith('ERROR:') && !text.startsWith('DENIED:')
-        o.emit({ type: 'tool_result', id, text, ok })
-        o.messages.push({ role: 'tool', content: text, toolName: call.name })
 
-        // Same failing call three times: the model is looping, stop and hand back to the user.
-        if (!ok) {
-          const key = call.name + JSON.stringify(call.args)
-          failures.set(key, (failures.get(key) ?? 0) + 1)
-          if (failures.get(key)! >= 3) return done('stuck')
-        }
+        // The same call returning the same result three times means nothing is changing: the model is looping.
+        // Errors, empty searches, a repeated read or an unchanged test run all land here.
+        const key = call.name + JSON.stringify(call.args)
+        const prev = repeats.get(key)
+        const n = prev && prev.result === text ? prev.n + 1 : 1
+        repeats.set(key, { result: text, n })
+        // Second identical result: small models often just need to be told to change approach.
+        const shown = n === 2 ? text + '\n[Forge: you made this exact call twice and got the same result. Do something different: read the file the output points to with read_file, or explain what is blocking you.]' : text
+
+        o.emit({ type: 'tool_result', id, text: shown, ok })
+        o.messages.push({ role: 'tool', content: shown, toolName: call.name, toolCallId: call.id })
+        if (n >= 3) return done('stuck')
       }
     }
     done('max_steps')

@@ -15,7 +15,10 @@ const api = {
   agentStop: () => ipcRenderer.send('agent:stop'),
   agentNew: () => ipcRenderer.send('agent:new'),
   agentApprove: (id: string, ok: boolean) => ipcRenderer.send('agent:approve', id, ok),
-  agentModels: (): Promise<string[]> => ipcRenderer.invoke('agent:models'),
+  agentModels: (): Promise<{ id: string; label: string; group: string }[]> => ipcRenderer.invoke('agent:models'),
+  keysStatus: (): Promise<Record<'anthropic' | 'openai' | 'openrouter', boolean>> => ipcRenderer.invoke('keys:status'),
+  keysSet: (p: string, key: string): Promise<void> => ipcRenderer.invoke('keys:set', p, key),
+  keysClear: (p: string): Promise<void> => ipcRenderer.invoke('keys:clear', p),
   onAgentEvent: (cb: (e: AgentEvent) => void) => ipcRenderer.on('agent:event', (_e, ev: AgentEvent) => cb(ev)),
 }
 

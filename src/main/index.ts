@@ -6,8 +6,10 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { getRoot, inRoot, setRoot } from './project'
 import { runAgent, SYSTEM_PROMPT, type Mode } from './agent/loop'
-import { ollama, type Message } from './agent/provider'
+import type { Message } from './agent/provider'
 import { ToolBox } from './agent/tools'
+import { clearKey, keyStatus, setKey, type KeyProvider } from './keys'
+import { listModels, makeProvider } from './models'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -50,13 +52,14 @@ let running: { ctl: AbortController; pending: Map<string, (ok: boolean) => void>
 ipcMain.handle('agent:send', (e, p: { text: string; mode: Mode; model: string }) => {
   if (running) throw new Error('agent already running')
   if (!getRoot()) throw new Error('open a project folder first')
+  const provider = makeProvider(p.model) // throws a readable error (e.g. missing key) before anything is recorded
   agent ??= { messages: [{ role: 'system', content: SYSTEM_PROMPT }], tools: new ToolBox() }
   agent.messages.push({ role: 'user', content: p.text })
   const run = (running = { ctl: new AbortController(), pending: new Map() })
   runAgent({
     messages: agent.messages,
     mode: p.mode,
-    provider: ollama({ model: p.model }),
+    provider,
     tools: agent.tools,
     emit: (ev) => e.sender.send('agent:event', ev),
     approve: (id) => new Promise((res) => run.pending.set(id, res)),
@@ -80,14 +83,10 @@ ipcMain.on('agent:new', () => {
   if (!running) agent = null
 })
 
-ipcMain.handle('agent:models', async () => {
-  try {
-    const j = (await (await fetch('http://127.0.0.1:11434/api/tags')).json()) as { models: { name: string }[] }
-    return j.models.map((m) => m.name)
-  } catch {
-    return []
-  }
-})
+ipcMain.handle('agent:models', () => listModels())
+ipcMain.handle('keys:status', () => keyStatus())
+ipcMain.handle('keys:set', (_e, p: KeyProvider, key: string) => setKey(p, key))
+ipcMain.handle('keys:clear', (_e, p: KeyProvider) => clearKey(p))
 
 app.whenReady().then(() => {
   const win = new BrowserWindow({
