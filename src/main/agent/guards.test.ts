@@ -11,7 +11,8 @@ describe('resolveToolName', () => {
     expect(resolveToolName('read_file')).toBe('read_file')
     expect(resolveToolName('Read File')).toBe('read_file')
     expect(resolveToolName('cat')).toBe('read_file')
-    expect(resolveToolName('write_file')).toBe('edit_file')
+    expect(resolveToolName('write_file')).toBe('create_file')
+    expect(resolveToolName('str_replace')).toBe('edit_file')
     expect(resolveToolName('bash')).toBe('run_command')
     expect(resolveToolName('read_flie')).toBe('read_file')
     expect(resolveToolName('delete_everything')).toBeNull()
@@ -74,7 +75,7 @@ describe('ToolBox edit guards', () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'forge-'))
     setRoot(dir)
-    box = new ToolBox()
+    box = new ToolBox(dir)
   })
   const read = (f: string) => readFileSync(join(dir, f), 'utf8')
 

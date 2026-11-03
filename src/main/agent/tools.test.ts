@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -14,7 +14,7 @@ beforeEach(() => {
   writeFileSync(join(dir, 'dup.txt'), 'x\nx\n')
   mkdirSync(join(dir, 'sub'))
   setRoot(dir)
-  box = new ToolBox()
+  box = new ToolBox(dir)
 })
 
 describe('ToolBox', () => {
@@ -72,6 +72,28 @@ describe('ToolBox', () => {
     expect(await box.run('edit_file', { path: 'new.txt', old_text: 'a', new_text: 'b' })).toMatch(/does not exist/)
     expect(await box.run('edit_file', { path: 'sub/new.txt', old_text: '', new_text: 'hi' })).toMatch(/^created/)
     expect(readFileSync(join(dir, 'sub/new.txt'), 'utf8')).toBe('hi')
+  })
+
+  it('create_file builds new files and folders, and refuses to overwrite', async () => {
+    expect(await box.run('create_file', { path: 'app/src/deep/main.py', content: 'print(1)\n' })).toBe('created app/src/deep/main.py (9 chars)')
+    expect(readFileSync(join(dir, 'app/src/deep/main.py'), 'utf8')).toBe('print(1)\n')
+    expect(await box.run('create_file', { path: 'a.txt', content: 'x' })).toMatch(/already exists/)
+    expect(readFileSync(join(dir, 'a.txt'), 'utf8')).toBe('one\ntwo\nthree\n')
+    expect(await box.run('create_file', { path: 'only-path' })).toMatch(/needs string argument "content"/)
+  })
+
+  it('create_file will not escape the project, even through new folders or a symlink', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'forge-out-'))
+    symlinkSync(outside, join(dir, 'link'))
+    expect(await box.run('create_file', { path: '../../escape.txt', content: 'x' })).toMatch(/outside project/)
+    expect(await box.run('create_file', { path: 'new/../../escape.txt', content: 'x' })).toMatch(/outside project/)
+    expect(await box.run('create_file', { path: 'link/new/file.txt', content: 'x' })).toMatch(/outside project/)
+    expect(existsSync(join(outside, 'new'))).toBe(false)
+  })
+
+  it('create_file runs the syntax check and leaves nothing broken behind', async () => {
+    expect(await box.run('create_file', { path: 'bad.json', content: '{"a":' })).toMatch(/NOT applied/)
+    expect(existsSync(join(dir, 'bad.json'))).toBe(false)
   })
 
   it('jails paths: dotdot, absolute, symlink, new file outside', async () => {

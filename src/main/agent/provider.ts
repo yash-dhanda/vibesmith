@@ -8,9 +8,13 @@ export type Message =
   | { role: 'assistant'; content: string; toolCalls?: ToolCall[] }
   | { role: 'tool'; content: string; toolName: string; toolCallId?: string }
 
+// What one model call cost. genMs is the time spent generating (not loading or reading the prompt), so output/genMs is tokens per second.
+export type Usage = { input: number; output: number; genMs: number; ctxLimit?: number; estimated?: boolean }
+export type Turn = { content: string; toolCalls: ToolCall[]; usage?: Usage }
+
 export interface Provider {
   // Streams text through onText; resolves with the full turn once the model stops.
-  chat(messages: Message[], tools: ToolDef[], onText: (t: string) => void, signal: AbortSignal): Promise<{ content: string; toolCalls: ToolCall[] }>
+  chat(messages: Message[], tools: ToolDef[], onText: (t: string) => void, signal: AbortSignal): Promise<Turn>
 }
 
 const safeJson = (s: string): unknown => {
@@ -21,18 +25,26 @@ const safeJson = (s: string): unknown => {
   }
 }
 
-type OllamaLine = { message?: { content?: string; tool_calls?: { function: { name: string; arguments: unknown } }[] }; error?: string }
+type OllamaLine = {
+  message?: { content?: string; tool_calls?: { function: { name: string; arguments: unknown } }[] }
+  error?: string
+  prompt_eval_count?: number
+  eval_count?: number
+  eval_duration?: number // nanoseconds
+}
 
 // Native /api/chat, not the OpenAI-compatible /v1: only the native API accepts num_ctx per request.
-export function ollama(opts: { model: string; host?: string; numCtx?: number }): Provider {
+export function ollama(opts: { model: string; host?: string; numCtx?: number; fetchFn?: (url: string, init: RequestInit) => Promise<Response> }): Provider {
   const host = opts.host ?? 'http://127.0.0.1:11434'
+  const f = opts.fetchFn ?? fetch
+  const numCtx = opts.numCtx ?? 8192
   return {
     async chat(messages, tools, onText, signal) {
       const body = {
         model: opts.model,
         stream: true,
         think: false,
-        options: { num_ctx: opts.numCtx ?? 8192 },
+        options: { num_ctx: numCtx },
         tools: tools.map((t) => ({ type: 'function', function: t })),
         messages: messages.map((m) =>
           m.role === 'assistant'
@@ -44,7 +56,7 @@ export function ollama(opts: { model: string; host?: string; numCtx?: number }):
       }
       let res: Response
       try {
-        res = await fetch(`${host}/api/chat`, { method: 'POST', body: JSON.stringify(body), signal })
+        res = await f(`${host}/api/chat`, { method: 'POST', body: JSON.stringify(body), signal })
       } catch (e) {
         if (signal.aborted) throw e
         throw new Error(`Cannot reach Ollama at ${host}. Is "ollama serve" running?`)
@@ -54,6 +66,7 @@ export function ollama(opts: { model: string; host?: string; numCtx?: number }):
         throw new Error(res.status === 404 ? `Model "${opts.model}" not found. Run: ollama pull ${opts.model}` : `Ollama ${res.status}: ${text.slice(0, 200)}`)
       }
       let content = ''
+      let usage: Usage | undefined
       const toolCalls: ToolCall[] = []
       const decoder = new TextDecoder()
       let buf = ''
@@ -61,6 +74,7 @@ export function ollama(opts: { model: string; host?: string; numCtx?: number }):
         if (!line.trim()) return
         const j = JSON.parse(line) as OllamaLine
         if (j.error) throw new Error(j.error)
+        if (j.eval_count !== undefined) usage = { input: j.prompt_eval_count ?? 0, output: j.eval_count, genMs: (j.eval_duration ?? 0) / 1e6, ctxLimit: numCtx }
         if (j.message?.content) {
           content += j.message.content
           onText(j.message.content)
@@ -81,9 +95,9 @@ export function ollama(opts: { model: string; host?: string; numCtx?: number }):
       // Some models write the call as text instead of using the tool-call channel.
       if (!toolCalls.length) {
         const t = parseTextToolCalls(content)
-        if (t.calls.length) return { content: t.content, toolCalls: t.calls }
+        if (t.calls.length) return { content: t.content, toolCalls: t.calls, usage }
       }
-      return { content, toolCalls }
+      return { content, toolCalls, usage }
     },
   }
 }

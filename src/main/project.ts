@@ -7,17 +7,27 @@ let root: string | null = process.env.FORGE_PROJECT ? realpathSync(process.env.F
 export const getRoot = () => root
 export const setRoot = (p: string) => (root = realpathSync(p))
 
-export function inRoot(p: string): string {
-  if (!root) throw new Error('no project open')
+// The folder a chat works in is passed explicitly (agent runs go on in the background while the screen shows another chat).
+export const inRoot = (p: string): string => resolveIn(root ?? (() => { throw new Error('no project open') })(), p)
+
+export function resolveIn(root: string, p: string): string {
   const abs = resolve(root, p)
-  // realpath resolves symlinks so a link inside root cannot point outside it.
-  // New files do not exist yet, so resolve the parent instead.
-  let real: string
-  try {
-    real = realpathSync(abs)
-  } catch {
-    real = join(realpathSync(dirname(abs)), abs.slice(dirname(abs).length))
+  // realpath resolves symlinks, so a link inside the root cannot point outside it.
+  // A file that does not exist yet (the agent is creating it, maybe in new folders) is checked through its nearest existing parent.
+  let existing = abs
+  let rest = ''
+  for (;;) {
+    try {
+      existing = realpathSync(existing)
+      break
+    } catch {
+      const parent = dirname(existing)
+      if (parent === existing) throw new Error(`path outside project: ${p}`)
+      rest = abs.slice(parent.length) // includes the leading separator; resolve() already removed any '..'
+      existing = parent
+    }
   }
+  const real = rest ? join(existing, rest) : existing
   const rel = relative(root, real)
   if (rel.startsWith('..') || isAbsolute(rel)) throw new Error(`path outside project: ${p}`)
   return real

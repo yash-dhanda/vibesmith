@@ -1,4 +1,4 @@
-import type { Message, Provider } from './provider'
+import type { Message, Provider, Turn, Usage } from './provider'
 import { isAllowlisted } from './commands'
 import { resolveToolName } from './guards'
 import { ToolBox, toolDefs } from './tools'
@@ -10,18 +10,23 @@ export type AgentEvent =
   | { type: 'tool'; id: string; name: string; args: unknown; needsApproval: boolean }
   | { type: 'tool_result'; id: string; text: string; ok: boolean }
   | { type: 'turn_end' }
+  | { type: 'usage'; input: number; output: number; tps: number; ctxLimit?: number; estimated?: boolean }
   | { type: 'verify'; command: string; ok: boolean; output: string }
   | { type: 'note'; text: string }
   | { type: 'changes'; checkpoint: string; files: { path: string; status: 'added' | 'modified' | 'deleted'; added: number; removed: number }[] }
   | { type: 'done'; reason: 'finished' | 'unverified' | 'stopped' | 'stuck' | 'max_steps'; steps: number }
   | { type: 'error'; message: string }
 
-export const SYSTEM_PROMPT = `You are Forge, a coding agent working inside the user's project folder.
-Use the tools to inspect and change files and to run commands. Read a file before editing it. Make small, exact edits.
-After changing code, run the project's tests or build with run_command when one exists, and fix what fails.
+export const SYSTEM_PROMPT = `You are Forge, a coding agent working inside the user's project folder. The user is not looking at code: they describe what they want and you build it.
+
+When the user asks you to make, build or create something, do it with the tools: create the files in the project folder with create_file. Never paste a whole program into the chat instead of creating the files.
+After creating files, reply briefly: what you made and where, how to run it, and anything you still need from the user (names, settings, choices). Ask in one short list, then stop and wait for the answers. When they answer, change the files with edit_file.
+Secrets such as API keys and tokens: put placeholders in a .env file, tell the user which file to fill in, and never ask them to paste a secret into the chat.
+
+To change existing files: read_file first, then edit_file with small exact edits. After changing code, run the project's tests or build with run_command when one exists, and fix what fails.
 When a command or test fails, read the files named in its output before searching. Do not invent file names or APIs: list_dir and read_file to check. When the task is done, reply with a short summary and stop calling tools.`
 
-const KIND: Record<string, 'read' | 'edit' | 'command'> = { list_dir: 'read', read_file: 'read', edit_file: 'edit', search: 'read', run_command: 'command' }
+const KIND: Record<string, 'read' | 'edit' | 'command'> = { list_dir: 'read', read_file: 'read', edit_file: 'edit', create_file: 'edit', search: 'read', run_command: 'command' }
 
 // The one place autonomy is decided. Unknown tools never execute, so they never need approval.
 export function needsApproval(tool: string, mode: Mode, args?: unknown): boolean {
@@ -34,6 +39,12 @@ export function needsApproval(tool: string, mode: Mode, args?: unknown): boolean
 }
 
 const MAX_VERIFY_FAILURES = 2
+
+// Providers that report no usage still get a rough number (about 4 characters per token), flagged as an estimate.
+export function estimateUsage(messages: Message[], turn: Turn): Usage {
+  const chars = messages.reduce((n, m) => n + m.content.length, 0)
+  return { input: Math.ceil(chars / 4), output: Math.ceil((turn.content.length + (turn.toolCalls.length ? JSON.stringify(turn.toolCalls).length : 0)) / 4), genMs: 0, estimated: true }
+}
 
 export type RunOpts = {
   messages: Message[] // conversation so far, ending with the new user message; mutated in place
@@ -62,6 +73,8 @@ export async function runAgent(o: RunOpts): Promise<void> {
       if (o.signal.aborted) return done('stopped')
       steps++
       const turn = await o.provider.chat(o.messages, toolDefs, (text) => o.emit({ type: 'delta', text }), o.signal)
+      const u = turn.usage ?? estimateUsage(o.messages, turn)
+      o.emit({ type: 'usage', input: u.input, output: u.output, tps: u.genMs > 0 ? u.output / (u.genMs / 1000) : 0, ctxLimit: u.ctxLimit, estimated: u.estimated })
       // Resolve near-miss names (read, cat, write_file) BEFORE the gate, so an alias can never dodge approval.
       const calls = turn.toolCalls.map((c, i) => ({ ...c, id: c.id ?? `call_${steps}_${i}`, name: resolveToolName(c.name) ?? c.name }))
       o.messages.push({ role: 'assistant', content: turn.content, toolCalls: calls.length ? calls : undefined })
@@ -87,7 +100,7 @@ export async function runAgent(o: RunOpts): Promise<void> {
         else if (o.signal.aborted) return done('stopped')
         else text = await o.tools.run(call.name, call.args, o.signal)
         const ok = !text.startsWith('ERROR:') && !text.startsWith('DENIED:')
-        if (ok && call.name === 'edit_file') edited = true
+        if (ok && (call.name === 'edit_file' || call.name === 'create_file')) edited = true
 
         // The same call returning the same result three times means nothing is changing: the model is looping.
         // Errors, empty searches, a repeated read or an unchanged test run all land here.

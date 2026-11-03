@@ -1,67 +1,115 @@
-import type { AgentEvent, Mode } from '../preload'
+import type { AgentEvent, ChatListItem, Mode, TranscriptItem } from '../preload'
+import { exportMarkdown, folderName, formatRate, formatTokens, matchesQuery, md, toolTarget, toolVerb } from './format'
+import { renderHistory } from './history'
+import { initModels, noModels, selectedModel } from './models'
+import { openSettings } from './settings'
+import { $, cleanErr, copy, h, numCtxPref, showMenu, toast } from './ui'
+import { initUsage } from './usage'
 
-const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 const thread = $('thread')
+const scroller = $('thread-scroll')
 const prompt = $<HTMLTextAreaElement>('prompt')
 const sendBtn = $<HTMLButtonElement>('send')
 const modeSel = $<HTMLSelectElement>('mode')
-const modelSel = $<HTMLSelectElement>('model')
+const projectBtn = $<HTMLButtonElement>('project')
+const titleEl = $('chat-title')
+const rateChip = $('rate')
+const ctxChip = $('ctx')
+const toBottom = $('to-bottom')
+const searchEl = $<HTMLInputElement>('chat-search')
 
-const h = (tag: string, cls = '', text = '') => {
-  const el = document.createElement(tag)
-  if (cls) el.className = cls
-  if (text) el.textContent = text
-  return el
-}
-
-// ---- markdown-lite: everything is escaped first, so model output can never inject HTML ----
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-const inline = (s: string) => esc(s).replace(/`([^`\n]+)`/g, '<code>$1</code>').replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
-
-function md(src: string): string {
-  return src
-    .split('```')
-    .map((part, i) => {
-      if (i % 2 === 1) {
-        const nl = part.indexOf('\n') // first line is the language tag
-        return `<pre><code>${esc((nl === -1 ? '' : part.slice(nl + 1)).replace(/\n$/, ''))}</code></pre>`
-      }
-      return part
-        .split(/\n{2,}/)
-        .filter((b) => b.trim())
-        .map((b) => {
-          const lines = b.split('\n')
-          if (lines.every((l) => /^\s*[-*] /.test(l))) return `<ul>${lines.map((l) => `<li>${inline(l.replace(/^\s*[-*] /, ''))}</li>`).join('')}</ul>`
-          return `<p>${lines.map(inline).join('<br>')}</p>`
-        })
-        .join('')
-    })
-    .join('')
-}
-
-const cleanErr = (e: unknown) => String((e as Error).message).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
-
-// ---- thread ----
-let emptyEl: HTMLElement | null = null
-let reply: { el: HTMLElement; text: string } | null = null
-const cards = new Map<string, { dot: HTMLElement; body: HTMLElement; name: string; path: string; actions?: HTMLElement }>()
+// ---- what the screen is showing ----
+let activeId: string = crypto.randomUUID() // a new chat gets its id up front, so live events can be matched to it
+let chats: ChatListItem[] = []
+let project: string | null = null
+let query = ''
+let hasMessages = false
 let running = false
+let sending = false // between pressing send and the main process starting the run
+let log: TranscriptItem[] = [] // mirror of what is on screen, for export
+
+// per-run display state
+let emptyEl: HTMLElement | null = null
+let emptySub: HTMLElement | null = null
+let reply: { el: HTMLElement; text: string } | null = null
+let thinkingEl: HTMLElement | null = null
+let runUsage = { input: 0, output: 0, genSec: 0, calls: 0 }
+const live = { chars: 0, start: 0, timer: null as ReturnType<typeof setInterval> | null }
+
+type Card = { dot: HTMLElement; body: HTMLElement; name: string; path: string; group: { failed: boolean }; actions?: HTMLElement }
+const cards = new Map<string, Card>()
+
 let onFileChanged: (path: string) => void = () => {}
 let onFilesRestored: (paths: string[]) => void = () => {}
+let onProject: (root: string | null) => Promise<void> | void = () => {}
+let openWorkspace: () => void = () => {}
 
-const nearBottom = () => thread.scrollHeight - thread.scrollTop - thread.clientHeight < 80
+const statusOf = (id: string) => chats.find((c) => c.id === id)?.status ?? 'idle'
+
+// ---- scrolling ----
+const nearBottom = (slack = 80) => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < slack
+const toEnd = () => (scroller.scrollTop = scroller.scrollHeight)
 const add = (el: HTMLElement) => {
   const stick = nearBottom()
-  thread.append(el)
-  if (stick) thread.scrollTop = thread.scrollHeight
+  thread.insertBefore(el, thinkingEl) // the "thinking" dots always stay last
+  if (stick) toEnd()
   return el
 }
+
+function showThinking() {
+  if (thinkingEl) return
+  thinkingEl = h('div', 'thinking')
+  thinkingEl.append(h('i'), h('i'), h('i'))
+  thread.append(thinkingEl)
+  if (nearBottom()) toEnd()
+}
+function hideThinking() {
+  thinkingEl?.remove()
+  thinkingEl = null
+}
+
+// ---- header chips: speed and memory ----
+function startLive() {
+  live.chars = 0
+  live.start = 0
+  rateChip.classList.add('live')
+  live.timer ??= setInterval(() => {
+    const secs = (performance.now() - live.start) / 1000
+    if (!live.start || secs < 0.8) return
+    rateChip.hidden = false
+    rateChip.textContent = `~${formatRate(live.chars / 4 / secs)} tok/s`
+  }, 400)
+}
+function stopLive() {
+  if (live.timer) clearInterval(live.timer)
+  live.timer = null
+  rateChip.classList.remove('live')
+}
+function setUsageChips(ev: Extract<AgentEvent, { type: 'usage' }>) {
+  live.chars = 0
+  live.start = 0
+  if (ev.tps > 0) {
+    rateChip.hidden = false
+    rateChip.textContent = `${formatRate(ev.tps)} tok/s`
+  }
+  ctxChip.hidden = false
+  ctxChip.textContent = ev.ctxLimit ? `${formatTokens(ev.input)} / ${formatTokens(ev.ctxLimit)} memory` : `${formatTokens(ev.input)} in context`
+  const full = !!ev.ctxLimit && ev.input / ev.ctxLimit > 0.8
+  ctxChip.classList.toggle('warn', full)
+  ctxChip.title = full
+    ? 'The model is close to its memory limit and will start forgetting the start of this chat. Start a new chat for new work, or raise the size in Settings.'
+    : "How much of the model's memory this chat uses"
+}
+
+// ---- empty state ----
+const SUGGESTIONS = ['Build a Telegram bot', 'Make a simple website', 'Explain this project', 'Find and fix bugs']
 
 function showEmpty() {
   emptyEl = h('div', 'empty')
-  emptyEl.append(h('h2', '', 'What should we build?'), h('div', '', 'The agent can read and edit files in your open folder.'))
+  emptySub = h('div', '')
+  emptyEl.append(h('h2', '', 'What are we building?'), emptySub)
   const chips = h('div', 'chips')
-  for (const t of ['Explain this project', 'Find and fix bugs', 'Add tests for the main logic']) {
+  for (const t of SUGGESTIONS) {
     const c = h('button', 'chip', t)
     c.onclick = () => {
       prompt.value = t
@@ -71,18 +119,81 @@ function showEmpty() {
     chips.append(c)
   }
   emptyEl.append(chips)
+  if (noModels) {
+    const b = h('div', 'banner')
+    b.append(h('div', '', 'No AI model found. Start Ollama and pull a model, or add an API key.'))
+    const open = h('button', '', 'Open settings')
+    open.onclick = openSettings
+    b.append(open)
+    emptyEl.append(b)
+  }
   thread.append(emptyEl)
+  setProject(project)
+}
+
+function setProject(p: string | null) {
+  project = p
+  projectBtn.textContent = p ? folderName(p) : 'Choose folder'
+  projectBtn.title = hasMessages ? `This chat works in ${p}` : (p ?? 'Choose the folder the agent works in')
+  projectBtn.classList.toggle('need', !p)
+  projectBtn.disabled = hasMessages
+  if (emptySub) emptySub.textContent = p ? `Working in ${folderName(p)}` : 'Choose a folder below, then describe what you want.'
 }
 
 function setRunning(on: boolean) {
   running = on
   sendBtn.classList.toggle('stop', on)
   sendBtn.textContent = on ? '■' : '↑'
-  sendBtn.title = on ? 'Stop' : 'Send'
-  modeSel.disabled = modelSel.disabled = on
+  sendBtn.title = on ? 'Stop (Esc)' : 'Send'
+  if (on) startLive()
+  else {
+    stopLive()
+    hideThinking()
+  }
 }
 
-const VERB: Record<string, string> = { list_dir: 'Listed', read_file: 'Read', edit_file: 'Edited', search: 'Searched', run_command: 'Ran' }
+// ---- agent steps, collapsed into one line like Claude and Codex ----
+type Group = { el: HTMLElement; dot: HTMLElement; label: HTMLElement; body: HTMLElement; counts: Map<string, number>; failed: boolean }
+let group: Group | null = null
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+const PHRASE: Record<string, (n: number) => string> = {
+  Read: (n) => `read ${plural(n, 'file', 'files')}`,
+  Listed: (n) => `looked at ${plural(n, 'folder', 'folders')}`,
+  Searched: (n) => `searched ${plural(n, 'time', 'times')}`,
+  Edited: (n) => `edited ${plural(n, 'file', 'files')}`,
+  Created: (n) => `created ${plural(n, 'file', 'files')}`,
+  Ran: (n) => `ran ${plural(n, 'command', 'commands')}`,
+}
+
+function summarize(g: Group, working: boolean) {
+  const text = [...g.counts].map(([v, n]) => (PHRASE[v] ?? ((k: number) => `${v.toLowerCase()} ×${k}`))(n)).join(', ')
+  g.label.textContent = working ? `Working: ${text}…` : text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+function ensureGroup(): Group {
+  if (group) return group
+  const el = h('div', 'steps')
+  const head = h('button', 'steps-head')
+  const dot = h('span', 'dot run')
+  const label = h('span', 'steps-label', 'Working…')
+  head.append(dot, label, h('span', 'chev', '›'))
+  const body = h('div', 'steps-body')
+  body.hidden = true
+  head.onclick = () => {
+    body.hidden = !body.hidden
+    el.classList.toggle('open', !body.hidden)
+  }
+  el.append(head, body)
+  add(el)
+  return (group = { el, dot, label, body, counts: new Map(), failed: false })
+}
+
+function finishGroup() {
+  if (!group) return
+  group.dot.className = 'dot ' + (group.failed ? 'err' : 'ok')
+  summarize(group, false)
+  group = null
+}
 
 function diff(oldText: string, newText: string): HTMLElement {
   const box = h('div')
@@ -99,9 +210,9 @@ function diff(oldText: string, newText: string): HTMLElement {
 
 function toolCard(ev: Extract<AgentEvent, { type: 'tool' }>) {
   const a = (ev.args ?? {}) as Record<string, string>
-  const path = [a.path, a.pattern, a.command].find((v) => typeof v === 'string') ?? ''
-  const isEdit = ev.name === 'edit_file'
-  const verb = isEdit && a.old_text === '' ? 'Created' : (VERB[ev.name] ?? ev.name)
+  const path = toolTarget(ev.args)
+  const verb = toolVerb(ev.name, ev.args)
+  const writes = ev.name === 'edit_file' || ev.name === 'create_file'
 
   const card = h('div', 'tool')
   const head = h('button', 'tool-head')
@@ -109,15 +220,21 @@ function toolCard(ev: Extract<AgentEvent, { type: 'tool' }>) {
   head.append(dot, h('span', 'tool-label', verb), h('span', 'tool-path', path))
   const body = h('div', 'tool-body')
   body.hidden = true
-  if (isEdit) body.append(diff(String(a.old_text ?? ''), String(a.new_text ?? '')))
+  if (ev.name === 'edit_file') body.append(diff(String(a.old_text ?? ''), String(a.new_text ?? '')))
+  if (ev.name === 'create_file') body.append(diff('', String(a.content ?? '')))
   if (ev.name === 'run_command') body.append(h('pre', '', `$ ${path}`))
   head.onclick = () => (body.hidden = !body.hidden)
   card.append(head, body)
 
-  const entry: { dot: HTMLElement; body: HTMLElement; name: string; path: string; actions?: HTMLElement } = { dot, body, name: ev.name, path }
+  const g = ensureGroup()
+  g.counts.set(verb, (g.counts.get(verb) ?? 0) + 1)
+  summarize(g, true)
+  const entry: Card = { dot, body, name: writes ? 'write' : ev.name, path, group: g }
   if (ev.needsApproval) {
     dot.className = 'dot wait'
     body.hidden = false
+    g.body.hidden = false // an action that needs a yes must be visible
+    g.el.classList.add('open')
     const actions = h('div', 'approve')
     const yes = h('button', 'yes', 'Accept')
     const no = h('button', '', 'Reject')
@@ -125,7 +242,7 @@ function toolCard(ev: Extract<AgentEvent, { type: 'tool' }>) {
       actions.remove()
       entry.actions = undefined
       dot.className = 'dot run'
-      window.forge.agentApprove(ev.id, ok)
+      window.forge.agentApprove(activeId, ev.id, ok)
     }
     yes.onclick = () => answer(true)
     no.onclick = () => answer(false)
@@ -134,7 +251,9 @@ function toolCard(ev: Extract<AgentEvent, { type: 'tool' }>) {
     entry.actions = actions
   }
   cards.set(ev.id, entry)
-  add(card)
+  const stick = nearBottom()
+  g.body.append(card)
+  if (stick) toEnd()
 }
 
 function changesCard(ev: Extract<AgentEvent, { type: 'changes' }>) {
@@ -150,13 +269,13 @@ function changesCard(ev: Extract<AgentEvent, { type: 'changes' }>) {
   for (const f of ev.files) {
     const row = h('button', 'file-row')
     row.append(h('span', 'file-status ' + f.status, f.status === 'added' ? 'A' : f.status === 'deleted' ? 'D' : 'M'), h('span', 'tool-path', f.path))
-    if (f.status !== 'deleted') row.onclick = () => onFileChanged(f.path)
+    if (f.status !== 'deleted') row.onclick = () => (openWorkspace(), onFileChanged(f.path))
     card.append(row)
   }
   undo.onclick = async () => {
     undo.disabled = true
     try {
-      onFilesRestored(await window.forge.agentUndo(ev.checkpoint))
+      onFilesRestored(await window.forge.agentUndo(activeId, ev.checkpoint))
       card.replaceChildren(h('div', 'note changes-done', `Undone: ${ev.files.length} file${ev.files.length === 1 ? '' : 's'} restored.`))
     } catch (e) {
       undo.disabled = false
@@ -166,37 +285,74 @@ function changesCard(ev: Extract<AgentEvent, { type: 'changes' }>) {
   add(card)
 }
 
+function addUser(text: string) {
+  emptyEl?.remove()
+  emptyEl = null
+  hasMessages = true
+  runUsage = { input: 0, output: 0, genSec: 0, calls: 0 }
+  log.push({ type: 'user', text })
+  add(h('div', 'user', text))
+  setProject(project)
+}
+
+// ---- events from the agent ----
 function handle(ev: AgentEvent) {
+  log.push(ev)
   switch (ev.type) {
     case 'delta': {
-      if (!reply) reply = { el: add(h('div', 'assistant')), text: '' }
+      hideThinking()
+      if (!reply) {
+        finishGroup()
+        reply = { el: add(h('div', 'assistant')), text: '' }
+      }
+      if (!live.start) live.start = performance.now()
+      live.chars += ev.text.length
       reply.text += ev.text
       const stick = nearBottom()
       reply.el.innerHTML = md(reply.text)
-      if (stick) thread.scrollTop = thread.scrollHeight
+      if (stick) toEnd()
       break
     }
     case 'turn_end':
+      if (reply) {
+        const text = reply.text
+        const actions = h('div', 'msg-actions')
+        const c = h('button', '', 'Copy')
+        c.onclick = () => copy(text, 'Copied reply')
+        actions.append(c)
+        reply.el.append(actions)
+      }
       reply = null
+      if (running) showThinking() // the model is about to run tools or be asked again
+      break
+    case 'usage':
+      runUsage.input += ev.input
+      runUsage.output += ev.output
+      runUsage.calls += 1
+      if (ev.tps > 0) runUsage.genSec += ev.output / ev.tps
+      setUsageChips(ev)
       break
     case 'tool':
+      hideThinking()
       toolCard(ev)
       break
     case 'tool_result': {
       const c = cards.get(ev.id)
+      if (running) showThinking()
       if (!c) break
       c.actions?.remove()
       const denied = ev.text.startsWith('DENIED:')
       c.dot.className = 'dot ' + (ev.ok ? 'ok' : denied ? '' : 'err')
-      if (ev.ok && c.name === 'edit_file') onFileChanged(c.path)
-      if (c.name !== 'edit_file' || !ev.ok) {
-        const pre = h('pre', ev.ok ? '' : 'err', ev.text.length > 3000 ? ev.text.slice(0, 3000) + '\n…' : ev.text)
-        c.body.append(pre)
+      if (!ev.ok && !denied) c.group.failed = true
+      if (ev.ok && c.name === 'write') onFileChanged(c.path)
+      if (c.name !== 'write' || !ev.ok) {
+        c.body.append(h('pre', ev.ok ? '' : 'err', ev.text.length > 3000 ? ev.text.slice(0, 3000) + '\n…' : ev.text))
         if (!ev.ok && !denied) c.body.hidden = false
       }
       break
     }
     case 'verify': {
+      finishGroup()
       const card = h('div', 'tool')
       const head = h('button', 'tool-head')
       head.append(h('span', 'dot ' + (ev.ok ? 'ok' : 'err')), h('span', 'tool-label', ev.ok ? 'Check passed' : 'Check failed'), h('span', 'tool-path', ev.command))
@@ -206,21 +362,38 @@ function handle(ev: AgentEvent) {
       head.onclick = () => (body.hidden = !body.hidden)
       card.append(head, body)
       add(card)
+      if (running) showThinking()
       break
     }
     case 'note':
+      finishGroup()
       add(h('div', 'note', ev.text))
       break
     case 'changes':
+      finishGroup()
       changesCard(ev)
       break
     case 'done': {
-      const msg = { stopped: 'Stopped.', stuck: 'Stopped: the agent kept repeating a failing step.', max_steps: 'Stopped: step limit reached.', finished: '', unverified: 'Finished, but the project check still fails. Review the changes before keeping them.' }[ev.reason]
+      finishGroup()
+      hideThinking()
+      const msg = {
+        stopped: 'Stopped.',
+        stuck: 'Stopped: the agent kept repeating a failing step.',
+        max_steps: 'Stopped: step limit reached.',
+        finished: '',
+        unverified: 'Finished, but the project check still fails. Review the changes before keeping them.',
+      }[ev.reason]
       if (msg) add(h('div', 'note', msg))
+      if (runUsage.calls) {
+        const rate = runUsage.genSec > 0 ? ` · ${formatRate(runUsage.output / runUsage.genSec)} tok/s` : ''
+        add(h('div', 'runstats', `↑ ${formatTokens(runUsage.input)} read · ↓ ${formatTokens(runUsage.output)} written${rate} · ${plural(runUsage.calls, 'model call', 'model calls')}`))
+      }
       setRunning(false)
       break
     }
     case 'error':
+      finishGroup()
+      hideThinking()
       add(h('div', 'errcard', ev.message))
       setRunning(false)
       break
@@ -230,141 +403,216 @@ function handle(ev: AgentEvent) {
 // ---- composer ----
 function grow() {
   prompt.style.height = 'auto'
-  prompt.style.height = Math.min(prompt.scrollHeight, 180) + 'px'
+  prompt.style.height = Math.min(prompt.scrollHeight, 200) + 'px'
+}
+
+async function chooseFolder() {
+  try {
+    const p = await window.forge.pickProject(activeId)
+    if (p && p !== project) {
+      setProject(p)
+      await onProject(p)
+    }
+  } catch (e) {
+    toast(cleanErr(e), 3500)
+  }
 }
 
 async function send() {
   const text = prompt.value.trim()
-  if (!text || running) return
-  emptyEl?.remove()
-  emptyEl = null
-  add(h('div', 'user', text))
+  if (!text || running || sending) return
+  if (!project) await chooseFolder() // like Codex: no folder, no run
+  if (!project) return
+  sending = true
+  addUser(text)
   prompt.value = ''
   grow()
   setRunning(true)
+  showThinking()
   try {
-    localStorage.setItem('forge.model', modelSel.value)
     localStorage.setItem('forge.mode', modeSel.value)
   } catch {}
   try {
-    await window.forge.agentSend({ text, mode: modeSel.value as Mode, model: modelSel.value })
+    await window.forge.agentSend({ chatId: activeId, text, mode: modeSel.value as Mode, model: selectedModel(), numCtx: numCtxPref() })
   } catch (e) {
+    hideThinking()
     add(h('div', 'errcard', cleanErr(e)))
     setRunning(false)
+  } finally {
+    sending = false
   }
 }
 
-const CLOUD = { openai: 'OpenAI', openrouter: 'OpenRouter' } as const
-const customIds = (p: string): string[] => {
+// ---- switching between chats ----
+function resetView() {
+  thread.replaceChildren()
+  cards.clear()
+  reply = null
+  group = null
+  thinkingEl = null
+  hasMessages = false
+  emptyEl = null
+  log = []
+  runUsage = { input: 0, output: 0, genSec: 0, calls: 0 }
+  rateChip.hidden = true
+  ctxChip.hidden = true
+}
+
+function replay(items: TranscriptItem[], liveRun: boolean) {
+  setRunning(false)
+  for (const it of items) {
+    if (it.type === 'user') addUser(it.text)
+    else handle(it)
+  }
+  finishGroup()
+  if (!liveRun) {
+    // A chat saved mid-run (app closed) can end on a step that never got an answer: no dead buttons.
+    for (const c of cards.values()) {
+      c.actions?.remove()
+      if (c.dot.classList.contains('wait') || c.dot.classList.contains('run')) c.dot.className = 'dot'
+    }
+  } else {
+    setRunning(true) // still working in the background: keep following it live
+    showThinking()
+  }
+  toEnd()
+}
+
+async function refreshHistory() {
+  chats = await window.forge.chatsList()
+  const shown = chats.filter((c) => matchesQuery(c, query))
+  renderHistory(shown, activeId, query, { open: openChat, remove: removeChat, rename: renameChat })
+  const me = chats.find((c) => c.id === activeId)
+  titleEl.textContent = me?.title ?? 'New chat'
+  document.title = me ? `${me.title} · Forge` : 'Forge'
+  if (!sending) {
+    const busy = statusOf(activeId) !== 'idle'
+    if (busy !== running) {
+      setRunning(busy)
+      if (busy) showThinking()
+    }
+  }
+  setProject(project)
+}
+
+async function openChat(id: string) {
+  if (id === activeId) return
   try {
-    return JSON.parse(localStorage.getItem('forge.custom.' + p) ?? '[]')
-  } catch {
-    return []
+    const c = await window.forge.chatsOpen(id)
+    activeId = c.id
+    window.forge.chatsViewing(id)
+    project = c.missing ? null : c.project
+    resetView()
+    if (c.transcript.length) replay(c.transcript, c.status !== 'idle')
+    else showEmpty()
+    if (c.missing) add(h('div', 'note', `The folder for this chat (${c.project}) no longer exists.`))
+    await onProject(project)
+    await refreshHistory()
+    prompt.focus()
+  } catch (e) {
+    toast(cleanErr(e), 3500)
   }
 }
 
-async function loadModels() {
-  const [list, keys] = await Promise.all([window.forge.agentModels(), window.forge.keysStatus()])
-  for (const p of ['openai', 'openrouter'] as const) if (keys[p]) for (const id of customIds(p)) list.push({ id: `${p}:${id}`, label: id, group: CLOUD[p] })
-  let saved = ''
+async function newChat() {
+  activeId = crypto.randomUUID()
+  window.forge.chatsViewing(activeId)
+  setRunning(false)
+  resetView()
+  showEmpty()
+  await refreshHistory()
+  prompt.focus()
+}
+
+async function removeChat(id: string) {
+  if (!confirm('Delete this chat? This cannot be undone.')) return
   try {
-    saved = localStorage.getItem('forge.model') ?? ''
-  } catch {}
-  modelSel.replaceChildren()
-  const groups = new Map<string, HTMLOptGroupElement>()
-  for (const m of list) {
-    let g = groups.get(m.group)
-    if (!g) {
-      g = document.createElement('optgroup')
-      g.label = m.group
-      groups.set(m.group, g)
-      modelSel.append(g)
-    }
-    g.append(new Option(m.label, m.id))
+    await window.forge.chatsDelete(id)
+    if (id === activeId) await newChat()
+    else await refreshHistory()
+  } catch (e) {
+    toast(cleanErr(e), 3500)
   }
-  if (!list.length) modelSel.append(new Option('qwen3:8b (Ollama not running)', 'ollama:qwen3:8b'))
-  if (list.some((m) => m.id === saved)) modelSel.value = saved
 }
 
-async function openSettings() {
-  const dlg = $<HTMLDialogElement>('settings')
-  const render = async () => {
-    const keys = await window.forge.keysStatus()
-    const box = h('div', 'dlg')
-    box.append(h('h3', '', 'API keys'), h('p', 'note', 'Stored encrypted by your OS keychain. A key is only sent to the provider you pick. Local Ollama models need no key.'))
-    for (const [p, name] of [['anthropic', 'Anthropic'], ['openai', 'OpenAI'], ['openrouter', 'OpenRouter']] as const) {
-      const row = h('div', 'keyrow')
-      const input = document.createElement('input')
-      input.type = 'password'
-      input.autocomplete = 'off'
-      input.placeholder = keys[p] ? '•••••••• saved (paste to replace)' : 'Paste API key'
-      const msg = h('div', 'errtext')
-      const save = h('button', '', 'Save')
-      save.onclick = async () => {
-        try {
-          await window.forge.keysSet(p, input.value)
-          await loadModels()
-          await render()
-        } catch (e) {
-          msg.textContent = cleanErr(e)
-        }
-      }
-      row.append(h('label', '', name), input, save)
-      if (keys[p]) {
-        const rm = h('button', '', 'Remove')
-        rm.onclick = async () => {
-          await window.forge.keysClear(p)
-          await loadModels()
-          await render()
-        }
-        row.append(rm)
-      }
-      box.append(row, msg)
-      if (p !== 'anthropic') {
-        const mrow = h('div', 'modelrow')
-        const ids = document.createElement('input')
-        ids.placeholder = 'Model IDs, comma-separated'
-        ids.value = customIds(p).join(', ')
-        ids.onchange = () => {
-          try {
-            localStorage.setItem('forge.custom.' + p, JSON.stringify(ids.value.split(',').map((s) => s.trim()).filter(Boolean)))
-          } catch {}
-          loadModels()
-        }
-        mrow.append(h('label', 'note', 'Models'), ids)
-        box.append(mrow)
-      }
-    }
-    const verify = await window.forge.verifyGet()
-    if (verify) {
-      box.append(h('h3', '', 'This project'), h('p', 'note', 'After the agent edits files and says it is done, Forge runs this command. If it fails, the output goes back to the agent. Full auto requires one.'))
-      const vrow = h('div', 'modelrow')
-      const vin = document.createElement('input')
-      vin.placeholder = verify.detected ? `${verify.detected} (detected)` : 'e.g. npm test'
-      vin.value = verify.configured ?? ''
-      vin.onchange = () => window.forge.verifySet(vin.value)
-      vrow.append(h('label', 'note', 'Verify'), vin)
-      box.append(vrow)
-    }
-    const close = h('button', 'close', 'Done')
-    close.onclick = () => dlg.close()
-    box.append(close)
-    dlg.replaceChildren(box)
+async function renameChat(id: string, title: string) {
+  try {
+    await window.forge.chatsRename(id, title)
+  } catch (e) {
+    toast(cleanErr(e), 3500)
   }
-  await render()
-  dlg.showModal()
+  await refreshHistory()
 }
 
-export function initChat(opts: { onFileChanged: (path: string) => void; onFilesRestored: (paths: string[]) => void }) {
+function startTitleEdit() {
+  const me = chats.find((c) => c.id === activeId)
+  if (!me) return // a chat that has not been saved yet has nothing to rename
+  const input = document.createElement('input')
+  input.className = 'title-edit'
+  input.value = me.title
+  titleEl.replaceWith(input)
+  input.focus()
+  input.select()
+  let done = false
+  const finish = async (save: boolean) => {
+    if (done) return
+    done = true
+    input.replaceWith(titleEl)
+    if (save && input.value.trim() && input.value.trim() !== me.title) await renameChat(me.id, input.value)
+  }
+  input.onkeydown = (e) => {
+    if (e.key === 'Enter') finish(true)
+    if (e.key === 'Escape') finish(false)
+  }
+  input.onblur = () => finish(true)
+}
+
+function moreMenu() {
+  const me = chats.find((c) => c.id === activeId)
+  const title = me?.title ?? 'Chat'
+  const asMarkdown = () => exportMarkdown(title, project, log)
+  showMenu($('more'), [
+    { label: 'Copy chat as Markdown', run: () => copy(asMarkdown(), 'Chat copied') },
+    {
+      label: 'Export as Markdown…',
+      run: async () => {
+        if (await window.forge.saveText(`${title.replace(/[^\w.-]+/g, '-').slice(0, 40) || 'chat'}.md`, asMarkdown())) toast('Exported')
+      },
+    },
+    ...(me ? [{ label: 'Rename', run: startTitleEdit }, { label: 'Delete chat', danger: true, run: () => removeChat(me.id) }] : []),
+  ])
+}
+
+// ---- boot ----
+export async function initChat(opts: {
+  onFileChanged: (path: string) => void
+  onFilesRestored: (paths: string[]) => void
+  onProject: (root: string | null) => Promise<void> | void
+  openWorkspace: () => void
+}) {
   onFileChanged = opts.onFileChanged
   onFilesRestored = opts.onFilesRestored
+  onProject = opts.onProject
+  openWorkspace = opts.openWorkspace
   try {
     modeSel.value = localStorage.getItem('forge.mode') ?? 'ask-all'
+    if (localStorage.getItem('forge.hist') === '0') $('app').classList.add('no-hist')
   } catch {}
-  loadModels()
-  modelSel.onfocus = loadModels
+
   showEmpty()
-  window.forge.onAgentEvent(handle)
+  window.forge.chatsViewing(activeId)
+  window.forge.onAgentEvent(({ chatId, ev }) => {
+    if (chatId === activeId) handle(ev)
+  })
+  window.forge.onChatsChanged(refreshHistory)
+  window.forge.onChatsFocus((id) => openChat(id))
+  window.addEventListener('forge-models', () => {
+    if (emptyEl && !hasMessages) {
+      emptyEl.remove()
+      emptyEl = null
+      showEmpty()
+    }
+  })
 
   prompt.oninput = grow
   prompt.onkeydown = (e) => {
@@ -373,20 +621,59 @@ export function initChat(opts: { onFileChanged: (path: string) => void; onFilesR
       send()
     }
   }
-  sendBtn.onclick = () => (running ? window.forge.agentStop() : send())
+  sendBtn.onclick = () => (running ? window.forge.agentStop(activeId) : send())
+  projectBtn.onclick = chooseFolder
   $('gear').onclick = openSettings
-  $('new').onclick = () => {
-    if (running) return
-    window.forge.agentNew()
-    thread.replaceChildren()
-    cards.clear()
-    reply = null
-    showEmpty()
+  $('new-chat').onclick = newChat
+  $('more').onclick = moreMenu
+  titleEl.onclick = startTitleEdit
+  searchEl.oninput = () => {
+    query = searchEl.value
+    refreshHistory()
   }
-  window.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'l') {
+  toBottom.onclick = toEnd
+  scroller.addEventListener('scroll', () => (toBottom.hidden = nearBottom(240)))
+  $('hist-toggle').onclick = () => {
+    const off = $('app').classList.toggle('no-hist')
+    try {
+      localStorage.setItem('forge.hist', off ? '0' : '1')
+    } catch {}
+  }
+
+  // Delegated clicks inside replies: copy buttons on code blocks, and links open in the real browser.
+  thread.addEventListener('click', (e) => {
+    const t = e.target as HTMLElement
+    if (t.classList.contains('copy')) copy(t.closest('.code')?.querySelector('code')?.textContent ?? '', 'Code copied')
+    const a = t.closest('a[data-ext]') as HTMLAnchorElement | null
+    if (a) {
       e.preventDefault()
-      prompt.focus()
+      window.forge.openExternal(a.href)
     }
   })
+
+  window.addEventListener('keydown', (e) => {
+    const mod = e.ctrlKey || e.metaKey
+    const inEditor = !!(e.target as HTMLElement).closest?.('#editor, #term')
+    if (e.key === 'Escape' && running && !document.querySelector('dialog[open]')) {
+      window.forge.agentStop(activeId)
+    } else if (mod && !inEditor) {
+      const k = e.key.toLowerCase()
+      const run = (fn: () => void) => (e.preventDefault(), fn())
+      if (k === 'n') run(newChat)
+      else if (k === 'k') run(() => ($('app').classList.remove('no-hist'), searchEl.focus(), searchEl.select()))
+      else if (k === 'l') run(() => prompt.focus())
+      else if (k === 'b') run(() => $('hist-toggle').click())
+      else if (k === 'j') run(() => $('ws-toggle').click())
+      else if (k === ',') run(openSettings)
+    }
+  })
+
+  await initModels()
+  const init = await window.forge.appInit()
+  project = init.project
+  chats = init.chats
+  setProject(project)
+  renderHistory(chats.filter((c) => matchesQuery(c, query)), activeId, query, { open: openChat, remove: removeChat, rename: renameChat })
+  if (project) await onProject(project)
+  await initUsage()
 }

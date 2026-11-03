@@ -7,7 +7,7 @@ export type ModelOption = { id: string; label: string; group: string }
 // Anthropic ids are known. OpenAI and OpenRouter catalogues change too fast to hardcode: the user adds ids in Settings.
 const ANTHROPIC_MODELS = ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-5-5']
 
-export const makeProvider = (id: string): Provider => buildProvider(id, getKey)
+export const makeProvider = (id: string, numCtx?: number): Provider => buildProvider(id, getKey, { numCtx })
 
 export async function listModels(): Promise<ModelOption[]> {
   const out: ModelOption[] = []

@@ -5,6 +5,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { initChat } from './chat'
+import { applyTheme } from './ui'
 
 declare global {
   interface Window {
@@ -98,7 +99,7 @@ async function loadTree() {
   editor.setModel(null)
   renderTabs()
   await renderDir('.', tree, 0)
-  await startTerminal()
+  await ensureTerminal()
 }
 
 // The agent edited a file on disk: show it. A tab with unsaved user changes is left alone.
@@ -144,15 +145,41 @@ async function filesRestored(paths: string[]) {
   await renderDir('.', tree, 0)
 }
 
-initChat({ onFileChanged: agentChangedFile, onFilesRestored: filesRestored })
+// ---- workspace drawer: hidden until asked for. The app opens as a chat, not an editor. ----
+const app = document.getElementById('app')!
+let projectRoot: string | null = null
+let termFor: string | null = null
 
-document.getElementById('open')!.onclick = async () => {
-  if (await window.forge.openProject()) await loadTree()
+function setWorkspace(open: boolean) {
+  app.classList.toggle('ws-open', open)
+  try {
+    localStorage.setItem('forge.ws', open ? '1' : '0')
+  } catch {}
+  if (open) ensureTerminal()
 }
 
-window.forge.currentProject().then((r) => {
-  if (r) loadTree()
+// The shell only starts once the drawer is opened for the current project, so a chat never spawns a hidden terminal.
+async function ensureTerminal() {
+  if (!projectRoot || !app.classList.contains('ws-open') || termFor === projectRoot) return
+  termFor = projectRoot
+  await startTerminal()
+}
+
+initChat({
+  onFileChanged: agentChangedFile,
+  onFilesRestored: filesRestored,
+  onProject: (root) => {
+    projectRoot = root
+    termFor = null
+    return loadTree()
+  },
+  openWorkspace: () => setWorkspace(true),
 })
+
+document.getElementById('ws-toggle')!.onclick = () => setWorkspace(!app.classList.contains('ws-open'))
+try {
+  if (localStorage.getItem('forge.ws') === '1') setWorkspace(true)
+} catch {}
 
 const term = new Terminal({ fontSize: 13, theme: { background: '#1e1e1e' }, cursorBlink: true })
 const fit = new FitAddon()
@@ -161,6 +188,7 @@ term.open(document.getElementById('term')!)
 term.onData((d) => window.forge.termWrite(d))
 window.forge.onTermData((d) => term.write(d))
 new ResizeObserver(() => {
+  if (!document.getElementById('term')!.offsetWidth) return // drawer closed: nothing to fit
   fit.fit()
   window.forge.termResize(term.cols, term.rows)
 }).observe(document.getElementById('term')!)
@@ -170,3 +198,17 @@ async function startTerminal() {
   term.clear()
   await window.forge.termSpawn(term.cols, term.rows)
 }
+
+// The editor and terminal follow the app theme (dark, light or system).
+function paintTheme() {
+  const dark = document.documentElement.dataset.theme !== 'light'
+  monaco.editor.setTheme(dark ? 'vs-dark' : 'vs')
+  term.options.theme = dark ? { background: '#1e1e1e', foreground: '#d4d4d4' } : { background: '#ffffff', foreground: '#1c1c21', cursor: '#1c1c21', selectionBackground: '#cfd3ff' }
+}
+window.addEventListener('forge-theme', paintTheme)
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  try {
+    if (localStorage.getItem('forge.theme') === 'system') applyTheme('system')
+  } catch {}
+})
+applyTheme()

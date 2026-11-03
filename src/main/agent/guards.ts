@@ -69,12 +69,13 @@ export async function checkSyntax(file: string): Promise<string | null> {
 }
 
 // ---- tool names: small models say read, cat, write_file. Resolve BEFORE the approval gate, never after ----
-const NAMES = ['list_dir', 'read_file', 'search', 'run_command', 'edit_file']
+const NAMES = ['list_dir', 'read_file', 'search', 'run_command', 'edit_file', 'create_file']
 const ALIAS: Record<string, string> = {
   read: 'read_file', readfile: 'read_file', cat: 'read_file', open: 'read_file', view: 'read_file', open_file: 'read_file',
   ls: 'list_dir', list: 'list_dir', listdir: 'list_dir', list_files: 'list_dir', list_directory: 'list_dir',
   grep: 'search', find: 'search', search_files: 'search', search_code: 'search',
-  edit: 'edit_file', write: 'edit_file', write_file: 'edit_file', replace: 'edit_file', str_replace: 'edit_file', create_file: 'edit_file',
+  edit: 'edit_file', replace: 'edit_file', str_replace: 'edit_file', update_file: 'edit_file',
+  create: 'create_file', write: 'create_file', write_file: 'create_file', new_file: 'create_file', make_file: 'create_file', save_file: 'create_file', add_file: 'create_file',
   run: 'run_command', bash: 'run_command', shell: 'run_command', exec: 'run_command', terminal: 'run_command', run_shell: 'run_command',
 }
 

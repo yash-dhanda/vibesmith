@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { anthropic, openai, openrouter, toAnthropic, toOpenAI } from './api'
+import { ollama } from './provider'
 import type { Message } from './provider'
 import { toolDefs } from './tools'
 
@@ -46,13 +47,14 @@ describe('message conversion', () => {
 
 describe('anthropic provider', () => {
   const events = [
-    { type: 'message_start', message: {} },
+    { type: 'message_start', message: { usage: { input_tokens: 1200, cache_read_input_tokens: 300 } } },
     { type: 'content_block_start', index: 0, content_block: { type: 'text' } },
     { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Let me ' } },
     { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'check.' } },
     { type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'toolu_1', name: 'read_file' } },
     { type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: '{"pa' } },
     { type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: 'th":"a.js"}' } },
+    { type: 'message_delta', usage: { output_tokens: 87 } },
     { type: 'message_stop' },
   ]
 
@@ -62,7 +64,9 @@ describe('anthropic provider', () => {
     const seen: string[] = []
     const turn = await p.chat(history, toolDefs, (t) => seen.push(t), signal)
     expect(seen.join('')).toBe('Let me check.')
-    expect(turn).toEqual({ content: 'Let me check.', toolCalls: [{ id: 'toolu_1', name: 'read_file', args: { path: 'a.js' } }] })
+    expect(turn.content).toBe('Let me check.')
+    expect(turn.toolCalls).toEqual([{ id: 'toolu_1', name: 'read_file', args: { path: 'a.js' } }])
+    expect(turn.usage).toMatchObject({ input: 1500, output: 87 }) // cached input tokens count as input
     expect(req!.url).toBe('https://api.anthropic.com/v1/messages')
     const headers = req!.init.headers as Record<string, string>
     expect(headers['x-api-key']).toBe('sk-ant-secret')
@@ -94,6 +98,7 @@ describe('openai-compatible providers', () => {
     { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"pattern":' } }] } }] },
     { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '"foo"}' } }] } }] },
     { choices: [{ delta: { tool_calls: [{ index: 1, id: 'call_10', function: { name: 'list_dir', arguments: '{"path":"."}' } }] } }] },
+    { choices: [], usage: { prompt_tokens: 640, completion_tokens: 55 } },
     '[DONE]',
   ]
 
@@ -113,6 +118,7 @@ describe('openai-compatible providers', () => {
     ])
     expect(url).toBe('https://openrouter.ai/api/v1/chat/completions')
     expect(auth).toBe('Bearer or-key')
+    expect(turn.usage).toMatchObject({ input: 640, output: 55 })
   })
 
   it('openai targets api.openai.com and survives malformed tool arguments', async () => {
@@ -138,5 +144,26 @@ describe('openai-compatible providers', () => {
     ctl.abort()
     const p = openai({ apiKey: 'k', model: 'm', fetchFn: async (_u, init) => { if (init.signal?.aborted) throw new DOMException('aborted', 'AbortError'); return sseRes([]) } })
     await expect(p.chat(history, toolDefs, () => {}, ctl.signal)).rejects.toThrow(/abort/i)
+  })
+})
+
+describe('ollama provider usage', () => {
+  const ndjson = (lines: unknown[]) => new Response(lines.map((l) => JSON.stringify(l)).join('\n') + '\n')
+  it('reads token counts and generation time from the final line, and sends num_ctx', async () => {
+    let body: { options: { num_ctx: number } } | null = null
+    const p = ollama({
+      model: 'qwen3:8b', numCtx: 16_384,
+      fetchFn: async (_u, init) => ((body = JSON.parse(init.body as string)), ndjson([{ message: { content: 'Hi' } }, { message: { content: '!' }, done: true, prompt_eval_count: 812, eval_count: 40, eval_duration: 1_000_000_000 }])),
+    })
+    const turn = await p.chat(history, toolDefs, () => {}, signal)
+    expect(turn.content).toBe('Hi!')
+    expect(turn.usage).toEqual({ input: 812, output: 40, genMs: 1000, ctxLimit: 16_384 })
+    expect(body!.options.num_ctx).toBe(16_384)
+  })
+  it('explains an unreachable Ollama and a missing model', async () => {
+    const down = ollama({ model: 'm', fetchFn: async () => { throw new Error('ECONNREFUSED') } })
+    await expect(down.chat(history, toolDefs, () => {}, signal)).rejects.toThrow(/Cannot reach Ollama/)
+    const missing = ollama({ model: 'ghost', fetchFn: async () => new Response('{}', { status: 404 }) })
+    await expect(missing.chat(history, toolDefs, () => {}, signal)).rejects.toThrow(/ollama pull ghost/)
   })
 })

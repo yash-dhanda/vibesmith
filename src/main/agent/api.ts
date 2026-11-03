@@ -1,7 +1,7 @@
-import type { Message, Provider, ToolCall } from './provider'
+import type { Message, Provider, ToolCall, Usage } from './provider'
 
 type FetchFn = (url: string, init: RequestInit) => Promise<Response>
-type Turn = { content: string; toolCalls: ToolCall[] }
+type Turn = { content: string; toolCalls: ToolCall[]; usage?: Usage }
 
 // ---- shared ----
 async function* sse(res: Response): AsyncGenerator<string> {
@@ -96,13 +96,21 @@ export function anthropic(opts: { apiKey: string; model: string; fetchFn?: Fetch
         signal,
       )
       let content = ''
+      let input = 0
+      let output = 0
+      let firstAt = 0
       const blocks = new Map<number, { id: string; name: string; json: string }>()
       for await (const data of sse(res)) {
         const e = JSON.parse(data) as {
           type: string; index?: number; error?: { message?: string }
           content_block?: { type: string; id?: string; name?: string }
           delta?: { type: string; text?: string; partial_json?: string }
+          message?: { usage?: { input_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number } }
+          usage?: { output_tokens?: number }
         }
+        if (e.type === 'message_start') input = (e.message?.usage?.input_tokens ?? 0) + (e.message?.usage?.cache_creation_input_tokens ?? 0) + (e.message?.usage?.cache_read_input_tokens ?? 0)
+        if (e.type === 'message_delta' && e.usage?.output_tokens !== undefined) output = e.usage.output_tokens
+        if (!firstAt && (e.type === 'content_block_start' || e.type === 'content_block_delta')) firstAt = Date.now()
         if (e.type === 'error') throw new Error(`Anthropic: ${e.error?.message ?? 'stream error'}`)
         if (e.type === 'content_block_start' && e.content_block?.type === 'tool_use') blocks.set(e.index!, { id: e.content_block.id ?? '', name: e.content_block.name ?? '', json: '' })
         if (e.type === 'content_block_delta') {
@@ -115,7 +123,8 @@ export function anthropic(opts: { apiKey: string; model: string; fetchFn?: Fetch
           }
         }
       }
-      return { content, toolCalls: [...blocks.values()].map((b) => ({ id: b.id, name: b.name, args: parseArgs(b.json) })) }
+      const usage: Usage | undefined = input || output ? { input, output, genMs: firstAt ? Date.now() - firstAt : 0 } : undefined
+      return { content, toolCalls: [...blocks.values()].map((b) => ({ id: b.id, name: b.name, args: parseArgs(b.json) })), usage }
     },
   }
 }
@@ -134,26 +143,31 @@ export function toOpenAI(messages: Message[]): unknown[] {
   })
 }
 
-export function openaiCompat(opts: { who: string; baseUrl: string; apiKey: string; model: string; fetchFn?: FetchFn }): Provider {
+export function openaiCompat(opts: { who: string; baseUrl: string; apiKey: string; model: string; fetchFn?: FetchFn; includeUsage?: boolean }): Provider {
   const f = opts.fetchFn ?? fetch
   return {
     async chat(messages, tools, onText, signal): Promise<Turn> {
       const res = await post(
         f, opts.who, `${opts.baseUrl}/chat/completions`,
         { authorization: `Bearer ${opts.apiKey}` },
-        { model: opts.model, stream: true, messages: toOpenAI(messages), tools: tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } })) },
+        { model: opts.model, stream: true, ...(opts.includeUsage && { stream_options: { include_usage: true } }), messages: toOpenAI(messages), tools: tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } })) },
         signal,
       )
       let content = ''
+      let usageRaw: { prompt_tokens?: number; completion_tokens?: number } | undefined
+      let firstAt = 0
       const calls = new Map<number, { id: string; name: string; json: string }>()
       for await (const data of sse(res)) {
         if (data === '[DONE]') break
         const j = JSON.parse(data) as {
           error?: { message?: string }
+          usage?: { prompt_tokens?: number; completion_tokens?: number } | null
           choices?: { delta?: { content?: string | null; tool_calls?: { index: number; id?: string; function?: { name?: string; arguments?: string } }[] } }[]
         }
         if (j.error) throw new Error(`${opts.who}: ${j.error.message ?? 'stream error'}`)
+        if (j.usage) usageRaw = j.usage
         const d = j.choices?.[0]?.delta
+        if (!firstAt && (d?.content || d?.tool_calls?.length)) firstAt = Date.now()
         if (d?.content) {
           content += d.content
           onText(d.content)
@@ -166,10 +180,11 @@ export function openaiCompat(opts: { who: string; baseUrl: string; apiKey: strin
           calls.set(tc.index, c)
         }
       }
-      return { content, toolCalls: [...calls.values()].map((c) => ({ id: c.id || undefined, name: c.name, args: parseArgs(c.json) })) }
+      const usage: Usage | undefined = usageRaw ? { input: usageRaw.prompt_tokens ?? 0, output: usageRaw.completion_tokens ?? 0, genMs: firstAt ? Date.now() - firstAt : 0 } : undefined
+      return { content, toolCalls: [...calls.values()].map((c) => ({ id: c.id || undefined, name: c.name, args: parseArgs(c.json) })), usage }
     },
   }
 }
 
-export const openai = (o: { apiKey: string; model: string; fetchFn?: FetchFn }) => openaiCompat({ who: 'OpenAI', baseUrl: 'https://api.openai.com/v1', ...o })
+export const openai = (o: { apiKey: string; model: string; fetchFn?: FetchFn }) => openaiCompat({ who: 'OpenAI', baseUrl: 'https://api.openai.com/v1', includeUsage: true, ...o })
 export const openrouter = (o: { apiKey: string; model: string; fetchFn?: FetchFn }) => openaiCompat({ who: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', ...o })

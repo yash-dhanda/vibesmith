@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -30,7 +30,7 @@ const script = (turns: ToolCall[][]): Provider => {
 async function run(turns: ToolCall[][], mode: Mode, approve: boolean, signal = new AbortController().signal, verify?: RunOpts['verify']) {
   const events: AgentEvent[] = []
   const messages: Message[] = [{ role: 'user', content: 'go' }]
-  await runAgent({ messages, mode, provider: script(turns), tools: new ToolBox(), emit: (e) => events.push(e), approve: async () => approve, signal, verify })
+  await runAgent({ messages, mode, provider: script(turns), tools: new ToolBox(dir), emit: (e) => events.push(e), approve: async () => approve, signal, verify })
   return { events, messages }
 }
 
@@ -42,6 +42,7 @@ describe('needsApproval', () => {
     const t = (tool: string, mode: Mode, args?: unknown) => needsApproval(tool, mode, args)
     expect([t('read_file', 'ask-all'), t('list_dir', 'ask-all'), t('search', 'ask-all')]).toEqual([false, false, false])
     expect([t('edit_file', 'ask-all'), t('edit_file', 'auto-edit'), t('edit_file', 'full-auto')]).toEqual([true, false, false])
+    expect([t('create_file', 'ask-all'), t('create_file', 'auto-edit'), t('create_file', 'full-auto')]).toEqual([true, false, false])
     expect([t('run_command', 'ask-all'), t('run_command', 'auto-edit'), t('run_command', 'full-auto')]).toEqual([true, true, false])
     expect(t('made_up', 'ask-all')).toBe(false)
     // auto-edit: allow-listed commands pass, anything else (or chained) asks
@@ -75,7 +76,7 @@ describe('runAgent', () => {
   })
 
   it('an aliased tool name cannot dodge approval', async () => {
-    const aliased: ToolCall[] = [{ name: 'write_file', args: { path: 'a.txt', old_text: 'hello', new_text: 'bye' } }]
+    const aliased: ToolCall[] = [{ name: 'str_replace', args: { path: 'a.txt', old_text: 'hello', new_text: 'bye' } }]
     const { events } = await run([read, aliased], 'ask-all', false)
     expect(events.find((e) => e.type === 'tool' && e.name === 'edit_file')).toMatchObject({ needsApproval: true })
     expect(readFileSync(join(dir, 'a.txt'), 'utf8')).toBe('hello\n')
@@ -109,7 +110,7 @@ describe('runAgent', () => {
   it('stops at the step cap', async () => {
     const events: AgentEvent[] = []
     await runAgent({
-      messages: [], mode: 'full-auto', maxSteps: 2, provider: script([read, read, read, read]), tools: new ToolBox(),
+      messages: [], mode: 'full-auto', maxSteps: 2, provider: script([read, read, read, read]), tools: new ToolBox(dir),
       emit: (e) => events.push(e), approve: async () => true, signal: new AbortController().signal,
     })
     expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'max_steps', steps: 2 })
@@ -125,8 +126,24 @@ describe('runAgent', () => {
   it('provider error surfaces as an error event', async () => {
     const events: AgentEvent[] = []
     const failing: Provider = { chat: async () => { throw new Error('Cannot reach Ollama') } }
-    await runAgent({ messages: [], mode: 'ask-all', provider: failing, tools: new ToolBox(), emit: (e) => events.push(e), approve: async () => true, signal: new AbortController().signal })
+    await runAgent({ messages: [], mode: 'ask-all', provider: failing, tools: new ToolBox(dir), emit: (e) => events.push(e), approve: async () => true, signal: new AbortController().signal })
     expect(events.at(-1)).toEqual({ type: 'error', message: 'Cannot reach Ollama' })
+  })
+})
+
+describe('create_file in the loop', () => {
+  it('ask-all asks before creating; approved file appears and counts as an edit for verify', async () => {
+    const create: ToolCall[] = [{ name: 'create_file', args: { path: 'src/new.js', content: 'module.exports = 1\n' } }]
+    let verified = 0
+    const { events } = await run([create], 'ask-all', true, undefined, async () => (verified++, { command: 'x', ok: true, output: '' }))
+    expect(events.find((e) => e.type === 'tool' && e.name === 'create_file')).toMatchObject({ needsApproval: true })
+    expect(readFileSync(join(dir, 'src/new.js'), 'utf8')).toBe('module.exports = 1\n')
+    expect(verified).toBe(1)
+  })
+  it('declined create leaves nothing behind', async () => {
+    const create: ToolCall[] = [{ name: 'create_file', args: { path: 'x/y.txt', content: 'hi' } }]
+    await run([create], 'ask-all', false)
+    expect(existsSync(join(dir, 'x'))).toBe(false)
   })
 })
 
@@ -177,5 +194,19 @@ describe('verify step', () => {
     const v = check([false])
     await run([read, edit], 'ask-all', false, undefined, v.fn)
     expect(v.calls).toEqual([])
+  })
+})
+
+describe('usage events', () => {
+  it('reports real usage from the provider, and an estimate when the provider gives none', async () => {
+    const events: AgentEvent[] = []
+    const withUsage: Provider = { chat: async () => ({ content: 'done', toolCalls: [], usage: { input: 900, output: 120, genMs: 3000, ctxLimit: 8192 } }) }
+    await runAgent({ messages: [{ role: 'user', content: 'x' }], mode: 'ask-all', provider: withUsage, tools: new ToolBox(dir), emit: (e) => events.push(e), approve: async () => true, signal: new AbortController().signal })
+    expect(events.find((e) => e.type === 'usage')).toEqual({ type: 'usage', input: 900, output: 120, tps: 40, ctxLimit: 8192, estimated: undefined })
+
+    const e2: AgentEvent[] = []
+    const none: Provider = { chat: async () => ({ content: 'a'.repeat(400), toolCalls: [] }) }
+    await runAgent({ messages: [{ role: 'user', content: 'b'.repeat(800) }], mode: 'ask-all', provider: none, tools: new ToolBox(dir), emit: (e) => e2.push(e), approve: async () => true, signal: new AbortController().signal })
+    expect(e2.find((e) => e.type === 'usage')).toMatchObject({ input: 200, output: 100, tps: 0, estimated: true })
   })
 })

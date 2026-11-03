@@ -37,7 +37,7 @@ describe(`eval ${MODEL}`, () => {
       const verifyCmd = detectVerify(dir) // same default the app uses
       const t0 = Date.now()
       await runAgent({
-        messages, provider, tools: new ToolBox(), mode: 'full-auto', maxSteps: 25,
+        messages, provider, tools: new ToolBox(dir), mode: 'full-auto', maxSteps: 25,
         emit: (e) => events.push(e), approve: async () => true, signal: ctl.signal,
         verify: verifyCmd ? () => runVerify(verifyCmd, dir, ctl.signal) : undefined,
       })

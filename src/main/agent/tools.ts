@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
-import { readdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import { getRoot, inRoot } from '../project'
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { resolveIn } from '../project'
 import { runCommand } from './commands'
 import { checkSyntax, findLoose, reindent, resolveToolName } from './guards'
 
@@ -33,6 +33,15 @@ export const toolDefs: ToolDef[] = [
     parameters: { type: 'object', properties: { command: { type: 'string', description: 'Shell command' } }, required: ['command'] },
   },
   {
+    name: 'create_file',
+    description: 'Create a new file with the given content. Missing folders are created too. Fails if the file already exists (use edit_file for that). Use this to build things for the user instead of pasting code into the chat.',
+    parameters: {
+      type: 'object',
+      properties: { path: { type: 'string', description: 'File relative to project root' }, content: { type: 'string', description: 'Full content of the new file' } },
+      required: ['path', 'content'],
+    },
+  },
+  {
     name: 'edit_file',
     description:
       'Replace old_text with new_text in a file you already read. old_text must match the file exactly once. To create a new file, use an empty old_text on a path that does not exist.',
@@ -53,6 +62,10 @@ const hash = (s: string) => createHash('sha1').update(s).digest('hex')
 
 // Tool errors are returned as text so the model can recover. Nothing here throws to the loop.
 export class ToolBox {
+  constructor(private root: string) {}
+
+  private inRoot = (p: string) => resolveIn(this.root, p)
+
   // path -> content hash at last read; edit_file needs a fresh entry (read-before-edit, enforced in code)
   private seen = new Map<string, string>()
 
@@ -66,7 +79,8 @@ export class ToolBox {
       if (name === 'list_dir') return await this.list(a.path as string)
       if (name === 'read_file') return await this.read(a.path as string)
       if (name === 'search') return await this.search(a.pattern as string)
-      if (name === 'run_command') return await runCommand(a.command as string, getRoot()!, signal)
+      if (name === 'run_command') return await runCommand(a.command as string, this.root, signal)
+      if (name === 'create_file') return await this.create(a.path as string, a.content as string)
       return await this.edit(a.path as string, a.old_text as string, a.new_text as string)
     } catch (e) {
       return `ERROR: ${(e as Error).message}`
@@ -74,7 +88,7 @@ export class ToolBox {
   }
 
   private async list(path: string) {
-    const entries = await readdir(inRoot(path), { withFileTypes: true })
+    const entries = await readdir(this.inRoot(path), { withFileTypes: true })
     const lines = entries
       .filter((d) => d.name !== '.git' && d.name !== 'node_modules')
       .sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name))
@@ -89,7 +103,7 @@ export class ToolBox {
     } catch (e) {
       return `ERROR: invalid regular expression: ${(e as Error).message}`
     }
-    const root = getRoot()!
+    const root = this.root
     const hits: string[] = []
     const walk = async (dir: string): Promise<void> => {
       for (const d of await readdir(join(root, dir), { withFileTypes: true })) {
@@ -111,16 +125,24 @@ export class ToolBox {
   }
 
   private async read(path: string) {
-    const text = await readFile(inRoot(path), 'utf8')
-    this.seen.set(inRoot(path), hash(text))
+    const text = await readFile(this.inRoot(path), 'utf8')
+    this.seen.set(this.inRoot(path), hash(text))
     return text.length > MAX_READ ? text.slice(0, MAX_READ) + `\n[truncated, file is ${text.length} chars]` : text
   }
 
+  private async create(path: string, content: string) {
+    const real = this.inRoot(path)
+    if ((await readFile(real, 'utf8').catch(() => null)) !== null) return `ERROR: ${path} already exists. Use read_file, then edit_file, to change it.`
+    await mkdir(dirname(real), { recursive: true })
+    return this.commit(path, real, null, content, '')
+  }
+
   private async edit(path: string, oldText: string, newText: string) {
-    const real = inRoot(path)
+    const real = this.inRoot(path)
     const current = await readFile(real, 'utf8').catch(() => null)
     if (current === null) {
       if (oldText !== '') return `ERROR: ${path} does not exist. To create it, pass an empty old_text.`
+      await mkdir(dirname(real), { recursive: true })
       return this.commit(path, real, null, newText, '')
     }
     if (this.seen.get(real) !== hash(current)) return `ERROR: read ${path} first (not read this run, or it changed since).`
