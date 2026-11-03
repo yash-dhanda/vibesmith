@@ -42,3 +42,9 @@ export function rank(s: Pick<SystemInfo, 'ramGB' | 'gpu'>, catalog = CATALOG): R
   else if (bestFit === 'cpu') all.filter((m) => m.fit === 'cpu' && m.sizeGB <= 6).slice(0, 1).forEach((m) => (m.best = true))
   return all
 }
+
+// Installed models, strongest first (by the catalog's quality rank; unknown models last), so the default pick is the best one.
+export function sortByQuality(names: string[], catalog = CATALOG): string[] {
+  const q = (n: string) => catalog.find((m) => m.id === n || m.id === n.replace(/:latest$/, ''))?.q ?? 0
+  return [...names].sort((a, b) => q(b) - q(a) || a.localeCompare(b))
+}

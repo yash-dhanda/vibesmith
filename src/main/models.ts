@@ -1,6 +1,7 @@
 import { buildProvider } from './agent/factory'
 import type { Provider } from './agent/provider'
 import { getKey, keyStatus } from './keys'
+import { sortByQuality } from './catalog'
 import { ollamaStatus } from './ollama'
 
 export { ollamaStatus }
@@ -13,7 +14,7 @@ export const makeProvider = (id: string, numCtx?: number): Provider => buildProv
 
 export async function listModels(): Promise<ModelOption[]> {
   const out: ModelOption[] = []
-  for (const name of (await ollamaStatus()).models) out.push({ id: `ollama:${name}`, label: name, group: 'Local (Ollama)' }) // cloud models are listed even when Ollama is not running
+  for (const name of sortByQuality((await ollamaStatus()).models)) out.push({ id: `ollama:${name}`, label: name, group: 'Local (Ollama)' }) // cloud models are listed even when Ollama is not running
   if (keyStatus().anthropic) for (const m of ANTHROPIC_MODELS) out.push({ id: `anthropic:${m}`, label: m, group: 'Anthropic' })
   return out
 }

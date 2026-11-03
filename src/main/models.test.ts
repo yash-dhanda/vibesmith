@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CATALOG, rank } from './catalog'
+import { CATALOG, rank, sortByQuality } from './catalog'
 import { searchHF } from './hf'
 import { PullTracker } from './pull'
 import { fitFor, parseNvidiaSmi } from './system'
@@ -113,5 +113,16 @@ describe('searchHF', () => {
   it('is empty for an empty query, and explains a failing server', async () => {
     expect(await searchHF('  ', ok([]))).toEqual([])
     await expect(searchHF('x', async () => ({ ok: false, status: 503, json: async () => ({}) }))).rejects.toThrow('503')
+  })
+})
+
+describe('sortByQuality', () => {
+  it('puts the strongest installed model first, unknown models last', () => {
+    expect(sortByQuality(['qwen3:8b', 'my-custom-model', 'qwen3.5:9b', 'qwen3.6:27b', 'qwen3.5:4b'])).toEqual(['qwen3.6:27b', 'qwen3.5:9b', 'qwen3:8b', 'qwen3.5:4b', 'my-custom-model'])
+  })
+  it('treats :latest like the plain name, and is stable for equal ranks', () => {
+    expect(sortByQuality(['llama3.2:3b', 'qwen3.5:9b:latest'])[0]).toBe('qwen3.5:9b:latest') // :latest still finds the catalog entry
+    expect(sortByQuality(['qwen3.5:9b', 'gemma4:12b'])).toEqual(['gemma4:12b', 'qwen3.5:9b']) // equal rank: alphabetical, so the order never jumps around
+    expect(sortByQuality(['b-unknown', 'a-unknown'])).toEqual(['a-unknown', 'b-unknown'])
   })
 })
