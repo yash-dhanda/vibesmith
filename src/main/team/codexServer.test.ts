@@ -18,11 +18,12 @@ rl.on('line',(l)=>{const m=JSON.parse(l);
  if(m.method==='initialize') out({id:m.id,result:{userAgent:'fake'}});
  else if(m.method==='thread/start'||m.method==='thread/resume') out({id:m.id,result:{thread:{id:'T1'}}});
  else if(m.method==='turn/start'){ out({id:m.id,result:{turn:{id:'U1'}}}); out({method:'turn/started',params:{turn:{id:'U1'}}});
+   out({method:'item/agentMessage/delta',params:{itemId:'m0',delta:'Plan: '}}); out({method:'item/commandExecution/outputDelta',params:{itemId:'c1',delta:'PASS'}});
    out({method:'item/started',params:{item:{type:'commandExecution',id:'c1',command:"/bin/zsh -lc 'npm test'"}}});
    out({id:77,method:'item/commandExecution/requestApproval',params:{command:'npm install',reason:'needs network'}}); }
  else if(m.id===77){ approval=m.result.decision;
    out({method:'item/completed',params:{item:{type:'commandExecution',id:'c1',exitCode:0,aggregatedOutput:'ok'}}});
-   out({method:'item/started',params:{item:{type:'fileChange',id:'f1',changes:[{path:process.cwd()+'/a.js',kind:{type:'add'}}]}}});
+   out({method:'item/started',params:{item:{type:'fileChange',id:'f1',changes:[{path:process.cwd()+'/a.js',kind:{type:'add'},diff:'+hello\\n'}]}}});
    out({method:'item/completed',params:{item:{type:'fileChange',id:'f1',status:'completed',changes:[]}}});
    out({method:'thread/tokenUsage/updated',params:{tokenUsage:{total:{inputTokens:1100,cachedInputTokens:500,outputTokens:30,reasoningOutputTokens:5},last:{inputTokens:100,cachedInputTokens:50,outputTokens:30,reasoningOutputTokens:5}}}});
    out({method:'account/rateLimits/updated',params:{rateLimits:{primary:{usedPercent:42,resetsAt:1000},secondary:{usedPercent:7,resetsAt:2000}}}});
@@ -40,7 +41,9 @@ describe('codex app-server adapter', () => {
     expect(r.text).toBe('final: approval=accept steered=null')
     expect(r.sessionId).toBe('T1')
     expect(asked).toEqual(['Codex wants to run: npm install'])
-    expect(evs.map((e) => e.type)).toEqual(['session', 'tool', 'tool_result', 'tool', 'tool_result', 'limits', 'text', 'usage', 'done'])
+    expect(evs.map((e) => e.type)).toEqual(['session', 'delta', 'delta', 'tool', 'tool_result', 'code', 'tool', 'tool_result', 'limits', 'text', 'usage', 'done'])
+    expect(evs.find((e) => e.type === 'code')).toMatchObject({ path: 'a.js', kind: 'diff', text: '+hello\n', done: false })
+    expect(evs.filter((e) => e.type === 'delta').map((e: any) => [e.channel, e.text])).toEqual([['text', 'Plan: '], ['output', 'PASS']])
     expect(evs.find((e) => e.type === 'tool' && e.kind === 'command')).toMatchObject({ summary: 'npm test' })
     expect(evs.find((e) => e.type === 'limits')).toMatchObject({ primaryPct: 42, secondaryPct: 7 })
     expect(r.usage).toMatchObject({ input: 100, output: 35, cached: 50 }) // this run only: the thread's total minus what it had before the run

@@ -98,6 +98,7 @@ export function runCodexServer(o: CodexServerOpts, bin = 'codex'): Promise<RunRe
         if (started) out.push({ type: 'tool', agent: 'codex', id: it.id, kind: 'command', name: 'shell', summary: unwrapShell(String(it.command ?? '')).slice(0, 200) })
         else out.push({ type: 'tool_result', agent: 'codex', id: it.id, ok: it.exitCode === 0, text: String(it.aggregatedOutput ?? '').slice(0, 4000) })
       } else if (it.type === 'fileChange') {
+        for (const c of it.changes ?? []) if (c?.path && c.diff) out.push({ type: 'code', agent: 'codex', id: `${it.id}:${c.path}`, path: rel(String(c.path)), text: String(c.diff), kind: 'diff', done: !started })
         if (started) out.push({ type: 'tool', agent: 'codex', id: it.id, kind: 'edit', name: 'apply_patch', summary: (it.changes ?? []).map((c: any) => `${c.kind?.type ?? c.kind} ${rel(String(c.path))}`).join(', ').slice(0, 200) })
         else out.push({ type: 'tool_result', agent: 'codex', id: it.id, ok: it.status === 'completed', text: '' })
       } else if (it.type === 'mcpToolCall' || it.type === 'webSearch') {
@@ -127,6 +128,18 @@ export function runCodexServer(o: CodexServerOpts, bin = 'codex'): Promise<RunRe
         return
       }
       switch (m.method) {
+        case 'item/agentMessage/delta':
+          return void (m.params?.delta && push({ type: 'delta', agent: 'codex', channel: 'text', id: m.params.itemId, text: String(m.params.delta) }))
+        case 'item/reasoning/summaryTextDelta':
+        case 'item/reasoning/textDelta':
+          return void (m.params?.delta && push({ type: 'delta', agent: 'codex', channel: 'thinking', id: m.params.itemId, text: String(m.params.delta) }))
+        case 'item/commandExecution/outputDelta':
+          return void (m.params?.delta && push({ type: 'delta', agent: 'codex', channel: 'output', id: m.params.itemId, text: String(m.params.delta) }))
+        case 'item/fileChange/patchUpdated': {
+          const changes: any[] = m.params?.changes ?? m.params?.item?.changes ?? []
+          for (const c of changes) if (c?.path) push({ type: 'code', agent: 'codex', id: `${m.params?.itemId ?? 'f'}:${c.path}`, path: rel(String(c.path)), text: String(c.diff ?? ''), kind: 'diff', done: false })
+          return
+        }
         case 'turn/started':
           turnId = m.params?.turn?.id ?? turnId
           return

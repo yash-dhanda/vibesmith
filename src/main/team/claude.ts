@@ -23,7 +23,7 @@ export const CLAUDE_DENY = ['Bash(git push *)', 'Bash(sudo *)', 'Bash(rm -rf /*)
 export const CLAUDE_DENY_NO_GATE = [...CLAUDE_DENY, 'Bash(curl *)', 'Bash(wget *)', 'Bash(npm publish *)', 'Bash(docker push *)', 'Bash(vercel *)', 'Bash(terraform apply *)', 'Bash(kubectl *)', 'Read(./.env*)', 'Read(~/.ssh/**)', 'Read(~/.aws/**)']
 
 export function claudeArgs(o: ClaudeOpts): string[] {
-  const a = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', o.write ? 'acceptEdits' : 'plan']
+  const a = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-mode', o.write ? 'acceptEdits' : 'plan']
   if (o.model) a.push('--model', o.model)
   if (o.effort) a.push('--effort', o.effort)
   if (o.resume) a.push('--resume', o.resume)
@@ -37,4 +37,4 @@ export function claudeArgs(o: ClaudeOpts): string[] {
 }
 
 export const runClaude = (o: ClaudeOpts, bin = 'claude'): Promise<RunResult> =>
-  runCli('claude', bin, claudeArgs(o), makeClaudeParser(), o.team ? { ...o, env: { ...linkEnv(o.team), MCP_TOOL_TIMEOUT: String(TOOL_TIMEOUT_SEC * 1000), ...o.env } } : o)
+  runCli('claude', bin, claudeArgs(o), makeClaudeParser(o.cwd), o.team ? { ...o, env: { ...linkEnv(o.team), MCP_TOOL_TIMEOUT: String(TOOL_TIMEOUT_SEC * 1000), ...o.env } } : o)

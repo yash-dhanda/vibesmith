@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { AgentEvent, Mode } from '../main/agent/loop'
 import type { ChatListItem, ChatStatus, TranscriptItem } from '../main/chatStore'
 import type { UsageSummary } from '../main/usageStore'
-import type { RunSummary } from '../main/team/service'
+import type { RunSummary, TeamMemory } from '../main/team/service'
 import type { Run as TeamRun, RunEvent as TeamRunEvent, TeamConfig } from '../main/team/types'
 
 export type CatalogItem = { id: string; name: string; sizeGB: number; q: number; tags: string[]; blurb: string; fit: 'gpu' | 'partial' | 'cpu' | 'too-big'; best: boolean; installed: boolean }
@@ -90,6 +90,8 @@ const api = {
   teamRetryTask: (id: string, taskId: string): Promise<void> => ipcRenderer.invoke('team:retry-task', id, taskId),
   teamSkipTask: (id: string, taskId: string): Promise<void> => ipcRenderer.invoke('team:skip-task', id, taskId),
   teamExtendBudget: (id: string): Promise<void> => ipcRenderer.invoke('team:extend-budget', id),
+  teamLiveDiff: (id: string, taskId: string, path?: string): Promise<string> => ipcRenderer.invoke('team:live-diff', id, taskId, path),
+  teamMemory: (id: string): Promise<TeamMemory | null> => ipcRenderer.invoke('team:memory', id),
   teamDelete: (id: string): Promise<boolean> => ipcRenderer.invoke('team:delete', id),
   teamSettingsGet: (): Promise<Partial<TeamConfig>> => ipcRenderer.invoke('team:settings-get'),
   teamSettingsSet: (cfg: Partial<TeamConfig>): Promise<void> => ipcRenderer.invoke('team:settings-set', cfg),

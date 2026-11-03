@@ -27,7 +27,7 @@ export async function snapshotCommit(root: string): Promise<string> {
   return (await git(root, ['commit-tree', tree, '-p', parent, '-m', 'forge: team run start'], AUTHOR)).trim()
 }
 
-async function snapshotTreeWithoutSecrets(root: string): Promise<string> {
+export async function snapshotTreeWithoutSecrets(root: string): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), 'forge-team-idx-'))
   const env = { GIT_INDEX_FILE: join(dir, 'index') }
   try {
@@ -76,8 +76,8 @@ export async function changedSince(wt: string, base: string, tip = 'HEAD'): Prom
   })
 }
 
-export async function diffText(wt: string, base: string, tip = 'HEAD', max = 40_000): Promise<string> {
-  const d = await git(wt, ['diff', '--no-renames', '--unified=3', base, tip])
+export async function diffText(wt: string, base: string, tip = 'HEAD', max = 40_000, path?: string): Promise<string> {
+  const d = await git(wt, ['diff', '--no-renames', '--unified=3', base, tip, ...(path ? ['--', path] : [])])
   return d.length > max ? d.slice(0, max) + `\n[diff cut: ${d.length - max} more characters]` : d
 }
 

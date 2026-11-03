@@ -153,3 +153,17 @@ No screens yet. Design and findings: `docs/TEAM.md`. All hooks are additive. Typ
 - `teamSettingsGet()` / `teamSettingsSet(cfg)`: team defaults remembered per project (verify command, budgets, planner, review on/off...). A run's own `config` wins over them.
 - `teamExportReport(id)`: opens the system save dialog and writes the final report (Markdown); returns the path or null if cancelled.
 - `TeamConfig.claudeEffort` (`low` to `max`) and `claudeModel` are passed to Claude Code.
+
+**Live view of every agent (team mode)**
+
+New `agent` events (`ev.type`), all inside the existing `onTeamEvent` stream:
+- `delta {agent, channel: 'text'|'thinking'|'output', id?, text}`: text as it is generated. `thinking` is the agent's reasoning summary, `output` is a command's output while it runs. Deltas arrive merged every ~100 ms. The finished message follows as a `text` event: replace the deltas with it. Claude and Codex (app-server mode) stream; `codexMode: 'exec'` does not.
+- `code {agent, id, path, text, kind: 'content'|'diff', done}`: a file being written, as it grows. `text` is the whole content (Claude: file text; Codex: the unified diff) so far, so replace what you showed for the same `id`. `done: true` marks the final version. Paths are relative to the agent's folder.
+- `prompt {agent, text}`: exactly what this agent was handed at the start of the run (goal, task, acceptance checks, handoffs from finished tasks, unread messages, your rules, relevant notes and past problems). This is the "shared context" each agent actually received. Persisted in the log.
+- New run event `live {taskId, files}`: every ~1.5 s while an agent works, the files that differ from where its task started, whatever wrote them (patch, shell command, editor tool). Not persisted.
+
+New hooks:
+- `teamLiveDiff(id, taskId, path?)`: the unified diff of the agent's working folder right now (uncommitted), or one file of it. Call it when a `live` event names a file you are showing. After the task has merged it returns the team branch's change.
+- `teamMemory(id)`: the shared memory right now: `decisions`, `messages` (all, including steering), `handoffs` per task, `errors`, and `project` (decisions and problems remembered from earlier runs, plus which agent has done which job well). Refresh it on `message` and `task` events.
+
+Typing and growing files are not written to the log; finished text, tool results, prompts and the task diff are. To rebuild a run after a restart use `teamEvents`.

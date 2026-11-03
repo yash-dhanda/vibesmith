@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { createCheckpoint } from '../checkpoint'
 import { detectVerify, runVerify } from '../agent/commands'
 import type { AgentName, ErrorKind, TeamEvent } from './events'
-import { addTaskWorktree, abortMerge, applyResult, changedSince, commitAll, createRunBranch, diffText, finishMerge, head, mergeBranch, pruneWorktrees, removeWorktree, snapshotCommit } from './git'
+import { addTaskWorktree, abortMerge, applyResult, changedSince, commitAll, createRunBranch, diffText, finishMerge, head, mergeBranch, pruneWorktrees, removeWorktree, snapshotCommit, snapshotTreeWithoutSecrets } from './git'
 import { TeamHub, type HubCtx } from './hub'
 import { PERMISSION_TOOL, type TeamLink } from './link'
 import type { ApprovalAsk, ServerHandle } from './codexServer'
@@ -333,9 +333,85 @@ export class TeamOrchestrator {
     if (!l) this.live.set(run.id, (l = this.newLive(['claude', 'codex'])))
     return l
   }
+  // Live typing (deltas, growing files) arrives in bursts of tiny events. They are merged for 100 ms before reaching the screen and
+  // are not written to the log: the finished text, tool results and task diff are.
+  private streamBuf = new Map<string, RunEvent>()
+  private streamTimer: NodeJS.Timeout | null = null
+  private flushStream() {
+    if (this.streamTimer) clearTimeout(this.streamTimer)
+    this.streamTimer = null
+    const all = [...this.streamBuf.values()]
+    this.streamBuf.clear()
+    for (const e of all) this.d.emit(e)
+  }
   private out(run: Run, ev: RunEvent) {
+    const live = ev.type === 'agent' && (ev.ev.type === 'delta' || ev.ev.type === 'code')
+    if (live || ev.type === 'live') {
+      const a = ev.type === 'agent' ? ev.ev : null
+      const key = a?.type === 'code' ? `${ev.type}:${(ev as any).taskId}:c:${a.id}` : a?.type === 'delta' ? `${ev.type}:${(ev as any).taskId}:d:${a.agent}:${a.channel}:${a.id ?? ''}` : `live:${(ev as any).taskId}`
+      const prev = this.streamBuf.get(key)
+      if (prev && a?.type === 'delta' && prev.type === 'agent' && prev.ev.type === 'delta') this.streamBuf.set(key, { ...ev, ev: { ...a, text: prev.ev.text + a.text } } as RunEvent)
+      else this.streamBuf.set(key, ev)
+      this.streamTimer ??= setTimeout(() => this.flushStream(), 100)
+      return
+    }
+    this.flushStream() // keep the order the agent worked in
     this.d.store.appendEvent(run.id, ev)
     this.d.emit(ev)
+  }
+
+  // Polls an agent's working folder while it runs and reports which files differ from where the task started, whatever wrote them
+  // (a patch, a shell command, an editor tool). The patch itself is fetched on demand through liveDiff.
+  private watch(run: Run, task: Task, cwd: string, base: string): () => void {
+    let sig = ''
+    let busy = false
+    const tick = async () => {
+      if (busy) return
+      busy = true
+      try {
+        const tree = await snapshotTreeWithoutSecrets(cwd)
+        const files = await changedSince(cwd, base, tree)
+        const s = JSON.stringify(files.map((f) => [f.path, f.status, f.added, f.removed]))
+        if (s !== sig) {
+          sig = s
+          this.out(run, { type: 'live', runId: run.id, taskId: task.id, files })
+        }
+      } catch {} finally {
+        busy = false
+      }
+    }
+    const t = setInterval(tick, 1500)
+    void tick()
+    return () => {
+      clearInterval(t)
+      void tick()
+    }
+  }
+
+  async liveDiff(runId: string, taskId: string, path?: string): Promise<string> {
+    const run = this.runOf(runId)
+    const task = run?.tasks.find((t) => t.id === taskId)
+    if (!run) return ''
+    const cwd = task?.worktree ?? run.integrationWorktree
+    try {
+      return await diffText(cwd, task?.base ?? run.baseCommit, await snapshotTreeWithoutSecrets(cwd), 80_000, path)
+    } catch {
+      return ''
+    }
+  }
+
+  // Everything the team shares right now: what was decided, said, handed over and learned, plus what earlier runs on this project taught it.
+  memorySnapshot(runId: string) {
+    const run = this.runOf(runId)
+    if (!run) return null
+    const mem = this.memory(run).load()
+    return {
+      decisions: run.decisions,
+      messages: run.messages,
+      handoffs: run.tasks.filter((t) => t.handoff).map((t) => ({ taskId: t.id, title: t.title, agent: t.agent, handoff: t.handoff })),
+      errors: run.errors,
+      project: { decisions: mem.decisions.slice(-50), errors: mem.errors.slice(-50), stats: mem.stats },
+    }
   }
   private touch(run: Run, task?: Task) {
     this.d.store.save(run)
@@ -402,6 +478,8 @@ export class TeamOrchestrator {
   // The one place an agent is run: wires events, usage, session handles and the budget.
   private async agentRun(run: Run, task: Task, agent: AgentName, phase: TaskPhase | 'plan' | 'final-review', prompt: string, write: boolean, cwd: string, resume?: string): Promise<RunResult> {
     const live = this.liveOf(run)
+    this.out(run, { type: 'agent', runId: run.id, taskId: task.id, phase, ev: { type: 'prompt', agent, text: prompt.slice(0, 16_000) } })
+    const stopWatching = write ? this.watch(run, task, cwd, task.base ?? run.baseCommit) : null
     const res = await this.d.runner(agent, {
       cwd, prompt, write, resume, signal: live.ctl.signal, taskId: task.id, link: await this.linkFor(run, task, agent),
       model: agent === 'codex' ? run.config.codexModel : run.config.claudeModel,
@@ -421,6 +499,7 @@ export class TeamOrchestrator {
       },
       onHandle: (h) => (h ? live.handles.set(task.id, { agent, h }) : live.handles.delete(task.id)),
     })
+    stopWatching?.()
     for (const u of [run.usage[agent], task.usage]) {
       u.input += res.usage.input
       u.output += res.usage.output

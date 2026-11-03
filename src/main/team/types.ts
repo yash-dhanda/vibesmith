@@ -115,6 +115,8 @@ export type RunEvent =
   | { type: 'plan'; runId: string; summary: string; tasks: Task[] }
   | { type: 'task'; runId: string; task: Task }
   | { type: 'agent'; runId: string; taskId: string; phase: TaskPhase | 'plan' | 'final-review'; ev: TeamEvent }
+  // What an agent's folder holds right now compared with where the task started: changes while it works, before anything is committed.
+  | { type: 'live'; runId: string; taskId: string; files: Task['changed'] }
   | { type: 'message'; runId: string; message: Message }
   | { type: 'approval'; runId: string; approval: Approval }
   | { type: 'verify'; runId: string; command: string; ok: boolean; output: string }

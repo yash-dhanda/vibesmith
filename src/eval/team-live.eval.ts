@@ -32,7 +32,14 @@ describe.skipIf(!process.env.TEAM_LIVE)('team live', () => {
     sh(proj, 'commit', '-q', '-m', 'init')
     const teamDir = mkdtempSync(join(tmpdir(), 'forge-live-t-'))
     const t0 = Date.now()
+    const seen: Record<string, number> = {}
+    const codeFinal: string[] = []
     const show = (e: RunEvent) => {
+      if (e.type === 'agent') {
+        const k = `${e.ev.agent}:${e.ev.type}${e.ev.type === 'delta' ? ':' + e.ev.channel : ''}`
+        seen[k] = (seen[k] ?? 0) + 1
+        if (e.ev.type === 'code' && e.ev.done) codeFinal.push(`${e.ev.agent} ${e.ev.path} (${e.ev.kind}, ${e.ev.text.length} chars)`)
+      } else if (e.type === 'live') seen['live'] = (seen['live'] ?? 0) + 1
       const s = `[${Math.round((Date.now() - t0) / 1000)}s]`
       if (e.type === 'run') line(`${s} RUN ${e.status} ${e.reason ?? ''}`)
       else if (e.type === 'plan') line(`${s} PLAN ${e.summary}\n${e.tasks.map((t) => `      ${t.id} [${t.agent}] ${t.title} deps=${t.deps.join(',') || '-'}`).join('\n')}`)
@@ -53,7 +60,7 @@ describe.skipIf(!process.env.TEAM_LIVE)('team live', () => {
       mcpScript: resolve('out/main/team-mcp.js'),
     })
     try {
-      const run = await orch.start(proj, process.env.TEAM_GOAL ?? 'Create slug.js exporting slugify(text) (lowercase, spaces and punctuation become single dashes, no leading/trailing dashes) and test.js that checks it with node:assert and exits non-zero on failure. Two small tasks: the module, then the tests.', { verify: 'node test.js', maxVerifyRounds: 1, maxFixRounds: 1, codexMode: process.env.TEAM_CODEX_MODE === 'app-server' ? 'app-server' : 'exec' })
+      const run = await orch.start(proj, process.env.TEAM_GOAL ?? 'Create slug.js exporting slugify(text) (lowercase, spaces and punctuation become single dashes, no leading/trailing dashes) and test.js that checks it with node:assert and exits non-zero on failure. Two small tasks: the module, then the tests.', { verify: 'node test.js', maxVerifyRounds: 1, maxFixRounds: 1, ...(process.env.TEAM_QUICK ? { review: 'off' as const, finalReview: false } : {}), codexMode: process.env.TEAM_CODEX_MODE === 'exec' ? 'exec' : 'app-server' })
       let r = orch.get(run.id)!
       for (let i = 0; i < 900 && !['awaiting_approval', 'failed', 'paused', 'cancelled'].includes(r.status); i++) {
         await new Promise((res) => setTimeout(res, 1000))
@@ -61,6 +68,7 @@ describe.skipIf(!process.env.TEAM_LIVE)('team live', () => {
         const p = r.approvals.find((a) => a.status === 'pending' && a.kind !== 'final')
         if (p) orch.answerApproval(run.id, p.id, true, 'ok')
       }
+      line(`\nSTREAM EVENT COUNTS: ${JSON.stringify(seen)}\nFINISHED CODE EVENTS: ${codeFinal.join('; ')}`)
       line(`\nFINAL STATUS: ${r.status} ${r.pausedReason ?? ''}`)
       line(`usage: codex runs=${r.usage.codex.runs} tokens=${r.usage.codex.input + r.usage.codex.output}; claude runs=${r.usage.claude.runs} tokens=${r.usage.claude.input + r.usage.claude.output} ~$${r.usage.claude.costUsd.toFixed(2)}`)
       expect(r.status).toBe('awaiting_approval')

@@ -51,6 +51,8 @@ export function sanitizeConfig(raw: unknown): Partial<TeamConfig> {
   return out
 }
 
+export type TeamMemory = NonNullable<ReturnType<TeamOrchestrator['memorySnapshot']>>
+
 const ACTIVE = ['planning', 'running', 'paused', 'verifying', 'awaiting_approval', 'interrupted']
 
 export function createTeamService(o: { userData: string; mcpScript: string; emit: (ev: RunEvent) => void; projectNotes: (project: string) => { brief: string; rules: string } }) {

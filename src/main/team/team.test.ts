@@ -3,7 +3,7 @@ import { claudeArgs, CLAUDE_DENY } from './claude'
 import { makeClaudeParser } from './claudeStream'
 import { codexArgs } from './codex'
 import { makeCodexParser, unwrapShell } from './codexStream'
-import { classifyError, type TeamEvent } from './events'
+import { classifyError, partialField, type TeamEvent } from './events'
 import { cleanEnv, runCli } from './process'
 
 const feed = (parse: (l: string) => TeamEvent[], lines: unknown[]) => lines.flatMap((l) => parse(JSON.stringify(l)))
@@ -170,5 +170,30 @@ describe('TeamSettingsStore', () => {
     st.set('/a', { verify: 'npm test', maxFixRounds: 2 })
     expect(st.get('/a')).toEqual({ verify: 'npm test', maxFixRounds: 2 })
     expect(st.get('/b')).toEqual({})
+  })
+})
+
+describe('live typing', () => {
+  it('reads a string value out of JSON that is still arriving', () => {
+    expect(partialField('{"file_path":"a.js","content":"line1\\nline2 \\"q\\" \\u00e9', 'content')).toBe('line1\nline2 "q" é')
+    expect(partialField('{"file_path":"a.js","content":"abc', 'content')).toBe('abc')
+    expect(partialField('{"file_path":"a.js"', 'content')).toBeNull()
+    expect(partialField('{"content":"x\\', 'content')).toBe('x') // cut in the middle of an escape
+  })
+  it('claude: text deltas and a file growing as the Write call streams in', () => {
+    const p = makeClaudeParser('/work/p')
+    const se = (event: object) => JSON.stringify({ type: 'stream_event', event })
+    const big = 'x'.repeat(80)
+    const ev = [
+      ...p(se({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hi ' } })),
+      ...p(se({ type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'tu9', name: 'Write', input: {} } })),
+      ...p(se({ type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: '{"file_path":"/work/p/src/a.js","content":"' } })),
+      ...p(se({ type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: big } })),
+      ...p(se({ type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: big + '"}' } })),
+      ...p(se({ type: 'content_block_stop', index: 1 })),
+    ]
+    expect(ev[0]).toMatchObject({ type: 'delta', channel: 'text', text: 'Hi ' })
+    const code = ev.filter((e) => e.type === 'code') as Extract<TeamEvent, { type: 'code' }>[]
+    expect(code.map((c) => [c.path, c.text.length, c.done])).toEqual([['src/a.js', 80, false], ['src/a.js', 160, false], ['src/a.js', 160, true]])
   })
 })

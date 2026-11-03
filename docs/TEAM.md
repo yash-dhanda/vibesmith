@@ -35,6 +35,10 @@ Backend is complete (phases 1 to 3 below); there is no screen yet. Hooks: `docs/
 
 Each agent is started with the `forge_team` MCP server (`team-mcp.js`, run by the app's own Electron binary as plain node). It forwards every call over a private local socket to the orchestrator: `team_post`, `team_inbox`, `team_context`, `team_decision`, `team_handoff`, `team_request_approval`, `team_propose_subtask`, `team_tasks`, and `team_permission` (Claude Code's permission prompts are routed to the same policy and to you). Delivery: an agent reads its inbox when it starts a turn or calls `team_inbox`. Codex (app-server) can also be steered while it works: `steer` reaches it immediately as a `turn/steer`. Claude Code gets steering at its next turn.
 
+## Watching the team live
+
+Everything an agent does is visible as it happens: its text and reasoning as it is typed (`delta`), each tool call and result, a file as it is being written (`code`), the files that currently differ in its folder (`live`, polled), what a command prints while it runs, and the exact context it was handed (`prompt`). The shared memory (decisions, messages, handoffs, problems, project history) is one call away (`teamMemory`). Event shapes: `docs/API-CHANGES.md`.
+
 ## Safety
 
 - Agents never push, and the user's folder changes only on Apply.

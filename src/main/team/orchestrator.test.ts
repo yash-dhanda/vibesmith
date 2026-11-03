@@ -31,6 +31,7 @@ type Script = {
   delayMs?: number
   limitsPct?: number // emitted by the work step, like Codex app-server's plan readout
   steerable?: boolean
+  stream?: boolean // emit typing events and leave a file in the folder for a while
   fail?: (agent: AgentName, kind: 'plan' | 'work' | 'review' | 'fix', task: string, n: number) => RunResult | null
 }
 
@@ -60,6 +61,13 @@ function harness(script: Script, over: { available?: AgentName[]; cfg?: object }
     maxActive = Math.max(maxActive, active)
     try {
       if (script.steerable && kind === 'work') o.onHandle?.({ steer: async (t) => (steers.push(t), true), interrupt() {} })
+      if (script.stream && kind === 'work') {
+        for (const t of ['Hel', 'lo ', 'world']) o.onEvent({ type: 'delta', agent, channel: 'text', text: t })
+        o.onEvent({ type: 'code', agent, id: 'w1', path: `${task}.txt`, text: 'par', kind: 'content', done: false })
+        o.onEvent({ type: 'code', agent, id: 'w1', path: `${task}.txt`, text: 'partial file', kind: 'content', done: false })
+        writeFileSync(join(o.cwd, `${task}.txt`), 'live\n')
+        await sleep(300)
+      }
       if (script.delayMs) await sleep(script.delayMs)
       if (o.signal.aborted) return { ...ok('', agent, task), ok: false, error: { kind: 'aborted', message: 'stopped' } }
       if (kind === 'plan') return ok('```json\n' + JSON.stringify(script.plan) + '\n```', agent, task)
@@ -303,6 +311,31 @@ describe('team orchestrator', () => {
     mkdirSync(join(x.teamDir, 'wt', 'rghost', 'integration'), { recursive: true })
     await x.orch.sweep()
     expect(existsSync(join(x.teamDir, 'wt', 'rghost'))).toBe(false)
+  })
+
+  it('streams typing in merged bursts, reports files changing in the folder, and shows what each agent was given and what the team shares', async () => {
+    const x = h({ stream: true, plan: { tasks: [T('a', { agent: 'codex' })] } })
+    const run = await x.orch.start(x.proj, 'live')
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    await sleep(250) // the merge window for the last streamed events
+    const agentEv = x.events.filter((e) => e.type === 'agent').map((e: any) => e.ev)
+    const deltas = agentEv.filter((e) => e.type === 'delta')
+    expect(deltas.map((d) => d.text)).toEqual(['Hello world']) // three tiny events arrived as one
+    const code = agentEv.filter((e) => e.type === 'code')
+    expect(code).toHaveLength(1)
+    expect(code[0].text).toBe('partial file') // the latest version replaces the earlier one
+    expect(x.events.some((e) => e.type === 'live' && e.files.some((f) => f.path === 't1.txt'))).toBe(true)
+    // the log keeps the prompt each agent received, not the typing
+    const logged = x.orch.events(run.id).map((l) => l.ev)
+    expect(logged.some((e: any) => e.type === 'agent' && e.ev.type === 'prompt' && /Your task t1/.test(e.ev.text))).toBe(true)
+    expect(logged.some((e: any) => e.type === 'agent' && (e.ev.type === 'delta' || e.ev.type === 'code'))).toBe(false)
+
+    const mem = x.orch.memorySnapshot(run.id)!
+    expect(mem.handoffs[0]).toMatchObject({ taskId: 't1' })
+    expect(mem.messages.some((m) => m.kind === 'handoff')).toBe(true)
+    expect(mem.project.stats['codex:build']).toEqual({ ok: 1, fail: 0 })
+    expect(await x.orch.liveDiff(run.id, 't1')).toContain('t1.txt') // after the merge it shows the team branch's change
+    expect(await x.orch.liveDiff(run.id, 't1', 'nope.txt')).toBe('')
   })
 
   it('a task that hits an auth error blocks the run with the agent named', async () => {
