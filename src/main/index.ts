@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { getRoot, inRoot, resolveIn, setRoot } from './project'
 import { isPreviewable } from './preview'
 import { PreviewServer } from './previewServer'
+import { detectRun, ProjectRunner } from './runner'
 import { rewindChat } from './rewind'
 import { isRemote } from './ollamaHost'
 import { BriefStore, type BriefEdit } from './briefStore'
@@ -117,6 +118,11 @@ function scheduleSave(s: Session) {
   s.saveTimer ??= setTimeout(() => flush(s), 2000)
 }
 
+const runners = new Map<string, ProjectRunner>()
+function stopRunner(chatId: string) {
+  runners.get(chatId)?.stop()
+  runners.delete(chatId)
+}
 const previews = new Map<string, PreviewServer>()
 function stopPreview(chatId: string) {
   previews.get(chatId)?.stop()
@@ -220,6 +226,7 @@ ipcMain.handle('chats:search', (_e, query: string) => store.search(String(query 
 ipcMain.handle('chats:delete', (_e, id: string) => {
   if (sessions.get(id)?.run) throw new Error('Stop this chat first.')
   stopPreview(id)
+  stopRunner(id)
   attachments().removeChat(id)
   store.delete(id)
   sessions.delete(id)
@@ -270,6 +277,25 @@ ipcMain.handle('project:brief-set', (_e, chatId: string, edit: BriefEdit) => {
   if (!r.conflict) win?.webContents.send('project:brief-changed', { project: root, brief: r.brief })
   return { ...r.brief, conflict: r.conflict }
 })
+// "Run it": what can be started in this chat's project, and a managed process with live logs.
+ipcMain.handle('run:detect', (_e, chatId: string) => detectRun(chatRoot(chatId)))
+ipcMain.handle('run:status', (_e, chatId: string) => {
+  const r = runners.get(chatId)
+  return { ...(r?.state ?? { state: 'stopped', command: null, port: null, url: null, exitCode: null }), logs: r?.logs ?? '' }
+})
+ipcMain.handle('run:start', (_e, chatId: string) => {
+  const root = chatRoot(chatId)
+  const plan = detectRun(root)
+  if (plan.kind !== 'server' || !plan.command) throw new Error(plan.kind === 'static' ? 'This project is a web page: use the preview.' : 'There is nothing to run yet. Ask Forge to build something first.')
+  let r = runners.get(chatId)
+  if (!r) {
+    r = new ProjectRunner(root, (text) => win?.webContents.send('run:log', { chatId, text }), (state) => win?.webContents.send('run:state', { chatId, ...state }))
+    runners.set(chatId, r)
+  }
+  r.start(plan.command)
+  return r.state
+})
+ipcMain.on('run:stop', (_e, chatId: string) => runners.get(chatId)?.stop())
 ipcMain.handle('open:folder', async (_e, chatId: string) => {
   const err = await shell.openPath(chatRoot(chatId))
   if (err) throw new Error(err)
@@ -573,6 +599,7 @@ app.whenReady().then(() => {
 })
 
 app.on('before-quit', () => {
+  for (const id of [...runners.keys()]) stopRunner(id)
   for (const id of [...previews.keys()]) stopPreview(id)
   saveAll()
   library?.stop()

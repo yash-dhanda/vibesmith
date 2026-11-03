@@ -8,6 +8,7 @@ export type InstalledModel = { name: string; sizeBytes: number; modified: string
 export type PullEvent = { name: string; status: string; completed: number; total: number; percent: number; bytesPerSec: number; done: boolean; error?: string; cancelled?: boolean }
 type KeyStatus = Record<'anthropic' | 'openai' | 'openrouter', boolean>
 export type ProjectBrief = { name: string; description: string; priorities: { id: string; text: string; included: boolean }[]; revision: number }
+export type RunStatus = { state: 'stopped' | 'starting' | 'running' | 'exited'; command: string | null; port: number | null; url: string | null; exitCode: number | null; logs: string }
 export type OpenedChat = { id: string; title: string; project: string | null; missing: boolean; status: ChatStatus; transcript: TranscriptItem[] }
 
 const api = {
@@ -79,6 +80,12 @@ const api = {
   projectBriefGet: (chatId: string): Promise<ProjectBrief> => ipcRenderer.invoke('project:brief-get', chatId),
   projectBriefSet: (chatId: string, edit: { revision: number; name?: string; description?: string; priorities?: { id?: string; text: string; included?: boolean }[] }): Promise<ProjectBrief & { conflict: boolean }> => ipcRenderer.invoke('project:brief-set', chatId, edit),
   onProjectBriefChanged: (cb: (m: { project: string; brief: ProjectBrief }) => void) => ipcRenderer.on('project:brief-changed', (_e, m) => cb(m)),
+  runDetect: (chatId: string): Promise<{ kind: 'static' | 'server' | 'none'; command: string | null; label: string }> => ipcRenderer.invoke('run:detect', chatId),
+  runStatus: (chatId: string): Promise<RunStatus> => ipcRenderer.invoke('run:status', chatId),
+  runStart: (chatId: string): Promise<Omit<RunStatus, 'logs'>> => ipcRenderer.invoke('run:start', chatId),
+  runStop: (chatId: string) => ipcRenderer.send('run:stop', chatId),
+  onRunLog: (cb: (m: { chatId: string; text: string }) => void) => ipcRenderer.on('run:log', (_e, m) => cb(m)),
+  onRunState: (cb: (m: { chatId: string } & Omit<RunStatus, 'logs'>) => void) => ipcRenderer.on('run:state', (_e, m) => cb(m)),
   openFolder: (chatId: string): Promise<void> => ipcRenderer.invoke('open:folder', chatId),
   // workspace (files, editor, terminal)
   list: (dir: string): Promise<{ name: string; dir: boolean }[]> => ipcRenderer.invoke('fs:list', dir),
