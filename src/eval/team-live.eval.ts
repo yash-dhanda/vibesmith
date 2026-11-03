@@ -62,9 +62,21 @@ describe.skipIf(!process.env.TEAM_LIVE)('team live', () => {
     try {
       const run = await orch.start(proj, process.env.TEAM_GOAL ?? 'Create slug.js exporting slugify(text) (lowercase, spaces and punctuation become single dashes, no leading/trailing dashes) and test.js that checks it with node:assert and exits non-zero on failure. Two small tasks: the module, then the tests.', { verify: process.env.TEAM_VERIFY ?? 'node test.js', maxVerifyRounds: 1, maxFixRounds: 1, ...(process.env.TEAM_QUICK ? { review: 'off' as const, finalReview: false } : {}), codexMode: process.env.TEAM_CODEX_MODE === 'exec' ? 'exec' : 'app-server' })
       let r = orch.get(run.id)!
-      for (let i = 0; i < 900 && !['awaiting_approval', 'failed', 'paused', 'cancelled'].includes(r.status); i++) {
+      let paused = 0
+      for (let i = 0; i < 900 && !(['awaiting_approval', 'failed', 'cancelled'].includes(r.status) || (r.status === 'paused' && !process.env.TEAM_PAUSE)); i++) {
         await new Promise((res) => setTimeout(res, 1000))
         r = orch.get(run.id)!
+        // TEAM_PAUSE=1: kill the running agents mid-task with a hard pause, wait, resume, and expect them to pick up their sessions
+        if (process.env.TEAM_PAUSE && paused === 0 && r.tasks.some((t) => t.status === 'running' && Date.now() - (t.startedAt ?? Date.now()) > 9000)) {
+          line('>> HARD PAUSE')
+          orch.pause(run.id, true)
+          paused = 1
+        } else if (paused === 1 && r.status === 'paused' && r.tasks.every((t) => t.status !== 'running')) {
+          line(`>> paused; tasks: ${r.tasks.map((t) => t.id + ':' + t.status + ' sessions=' + JSON.stringify(t.sessions)).join(' ')}`)
+          paused = 2
+          await orch.resume(run.id)
+          line('>> RESUMED')
+        }
         const p = r.approvals.find((a) => a.status === 'pending' && a.kind !== 'final')
         if (p) orch.answerApproval(run.id, p.id, true, 'ok')
       }
