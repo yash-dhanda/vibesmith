@@ -26,10 +26,12 @@ These captures use the renderer’s deterministic replay harness, so no Claude, 
 | One agent unavailable | [Light](team-entry-unavailable-light.png) | [Dark](team-entry-unavailable-dark.png) |
 | Planning | [Light](team-planning-light.png) | [Dark](team-planning-dark.png) |
 | Live run | [Light](team-running-light.png) | [Dark](team-running-dark.png) |
+| Live typing, code, files and memory | [Light](team-live-light.png) | [Dark](team-live-dark.png) |
 | Blocking approval | [Light](team-approval-light.png) | [Dark](team-approval-dark.png) |
 | Usage pause | [Light](team-paused-light.png) | [Dark](team-paused-dark.png) |
 | Restart recovery | [Light](team-interrupted-light.png) | [Dark](team-interrupted-dark.png) |
 | Final Apply / Don’t apply | [Light](team-final-light.png) | [Dark](team-final-dark.png) |
+| Applied result and Undo | [Light](team-applied-light.png) | [Dark](team-applied-dark.png) |
 | Narrow window | [Light](team-narrow-light.png) | [Dark](team-narrow-dark.png) |
 
 [Team functional results](team-functional-review.json) record the CDP assertions and zero renderer exceptions.
