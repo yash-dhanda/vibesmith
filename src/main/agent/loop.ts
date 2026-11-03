@@ -52,8 +52,29 @@ export function repeatNudge(tool: string, result: string): string {
   if (result.startsWith('ERROR:')) return '[Forge: this exact call failed the same way twice. Change your approach: re-read the file and copy the text exactly, or use a different tool.]'
   return '[Forge: same command, same output. Change something before running it again, or explain what is blocking you.]'
 }
-const REFLECT = '[Forge: before you finish, check your work. Use read_file or search to confirm every change is in place and nothing was missed. If something is wrong, fix it. If it is all correct, reply with just "Done".]'
 const MAX_RUN_MS = 30 * 60_000
+const MAX_REVIEWS = 4
+const MAX_NUDGES = 3
+
+// A reply that describes what it will do next, instead of doing it, is a stall, not an ending.
+export function looksUnfinished(text: string): boolean {
+  const t = text.trim()
+  if (!t || /\?\s*$/.test(t)) return false // empty, or a question for the user
+  const tail = t.slice(-500)
+  const forward = /\b(let me (?!know)|i['’]ll\b|i will\b|next,? (?:i|we)\b|now,? (?:i|let)\b|let['’]s\b|here['’]s (?:what|my plan)|i (?:need|am going) to\b|i['’]m going to\b)/i
+  const finished = /\b(done|complete[d]?|finished|successfully|all set)\b/i
+  if (finished.test(t.slice(-300)) && !forward.test(t.slice(-200))) return false
+  return forward.test(tail)
+}
+const UNFINISHED_NUDGE = '[Forge: you described what to do next but did not do it. Do not describe: act now with the tools, one step at a time.]'
+
+// What the user originally asked, for the review. Skips messages Forge itself injected.
+export function requestOf(messages: Message[]): string {
+  const m = [...messages].reverse().find((x) => x.role === 'user' && !x.content.startsWith('[Forge') && !x.content.startsWith('Verification failed'))
+  return m ? m.content.slice(0, 1500) : ''
+}
+const reviewPrompt = (request: string) =>
+  `[Forge: before you finish, compare your work with the request:\n"""\n${request}\n"""\nUse list_dir, read_file or run_command to check each requirement. Anything missing or broken: do it now with the tools. If every requirement is complete, reply with just "Done".]`
 
 // Providers that report no usage still get a rough number (about 4 characters per token), flagged as an estimate.
 export function estimateUsage(messages: Message[], turn: Turn): Usage {
@@ -71,6 +92,7 @@ export type RunOpts = {
   signal: AbortSignal
   maxSteps?: number
   maxMs?: number
+  maxReviews?: number // how many times it must compare its work with the request before finishing; 0 turns the review off
   // The model's memory in tokens. When the conversation nears it, old bulky output is shrunk (files are on disk and can be re-read).
   contextLimit?: number
   // The project's own check. Runs when the model says it is done after editing files; a failure goes back to the model.
@@ -84,7 +106,9 @@ export async function runAgent(o: RunOpts): Promise<void> {
   let steps = 0
   let edited = false
   let verifyFailures = 0
-  let reflected = false
+  let reviews = 0
+  let nudges = 0
+  let editedSinceReview = false
   let holdNext = false
   let lastInput = 0 // real prompt size of the previous model call, when the provider reports it
   let trimNoted = false
@@ -118,11 +142,18 @@ export async function runAgent(o: RunOpts): Promise<void> {
       o.messages.push({ role: 'assistant', content: turn.content, toolCalls: calls.length ? calls : undefined })
       o.emit({ type: 'turn_end' })
       if (!calls.length) {
-        // Without a project check, one self-review turn catches half-finished work (a misspelling left in one file).
-        if (edited && !o.verify && !reflected) {
-          reflected = true
+        // A reply that only announces the next step is a stall: make it act.
+        if (nudges < MAX_NUDGES && looksUnfinished(turn.content)) {
+          nudges++
+          o.messages.push({ role: 'user', content: UNFINISHED_NUDGE })
+          continue
+        }
+        // After changes, review the work against the original request before finishing (and again after later changes).
+        if (editedSinceReview && reviews < (o.maxReviews ?? MAX_REVIEWS)) {
+          reviews++
+          editedSinceReview = false
           holdNext = true
-          o.messages.push({ role: 'user', content: REFLECT })
+          o.messages.push({ role: 'user', content: reviewPrompt(requestOf(o.messages)) })
           continue
         }
         if (!o.verify || !edited) return done('finished')
@@ -145,7 +176,7 @@ export async function runAgent(o: RunOpts): Promise<void> {
         else if (o.signal.aborted) return done('stopped')
         else text = await o.tools.run(call.name, call.args, o.signal)
         const ok = !text.startsWith('ERROR:') && !text.startsWith('DENIED:')
-        if (ok && (call.name === 'edit_file' || call.name === 'create_file')) edited = true
+        if (ok && (call.name === 'edit_file' || call.name === 'create_file')) (edited = true), (editedSinceReview = true)
 
         // The same call returning the same result three times means nothing is changing: the model is looping.
         // Errors, empty searches, a repeated read or an unchanged test run all land here.

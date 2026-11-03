@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { setRoot } from '../project'
-import { needsApproval, repeatNudge, runAgent, type AgentEvent, type Mode, type RunOpts } from './loop'
+import { looksUnfinished, needsApproval, repeatNudge, requestOf, runAgent, type AgentEvent, type Mode, type RunOpts } from './loop'
 import type { Message, Provider, ToolCall } from './provider'
 import { ToolBox } from './tools'
 
@@ -30,7 +30,7 @@ const script = (turns: ToolCall[][]): Provider => {
 async function run(turns: ToolCall[][], mode: Mode, approve: boolean, signal = new AbortController().signal, verify?: RunOpts['verify']) {
   const events: AgentEvent[] = []
   const messages: Message[] = [{ role: 'user', content: 'go' }]
-  await runAgent({ messages, mode, provider: script(turns), tools: new ToolBox(dir), emit: (e) => events.push(e), approve: async () => approve, signal, verify })
+  await runAgent({ messages, mode, provider: script(turns), tools: new ToolBox(dir), emit: (e) => events.push(e), approve: async () => approve, signal, verify, maxReviews: 0 })
   return { events, messages }
 }
 
@@ -240,7 +240,8 @@ describe('self-review before finishing', () => {
   it('asks the model to check its work once after editing, and hides a bare "Done"', async () => {
     const { events, seen } = await go([['', read], ['', edit], ['All fixed, summary here.', []], ['Done', []]])
     expect(seen.at(-1)!.at(-1)).toMatchObject({ role: 'user' })
-    expect((seen.at(-1)!.at(-1) as { content: string }).content).toMatch(/^\[Forge: before you finish/)
+    expect((seen.at(-1)!.at(-1) as { content: string }).content).toMatch(/^\[Forge: before you finish, compare your work with the request/)
+    expect((seen.at(-1)!.at(-1) as { content: string }).content).toContain('go') // the original request is quoted
     expect(shown(events)).toBe('All fixed, summary here.') // the "Done" of the self-review is not shown
     expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'finished' })
   })
@@ -252,15 +253,24 @@ describe('self-review before finishing', () => {
     expect(readFileSync(join(dir, 'a.txt'), 'utf8')).toBe('ciao\n')
   })
 
-  it('only reviews once, never when nothing changed, and never when a project check exists', async () => {
+  it('reviews after changes, never when nothing changed, and before the project check', async () => {
     const a = await go([['', read], ['Nothing to change.', []]])
     expect(a.seen).toHaveLength(2) // no review turn
-    const b = await go([['', read], ['', edit], ['ok', []]], async () => ({ command: 'npm test', ok: true, output: '' }))
-    expect(b.seen).toHaveLength(3) // the check replaces the review
+    const b = await go([['', read], ['', edit], ['ok', []], ['Done', []]], async () => ({ command: 'npm test', ok: true, output: '' }))
+    expect(b.seen).toHaveLength(4) // the review comes first, then the project check
     writeFileSync(join(dir, 'a.txt'), 'hello\n') // the previous run edited it
-    const c = await go([['', read], ['', edit], ['ok', []], ['Still not sure about this part, let me explain at length what I would do here.', []]])
+    const c = await go([['', read], ['', edit], ['ok', []], ['Still not sure about this part, and I have a long list of concerns about the design that should be described fully.', []]])
     expect(c.seen).toHaveLength(4)
     expect(c.events.at(-1)).toMatchObject({ type: 'done', reason: 'finished' })
+  })
+
+  it('reviews again after later changes, at most four times in a run', async () => {
+    const fix = (o: string, n: string): ToolCall[] => [{ name: 'edit_file', args: { path: 'a.txt', old_text: o, new_text: n } }]
+    const turns: [string, ToolCall[]][] = [['', read], ['', fix('hello', 'b1')]]
+    for (let i = 1; i <= 6; i++) turns.push(['finished the part', []], [`found one more thing at step ${i}`, fix(`b${i}`, `b${i + 1}`)])
+    const { seen } = await go(turns)
+    const reviews = seen.filter((m) => (m.at(-1) as { content?: string }).content?.startsWith('[Forge: before you finish')).length
+    expect(reviews).toBe(4)
   })
 
   it('stops at the time limit', async () => {
@@ -314,5 +324,33 @@ describe('breaking a repeat loop', () => {
     expect(repeatNudge('read_file', 'x')).toMatch(/Stop re-reading/)
     expect(repeatNudge('edit_file', 'ERROR: old_text not found')).toMatch(/failed the same way/)
     expect(repeatNudge('run_command', 'out')).toMatch(/same command/)
+  })
+})
+
+describe('stall guard', () => {
+  it('looksUnfinished recognises a plan instead of an ending, and leaves real endings and questions alone', () => {
+    expect(looksUnfinished("I'm stuck in a loop. Let me focus on the next step. I'll create src/report.js and the tests next.")).toBe(true)
+    expect(looksUnfinished('Here is what I will do: create the tests, then the README.')).toBe(true)
+    expect(looksUnfinished('Now I need to write the tests.')).toBe(true)
+    expect(looksUnfinished('Created expense.js and the tests. All tests pass successfully. Let me know if you want changes.')).toBe(false)
+    expect(looksUnfinished('I built the app. Run it with node expense.js. Done.')).toBe(false)
+    expect(looksUnfinished('Which category names do you want to use?')).toBe(false)
+    expect(looksUnfinished('')).toBe(false)
+  })
+
+  it('a stalled reply gets nudged to act, at most three times', async () => {
+    const stalls: [string, ToolCall[]][] = Array.from({ length: 6 }, () => ["Let me create the tests next.", []])
+    const seen: Message[][] = []
+    let i = 0
+    const p: Provider = { chat: async (m) => (seen.push(m.map((x) => ({ ...x }))), { content: stalls[i++]?.[0] ?? 'ok', toolCalls: [] }) }
+    const events: AgentEvent[] = []
+    await runAgent({ messages: [{ role: 'user', content: 'build it' }], mode: 'ask-all', provider: p, tools: new ToolBox(dir), emit: (e) => events.push(e), approve: async () => true, signal: new AbortController().signal })
+    const nudges = seen.filter((m) => (m.at(-1) as { content?: string }).content?.startsWith('[Forge: you described what to do next')).length
+    expect(nudges).toBe(3)
+    expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'finished' }) // it still ends: no endless loop
+  })
+
+  it('requestOf skips what Forge injected itself', () => {
+    expect(requestOf([{ role: 'user', content: 'make a bot' }, { role: 'assistant', content: 'x' }, { role: 'user', content: '[Forge: nudge]' }, { role: 'user', content: 'Verification failed. Command: npm test' }])).toBe('make a bot')
   })
 })
