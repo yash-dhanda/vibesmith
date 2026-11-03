@@ -80,7 +80,7 @@ const hash = (s: string) => createHash('sha1').update(s).digest('hex')
 
 // Tool errors are returned as text so the model can recover. Nothing here throws to the loop.
 export class ToolBox {
-  constructor(private root: string) {}
+  constructor(readonly root: string) {}
 
   // Longest file read returned in one go. The app lowers it for models with a small memory.
   maxRead = MAX_READ

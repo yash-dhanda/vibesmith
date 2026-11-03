@@ -4,6 +4,7 @@ import { estimateTokens, trimMessages } from './context'
 import { resolveToolName } from './guards'
 import { onlyLatestImages } from './images'
 import { describeTool, parsePlan } from './narrate'
+import { missingEnvFile } from './envfile'
 import { mergeAgentPlan, planNote, type PlanState, type PlanStep } from './plan'
 import { ToolBox, toolDefs } from './tools'
 
@@ -38,7 +39,7 @@ export const SYSTEM_PROMPT = `You are Forge, a coding agent working inside the u
 - After changing code, run the project's tests or build with run_command when one exists, and fix what fails. When a command or test fails, read the files named in its output.
 - Match the style of the existing code, for example CommonJS (module.exports, require) versus ES modules (export, import). Do not mix them in one project.
 - Do not invent file names or APIs: use list_dir, search and read_file to check.
-- Secrets such as API keys and tokens: put placeholders in a .env file and read them from the environment. Never ask the user to paste a secret into the chat.
+- Secrets such as API keys and tokens: the code reads them from process.env (or os.environ) with no fallback value. Whenever you write such code you MUST also call create_file for .env.example listing each variable with a placeholder value, then tell the user to copy it to .env. Never write a real secret into a file, and never ask the user to paste one into the chat.
 
 When you are finished, reply with a short summary of what you did and how to run it, then stop calling tools.
 Only when you built something new and still need a value you cannot decide yourself (a name, a token, a choice that changes the result), end your summary with one short list of what you need. Create the files first, with sensible defaults, and mention the defaults. Never ask before creating files.`
@@ -133,6 +134,7 @@ export async function runAgent(o: RunOpts): Promise<void> {
   let verifyFailures = 0
   let reviews = 0
   let nudges = 0
+  let envChecked = false
   let editedSinceReview = false
   let holdNext = false
   let lastInput = 0 // real prompt size of the previous model call, when the provider reports it
@@ -179,6 +181,16 @@ export async function runAgent(o: RunOpts): Promise<void> {
           nudges++
           o.messages.push({ role: 'user', content: UNFINISHED_NUDGE })
           continue
+        }
+        // Secrets read from the environment need a .env.example the user can fill in. Checked once, only after the model wrote code.
+        if (edited && !envChecked) {
+          envChecked = true
+          const m = missingEnvFile(o.tools.root)
+          if (m) {
+            o.messages.push({ role: 'user', content: m })
+            editedSinceReview = true
+            continue
+          }
         }
         // After changes, review the work against the original request before finishing (and again after later changes).
         if (editedSinceReview && reviews < (o.maxReviews ?? MAX_REVIEWS)) {
