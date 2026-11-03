@@ -23,3 +23,7 @@ Claude appends every new `window.forge` call or event here. Additive only.
 - **`engineStatus()` now also returns `remote: boolean`, `host: string`**, and a new `state: 'remote-down'` when a remote address is set but does not answer. In `remote-down` never offer "Install the engine"; offer "Check the address" / "Use this computer".
 - While remote: install/start reject; the model library's fit ratings use `vramGB`; chats run on the remote engine; downloads and deletes happen on the remote machine.
 - UI to build: Settings > Models > "Where models run": This computer / Another computer (address field, "Test connection", GPU memory field).
+
+## 2026-11-03 — undo prompt
+
+- No API change. Behaviour: a chat in an empty folder gets undo (git) set up silently. A folder with files asks once, in plain words ("Turn on undo for this folder?"), and a "no" is remembered per folder.
