@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { getRoot, inRoot, resolveIn, setRoot } from './project'
 import { isPreviewable } from './preview'
 import { PreviewServer } from './previewServer'
+import { PreviewViews, type Bounds } from './previewView'
 import { detectRun, ProjectRunner } from './runner'
 import { rewindChat } from './rewind'
 import { isRemote } from './ollamaHost'
@@ -118,6 +119,7 @@ function scheduleSave(s: Session) {
   s.saveTimer ??= setTimeout(() => flush(s), 2000)
 }
 
+const views = new PreviewViews(() => win, (st) => win?.webContents.send('preview:status', st))
 const runners = new Map<string, ProjectRunner>()
 function stopRunner(chatId: string) {
   runners.get(chatId)?.stop()
@@ -225,6 +227,7 @@ ipcMain.handle('chats:search', (_e, query: string) => store.search(String(query 
 
 ipcMain.handle('chats:delete', (_e, id: string) => {
   if (sessions.get(id)?.run) throw new Error('Stop this chat first.')
+  views.detach(id)
   stopPreview(id)
   stopRunner(id)
   attachments().removeChat(id)
@@ -267,6 +270,31 @@ ipcMain.handle('preview:start', async (_e, chatId: string) => {
   }
 })
 ipcMain.on('preview:stop', (_e, chatId: string) => stopPreview(chatId))
+
+// The preview inside the app: a sandboxed native view placed at `bounds` (the pane's rectangle in window coordinates, CSS pixels).
+// source 'page' = the project's index.html (starts the live-reloading server), 'run' = the web server started with Run it.
+ipcMain.handle('preview:attach', async (_e, chatId: string, p: { bounds: Bounds; source?: 'page' | 'run' }) => {
+  let url: string
+  if (p?.source === 'run') {
+    url = runners.get(chatId)?.state.url ?? ''
+    if (!url) throw new Error('Nothing is running yet. Press Run first.')
+  } else {
+    let pv = previews.get(chatId)
+    if (!pv) previews.set(chatId, (pv = new PreviewServer(chatRoot(chatId))))
+    try {
+      url = await pv.start()
+    } catch (e) {
+      stopPreview(chatId)
+      throw e
+    }
+  }
+  views.attach(chatId, url, p.bounds)
+  return { url }
+})
+ipcMain.on('preview:bounds', (_e, chatId: string, bounds: Bounds) => views.setBounds(chatId, bounds))
+ipcMain.on('preview:visible', (_e, chatId: string, visible: boolean) => views.setVisible(chatId, !!visible))
+ipcMain.on('preview:reload', (_e, chatId: string) => views.reload(chatId))
+ipcMain.on('preview:detach', (_e, chatId: string) => views.detach(chatId))
 // The project's name, description and priorities, in the user's words. Shared by every chat in that folder.
 let briefs: BriefStore
 const briefStore = () => (briefs ??= new BriefStore(join(app.getPath('userData'), 'briefs.json')))
@@ -599,6 +627,7 @@ app.whenReady().then(() => {
 })
 
 app.on('before-quit', () => {
+  views.detachAll()
   for (const id of [...runners.keys()]) stopRunner(id)
   for (const id of [...previews.keys()]) stopPreview(id)
   saveAll()

@@ -89,3 +89,14 @@ Claude appends every new `window.forge` call or event here. Additive only.
 - **`forge.runStop(chatId)`** stops the whole process group. It also stops when the chat is deleted or the app quits.
 - **`forge.runStatus(chatId): Promise<RunState & { logs: string }>`** for when the screen opens (last ~40k chars of log). `RunState = { state: 'stopped'|'starting'|'running'|'exited', command, port, url, exitCode }`.
 - **Events:** `forge.onRunLog(cb({ chatId, text }))` for each chunk of output; `forge.onRunState(cb({ chatId, ...RunState }))` on every change. `state: 'running'` with a `url` means a web server is up (port read from its output): show "Open at localhost:5173" and use `openExternal(url)`. `running` without a `url` is a script or bot. `exited` has `exitCode`.
+
+## 2026-11-03 — roadmap #8: isolated in-app preview
+
+A sandboxed native view (Electron `WebContentsView`) laid over the window: no Forge preload, its own throwaway session, permissions denied, downloads blocked, links to other sites open in the user's browser, only `localhost`/`127.0.0.1` pages load. Verified live: it loads the project's page and a `Run it` server, and shows up as its own page target.
+
+- **`forge.previewAttach(chatId, { bounds, source? }): Promise<{ url }>`**. `bounds` = the pane's rectangle in **window coordinates, CSS pixels** (`el.getBoundingClientRect()`; the native view cannot live inside the DOM). `source: 'page'` (default) shows the project's `index.html` through the live-reloading preview server (rejects "Nothing to preview yet: this project has no index.html."); `source: 'run'` shows the web server started by `runStart` (rejects "Nothing is running yet. Press Run first." until it has a `url`). Calling it again for the same chat and address just moves the view.
+- **`forge.previewBounds(chatId, bounds)`**: call on pane resize, sidebar toggle, window resize (use a `ResizeObserver` plus `window.resize`). For device sizes, send smaller bounds (centered) yourself.
+- **`forge.previewVisible(chatId, visible)`**: **the native view draws above all page content**, so hide it (`false`) while a dialog, menu, toast stack over it, the command palette or Settings is open, and show it again after. Forgetting this makes menus appear behind the preview.
+- **`forge.previewReload(chatId)`**, **`forge.previewDetach(chatId)`** (when the pane closes or the chat switches: detach, or the view stays on screen over the new chat). It is detached when a chat is deleted and at quit.
+- **`forge.onPreviewStatus(cb({ chatId, state: 'loading'|'ready'|'error'|'closed', url, title, error? }))`** for the pane's header and loading state.
+- Pages from `source:'page'` reload themselves when the agent edits files (debounced); `source:'run'` servers use their own hot reload.
