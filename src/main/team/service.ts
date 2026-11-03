@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import { initRepo, isRepo } from '../checkpoint'
 import { readdirSync } from 'node:fs'
 import type { AgentName } from './events'
-import { checkTeamTools, codexModels, type Health } from './health'
+import { checkTeamTools, codexLimits, codexModels, type Health, type LimitInfo } from './health'
 import { TeamOrchestrator } from './orchestrator'
 import { realRunner } from './runner'
 import { TeamSettingsStore } from './settings'
@@ -72,6 +72,10 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
     runner: realRunner,
     available: async () => (await health(true)).filter((h) => h.ok).map((h) => h.agent as AgentName),
     codexModels: () => codexModels(),
+    limits: async () => {
+      const codex = await codexLimits()
+      return codex ? { codex } : {}
+    },
     emit: o.emit,
     projectNotes: o.projectNotes,
     mcpScript: o.mcpScript,
@@ -82,7 +86,7 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
 
   return {
     orch,
-    health: async () => ({ agents: await health(true), codexModels: await codexModels() }),
+    health: async () => ({ agents: await health(true), codexModels: await codexModels(), limits: { codex: (await codexLimits()) ?? undefined } as { codex?: LimitInfo } }),
     async start(project: string, goal: string, config?: Partial<TeamConfig>) {
       if (!goal.trim()) throw new Error('Describe what the team should build.')
       if (orch.list().some((r) => r.project === project && ACTIVE.includes(r.status))) throw new Error('This project already has a team run in progress. Finish, apply or cancel it first.')

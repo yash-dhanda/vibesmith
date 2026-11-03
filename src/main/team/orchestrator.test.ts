@@ -303,6 +303,24 @@ describe('team orchestrator', () => {
     expect(r.final?.verifyOk).toBe(true)
   })
 
+  it('leaves an agent out when its plan allowance is nearly used, and refuses to start when none is left', async () => {
+    const x = h({ plan: { tasks: [T('a', { agent: 'codex' })] } })
+    ;(x.orch as any).d.limits = async () => ({ codex: { primaryPct: 97, primaryResetsAt: 1793747988 } })
+    const run = await x.orch.start(x.proj, 'quota')
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect(new Set(x.calls.map((c) => c.agent))).toEqual(new Set(['claude'])) // everything, planning and review included, went to Claude
+    expect(r.tasks[0].agent).toBe('claude')
+    expect(r.messages.some((m) => /Codex was left out.*97% used/.test(m.body))).toBe(true)
+
+    const y = h({ plan: { tasks: [T('a')] } }, { available: ['codex'] })
+    ;(y.orch as any).d.limits = async () => ({ codex: { primaryPct: 97 } })
+    await expect(y.orch.start(y.proj, 'nothing left')).rejects.toThrow(/97% used/)
+    const z = h({ plan: { tasks: [T('a')] } }, { available: ['codex'] })
+    ;(z.orch as any).d.limits = async () => ({ codex: { primaryPct: 97 } })
+    const run3 = await z.orch.start(z.proj, 'override', { maxLimitPercent: 0 }) // the user turned the guard off
+    await until(z.orch, run3.id, (r) => r.status === 'awaiting_approval')
+  })
+
   it('stops at the budget and asks before spending more', async () => {
     const x = h({ plan: { tasks: [T('a'), T('b', { deps: ['a'] }), T('c', { deps: ['b'] })] } })
     const run = await x.orch.start(x.proj, 'budget', { budget: { maxAgentRuns: 3 } })

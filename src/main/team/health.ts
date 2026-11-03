@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { resolveCommand } from './bin'
 import { cleanEnv } from './process'
 import type { AgentName } from './events'
@@ -56,3 +56,50 @@ export async function codexModels(bin = 'codex'): Promise<string[]> {
 }
 
 export const checkTeamTools = () => Promise.all([checkClaude(), checkCodex()])
+
+export type LimitInfo = { primaryPct: number; primaryResetsAt?: number; secondaryPct?: number; secondaryResetsAt?: number; plan?: string }
+
+// How much of the ChatGPT plan's allowance is used right now, asked of Codex itself (no model call, so it costs nothing).
+export function codexLimits(bin = 'codex', timeoutMs = 12_000): Promise<LimitInfo | null> {
+  return new Promise((resolve) => {
+    const c = resolveCommand(bin, ['app-server'])
+    let child: ReturnType<typeof spawn>
+    try {
+      child = spawn(c.cmd, c.args, { env: cleanEnv(process.env, c.env), stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true })
+    } catch {
+      return resolve(null)
+    }
+    let buf = ''
+    let done = false
+    const end = (v: LimitInfo | null) => {
+      if (done) return
+      done = true
+      clearTimeout(t)
+      child.kill()
+      resolve(v)
+    }
+    const t = setTimeout(() => end(null), timeoutMs)
+    const send = (m: object) => child.stdin?.write(JSON.stringify({ jsonrpc: '2.0', ...m }) + '\n')
+    child.on('error', () => end(null))
+    child.on('close', () => end(null))
+    child.stdout?.on('data', (d: Buffer) => {
+      buf += d.toString()
+      let i: number
+      while ((i = buf.indexOf('\n')) !== -1) {
+        const line = buf.slice(0, i)
+        buf = buf.slice(i + 1)
+        try {
+          const m = JSON.parse(line)
+          if (m.id === 1) {
+            send({ method: 'initialized' })
+            send({ id: 2, method: 'account/rateLimits/read', params: {} })
+          } else if (m.id === 2) {
+            const r = m.result?.rateLimits
+            end(r?.primary ? { primaryPct: r.primary.usedPercent ?? 0, primaryResetsAt: r.primary.resetsAt, secondaryPct: r.secondary?.usedPercent, secondaryResetsAt: r.secondary?.resetsAt, plan: r.planType } : null)
+          }
+        } catch {}
+      }
+    })
+    send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'forge', title: 'Forge', version: '0.1.0' } } })
+  })
+}

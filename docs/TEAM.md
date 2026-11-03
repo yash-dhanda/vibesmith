@@ -43,7 +43,7 @@ Everything an agent does is visible as it happens: its text and reasoning as it 
 
 - **Restart or crash:** runs found half-done are marked `interrupted` and wait for a click. Resuming puts each task back where it stopped (an interrupted review or merge does not redo the agent's work); sessions are resumed so agents keep their memory; a session that no longer exists is replaced by a fresh one with a note.
 - **Agent signed out / missing / model rejected:** the task is `blocked` and the run pauses with the agent named. Sign in, press resume: blocked tasks are re-queued.
-- **Usage limits:** a Claude or Codex limit error waits and retries (3 times). Codex also reports the plan's allowance: at 90% of the 5-hour or weekly window the run pauses and asks.
+- **Usage limits:** a Claude or Codex limit error waits and retries (3 times). Codex also reports the plan's allowance: at 80% of the 5-hour or weekly window the run pauses and asks.
 - **Last steps fail** (checks, final review): the run pauses with the reason; everything stays on the team branch; resume tries again.
 - **Many events:** typing is merged per 100 ms, the run file is written at most every 250 ms, the message log keeps the newest 1500.
 - **Secrets:** obvious keys, tokens and private keys are masked in what Forge shows and saves (agents are not affected); `.env` and key files never enter team commits.
@@ -55,7 +55,7 @@ Everything an agent does is visible as it happens: its text and reasoning as it 
 - Agents never push, and the user's folder changes only on Apply.
 - `policy.ts`: `git push`, `sudo`, remote changes are denied; deploys, destructive commands, network downloads, secret files and reads outside the task folder need your approval (Claude, through the permission tool; Codex, through the sandbox: workspace-write, no network, plus `team_request_approval`).
 - `.env`, keys and `node_modules` are never committed into the team branches (`.env.example` is).
-- Budgets per run: tokens, agent runs, minutes, cost; hitting one pauses the run and asks before spending 50% more. Codex app-server also reports how much of the ChatGPT plan's 5-hour allowance is used (`run.limits`); at 90% (configurable) the run pauses the same way.
+- Budgets per run: tokens, agent runs, minutes, cost; hitting one pauses the run and asks before spending 50% more. Codex app-server also reports how much of the ChatGPT plan's 5-hour allowance is used (`run.limits`); at 80% (configurable) the run pauses the same way.
 - A restart marks running runs `interrupted`; nothing resumes without a click.
 
 ## Status

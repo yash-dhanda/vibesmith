@@ -8,7 +8,7 @@ import { claudeMcpConfig } from '../main/team/link'
 import { runCodex } from '../main/team/codex'
 import { runCodexServer, type ServerHandle } from '../main/team/codexServer'
 import type { TeamEvent } from '../main/team/events'
-import { checkTeamTools, codexModels } from '../main/team/health'
+import { checkTeamTools, codexLimits, codexModels } from '../main/team/health'
 import { TeamHub } from '../main/team/hub'
 import { resolve } from 'node:path'
 
@@ -156,4 +156,10 @@ describe.skipIf(!process.env.TEAM_SPIKE)('team spike', () => {
     expect(calls.some((c) => c.op === 'permission' && /\/etc\/hostname/.test(JSON.stringify(c.args.input)))).toBe(true)
     expect(r.text).toMatch(/KUMQUAT/i)
   }, 240_000)
+
+  it('reads the ChatGPT plan allowance without spending any of it', async () => {
+    const l = await codexLimits()
+    line(`codex limits: ${JSON.stringify(l)}`)
+    expect(l?.primaryPct).toBeGreaterThanOrEqual(0)
+  })
 })

@@ -34,6 +34,7 @@ export type Deps = {
   codexModels: () => Promise<string[]>
   emit: (ev: RunEvent) => void
   projectNotes?: (project: string) => { brief: string; rules: string }
+  limits?: () => Promise<Partial<Record<AgentName, { primaryPct: number; primaryResetsAt?: number; secondaryPct?: number; secondaryResetsAt?: number }>>> // plan allowance used, when an agent can say
   mcpScript?: string // path to the bundled team-mcp.js; without it agents run without the mailbox
   node?: string
   sleep?: (ms: number) => Promise<void>
@@ -119,9 +120,11 @@ export class TeamOrchestrator {
   }
 
   async start(project: string, goal: string, cfg: Partial<TeamConfig> = {}): Promise<Run> {
-    const available = await this.d.available()
-    if (!available.length) throw new Error('Neither Claude Code nor Codex is ready. Sign in to at least one of them first.')
     const config: TeamConfig = { ...DEFAULT_CONFIG, ...cfg, budget: { ...DEFAULT_CONFIG.budget, ...cfg.budget } }
+    const ready = await this.d.available()
+    const { agents: available, skipped } = await this.usable(config.maxLimitPercent)
+    if (!ready.length) throw new Error('Neither Claude Code nor Codex is ready. Sign in to at least one of them first.')
+    if (!available.length) throw new Error(`${skipped.join(' ')} Wait for the allowance to reset, or raise the limit in the team settings.`)
     if (available.includes('codex') && !config.codexModel) {
       const m = await this.d.codexModels()
       config.codexModel = m.find((x) => /luna/.test(x)) ?? m.find((x) => /terra/.test(x)) ?? m[0] ?? ''
@@ -134,6 +137,7 @@ export class TeamOrchestrator {
     const run: Run = { id: runId, project, goal: goal.trim(), status: 'planning', createdAt: Date.now(), updatedAt: Date.now(), baseCommit, integrationBranch, integrationWorktree, plan: { summary: '', plannedBy: null }, tasks: [], messages: [], decisions: [], errors: [], approvals: [], usage: { claude: emptyUsage(), codex: emptyUsage() }, config }
     this.runs.set(runId, run)
     this.saveNow(run)
+    for (const note of skipped) this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: note })
     const live = this.newLive(available)
     this.live.set(runId, live)
     this.out(run, { type: 'run', runId, status: 'planning' })
@@ -156,7 +160,8 @@ export class TeamOrchestrator {
   async resume(runId: string) {
     const run = this.runOf(runId)
     if (!run || !['paused', 'interrupted'].includes(run.status)) return
-    const available = await this.d.available() // the user may have just signed an agent in
+    const { agents: available, skipped } = await this.usable(run.config.maxLimitPercent) // the user may have just signed an agent in
+    for (const note of skipped) this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: note })
     if (!available.length) return void this.setStatus(run, run.status, 'Neither Claude Code nor Codex is signed in yet.')
     let live = this.live.get(runId)
     if (!live) {
@@ -343,6 +348,24 @@ export class TeamOrchestrator {
     if (a) this.markApproval(run, a.id, 'denied', 'Not applied.')
     this.setStatus(run, 'done', 'Result was not applied; it stays on branch ' + run.integrationBranch)
     await this.cleanup(run, false)
+  }
+
+  // The agents that may be used right now: signed in, and not about to run out of their plan's allowance (the user's own work with that
+  // agent would be starved). Returns the reasons for any that were left out.
+  private async usable(cap: number): Promise<{ agents: AgentName[]; skipped: string[] }> {
+    const all = await this.d.available()
+    if (!cap || !this.d.limits) return { agents: all, skipped: [] }
+    const lim = (await this.d.limits().catch(() => ({}))) as NonNullable<Awaited<ReturnType<NonNullable<Deps['limits']>>>>
+    const skipped: string[] = []
+    const agents = all.filter((a) => {
+      const l = lim[a]
+      const hit = l && (l.primaryPct >= cap ? ['this window', l.primaryPct, l.primaryResetsAt] : l.secondaryPct !== undefined && l.secondaryPct >= cap ? ['this week', l.secondaryPct, l.secondaryResetsAt] : null)
+      if (!hit) return true
+      const when = hit[2] ? ` It resets around ${new Date(Number(hit[2]) * 1000).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}.` : ''
+      skipped.push(`${a === 'codex' ? 'Codex' : 'Claude'} was left out: ${a === 'codex' ? 'your ChatGPT plan' : 'your Claude plan'} allowance for ${hit[0]} is ${Math.round(Number(hit[1]))}% used.${when}`)
+      return false
+    })
+    return { agents, skipped }
   }
 
   // ------------------------------------------------------------------ plumbing

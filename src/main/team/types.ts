@@ -82,7 +82,7 @@ export type TeamConfig = {
   maxLimitPercent: number // pause when a subscription's short-window allowance is this used (0 = never)
 }
 
-export const DEFAULT_CONFIG: TeamConfig = { planner: 'auto', codexModel: '', maxParallelPerAgent: 2, maxFixRounds: 3, maxVerifyRounds: 2, review: 'cross', finalReview: true, allowSubtasks: true, budget: { maxTasks: 12 }, codexMode: 'app-server', maxLimitPercent: 90 }
+export const DEFAULT_CONFIG: TeamConfig = { planner: 'auto', codexModel: '', maxParallelPerAgent: 2, maxFixRounds: 3, maxVerifyRounds: 2, review: 'cross', finalReview: true, allowSubtasks: true, budget: { maxTasks: 12 }, codexMode: 'app-server', maxLimitPercent: 80 }
 
 export type RunFinal = { report: string; files: Task['changed']; verifyOk: boolean | null; verifyOutput: string; reviewNotes: string[] }
 
