@@ -167,3 +167,6 @@ New hooks:
 - `teamMemory(id)`: the shared memory right now: `decisions`, `messages` (all, including steering), `handoffs` per task, `errors`, and `project` (decisions and problems remembered from earlier runs, plus which agent has done which job well). Refresh it on `message` and `task` events.
 
 Typing and growing files are not written to the log; finished text, tool results, prompts and the task diff are. To rebuild a run after a restart use `teamEvents`.
+
+**teamUndo (team mode)**
+- `teamUndo(id): Promise<{ ok, paths, message }>`: takes an applied team result back out of the project (every file the apply changed goes back as it was just before). Works only on a run whose `run.applied` is true and `run.appliedCheckpoint` is set, once (`run.undone` becomes true). Hand-made edits after the apply are undone too, like the chat Undo, so confirm first. Satisfies the UI request "Offer Undo after applying a team run".

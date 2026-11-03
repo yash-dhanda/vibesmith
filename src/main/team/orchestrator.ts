@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { createCheckpoint } from '../checkpoint'
+import { createCheckpoint, git, undoTo } from '../checkpoint'
 import { detectVerify, runVerify } from '../agent/commands'
 import type { AgentName, ErrorKind, TeamEvent } from './events'
 import { addTaskWorktree, abortMerge, applyResult, changedSince, commitAll, createRunBranch, diffText, finishMerge, head, mergeBranch, pruneWorktrees, removeWorktree, snapshotCommit, snapshotTreeWithoutSecrets } from './git'
@@ -309,9 +309,28 @@ export class TeamOrchestrator {
     if (a) this.markApproval(run, a.id, r.ok ? 'allowed' : 'denied', r.message)
     if (!r.ok) return { ok: false, message: r.message }
     run.applied = true
+    run.appliedCheckpoint = checkpoint
     this.setStatus(run, 'done')
     await this.cleanup(run, true)
     return { ok: true, message: r.message, checkpoint }
+  }
+
+  // Takes an applied result back out of the project: every file the apply changed goes back to how it was just before.
+  // ponytail: edits made by hand after the apply are undone too (same rule as the chat Undo).
+  async undoApply(runId: string): Promise<{ ok: boolean; paths: string[]; message: string }> {
+    const run = this.runOf(runId)
+    if (!run?.applied || !run.appliedCheckpoint) return { ok: false, paths: [], message: 'Nothing to undo for this run.' }
+    if (run.undone) return { ok: false, paths: [], message: 'Already undone.' }
+    try {
+      const tree = (await git(run.project, ['rev-parse', `refs/forge/${run.appliedCheckpoint}^{tree}`])).trim()
+      const paths = await undoTo(run.project, { id: run.appliedCheckpoint, tree })
+      run.undone = true
+      this.d.store.save(run)
+      this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: `Undone: ${paths.length} file${paths.length === 1 ? '' : 's'} put back.` })
+      return { ok: true, paths, message: 'Undone.' }
+    } catch (e) {
+      return { ok: false, paths: [], message: `Could not undo: ${(e as Error).message.slice(0, 200)}` }
+    }
   }
 
   async rejectFinal(runId: string) {

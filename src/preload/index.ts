@@ -92,6 +92,7 @@ const api = {
   teamExtendBudget: (id: string): Promise<void> => ipcRenderer.invoke('team:extend-budget', id),
   teamLiveDiff: (id: string, taskId: string, path?: string): Promise<string> => ipcRenderer.invoke('team:live-diff', id, taskId, path),
   teamMemory: (id: string): Promise<TeamMemory | null> => ipcRenderer.invoke('team:memory', id),
+  teamUndo: (id: string): Promise<{ ok: boolean; paths: string[]; message: string }> => ipcRenderer.invoke('team:undo', id),
   teamDelete: (id: string): Promise<boolean> => ipcRenderer.invoke('team:delete', id),
   teamSettingsGet: (): Promise<Partial<TeamConfig>> => ipcRenderer.invoke('team:settings-get'),
   teamSettingsSet: (cfg: Partial<TeamConfig>): Promise<void> => ipcRenderer.invoke('team:settings-set', cfg),

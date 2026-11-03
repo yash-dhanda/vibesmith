@@ -149,6 +149,23 @@ describe('team orchestrator', () => {
     expect(x.orch.get(run.id)?.status).toBe('done')
     expect(sh(x.proj, 'worktree', 'list').trim().split('\n')).toHaveLength(1) // worktrees are gone
     expect(sh(x.proj, 'branch', '--list', 'forge/*').trim()).toBe('')
+
+  })
+
+  it('takes an applied result back out of the project with undo', async () => {
+    const x = h({ plan: { tasks: [T('a'), T('b')] } })
+    const run = await x.orch.start(x.proj, 'undo me')
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect((await x.orch.undoApply(run.id)).ok).toBe(false) // nothing applied yet
+    const done = await x.orch.approveFinal(run.id)
+    expect(done.checkpoint).toBeTruthy()
+    expect(existsSync(join(x.proj, 't1.txt'))).toBe(true)
+    expect(x.orch.get(run.id)?.appliedCheckpoint).toBe(done.checkpoint)
+    const u = await x.orch.undoApply(run.id)
+    expect(u.ok).toBe(true)
+    expect(u.paths.sort()).toEqual(['t1.txt', 't2.txt'])
+    expect(existsSync(join(x.proj, 't1.txt'))).toBe(false)
+    expect((await x.orch.undoApply(run.id)).message).toMatch(/Already/)
   })
 
   it('sends a failed review back to the author, who resumes the same session', async () => {

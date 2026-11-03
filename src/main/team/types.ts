@@ -107,6 +107,8 @@ export type Run = {
   limits?: Partial<Record<AgentName, { primaryPct: number; primaryResetsAt?: number; secondaryPct?: number; secondaryResetsAt?: number }>>
   final?: RunFinal
   applied?: boolean
+  appliedCheckpoint?: string // the recovery point taken just before the result was applied; teamUndo puts the folder back
+  undone?: boolean
 }
 
 // What the UI and the log follow. `agent` carries the raw normalised agent events (text, tools, usage) with the task they belong to.

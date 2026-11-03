@@ -618,6 +618,7 @@ ipcMain.handle('team:skip-task', (_e, id: unknown, taskId: unknown) => teamSvc()
 ipcMain.handle('team:extend-budget', (_e, id: unknown) => teamSvc().orch.extendBudget(teamId(id)))
 ipcMain.handle('team:live-diff', (_e, id: unknown, taskId: unknown, path?: unknown) => teamSvc().orch.liveDiff(teamId(id), teamId(taskId), typeof path === 'string' ? path.slice(0, 500) : undefined))
 ipcMain.handle('team:memory', (_e, id: unknown) => teamSvc().orch.memorySnapshot(teamId(id)))
+ipcMain.handle('team:undo', (_e, id: unknown) => teamSvc().orch.undoApply(teamId(id)))
 ipcMain.handle('team:delete', (_e, id: unknown) => teamSvc().orch.deleteRun(teamId(id)))
 ipcMain.handle('team:settings-get', () => {
   const root = getRoot()
