@@ -70,3 +70,7 @@ Everything an agent does is visible as it happens: its text and reasoning as it 
 | Codex `app-server` (default Codex mode) | verified live: mid-turn steering (the agent changed course), MCP mailbox, plan-allowance readout, full team run in 82 s. Its approval requests are routed to you; none appeared in the live runs because the sandbox already contains the agent. If the server cannot start, the run falls back to `codex exec` |
 | Windows | the launcher for npm `.cmd` shims is unit-tested with a fake file system only; never run on Windows |
 | Screens | being built by Codex from the documented hooks |
+
+## Plan usage, not API usage
+
+Forge only uses the two subscriptions: Claude Code signed in with a Claude account and Codex signed in with ChatGPT. `teamHealth` marks an agent as not ready when its CLI is signed in with an API key (pay per token), with the exact command to fix it, and the agents are started without `ANTHROPIC_*` / `OPENAI_API_KEY` variables so a key in the environment cannot switch them to API billing. The dollar figures on Claude's usage (`costUsd`) are what the same work would cost at API rates, shown only as a measure of size: nothing is billed. What counts is the plan allowance: Codex reports it (`run.limits`, `teamHealth().limits`) and Forge stops at 80%; Claude's plan limit is only noticed when Claude Code reports it hit.

@@ -197,3 +197,16 @@ describe('live typing', () => {
     expect(code.map((c) => [c.path, c.text.length, c.done])).toEqual([['src/a.js', 80, false], ['src/a.js', 160, false], ['src/a.js', 160, true]])
   })
 })
+
+import { judgeClaudeAuth, judgeCodexAuth } from './health'
+describe('plan-only sign-in', () => {
+  it('accepts a Claude plan or ChatGPT sign-in and refuses API-key billing', () => {
+    expect(judgeClaudeAuth('{"loggedIn":true,"authMethod":"claude.ai"}').ok).toBe(true)
+    expect(judgeClaudeAuth('{"loggedIn":true,"authMethod":"api_key"}')).toMatchObject({ ok: false, detail: expect.stringMatching(/bills per use/) })
+    expect(judgeClaudeAuth('{"loggedIn":false,"authMethod":"none"}').ok).toBe(false)
+    expect(judgeClaudeAuth('garbage').fix).toMatch(/claude auth login/)
+    expect(judgeCodexAuth('Logged in using ChatGPT').ok).toBe(true)
+    expect(judgeCodexAuth('Logged in using an API key')).toMatchObject({ ok: false, fix: expect.stringMatching(/ChatGPT/) })
+    expect(judgeCodexAuth('Not logged in').ok).toBe(false)
+  })
+})

@@ -21,16 +21,26 @@ export async function checkClaude(bin = 'claude'): Promise<Health> {
   if (v.missing) return { agent: 'claude', ok: false, detail: 'Claude Code is not installed.', fix: 'Install it from https://claude.com/claude-code, then run `claude auth login`.' }
   const version = v.out.trim().split('\n')[0]
   const s = await run(bin, ['auth', 'status'])
-  let logged = false
-  let method = ''
+  const a = judgeClaudeAuth(s.out)
+  return a.ok ? { agent: 'claude', ok: true, detail: a.detail, version } : { agent: 'claude', ok: false, detail: a.detail, fix: a.fix, version }
+}
+
+// Forge runs on the user's subscription plans, never on pay-per-token API billing, so a CLI signed in with an API key is refused.
+export function judgeClaudeAuth(statusJson: string): { ok: boolean; detail: string; fix?: string } {
+  let j: { loggedIn?: boolean; authMethod?: string } = {}
   try {
-    const j = JSON.parse(s.out)
-    logged = !!j.loggedIn
-    method = String(j.authMethod ?? '')
+    j = JSON.parse(statusJson)
   } catch {}
-  return logged
-    ? { agent: 'claude', ok: true, detail: `signed in (${method})`, version }
-    : { agent: 'claude', ok: false, detail: 'Claude Code is not signed in on this computer.', fix: 'Run `claude auth login` in a terminal and finish the sign-in, then try again.', version }
+  if (!j.loggedIn) return { ok: false, detail: 'Claude Code is not signed in on this computer.', fix: 'Run `claude auth login` in a terminal and sign in with your Claude account, then try again.' }
+  if (j.authMethod && j.authMethod !== 'claude.ai') return { ok: false, detail: `Claude Code is signed in with ${j.authMethod}, which bills per use instead of using your Claude plan.`, fix: 'Run `claude auth logout`, then `claude auth login` and choose your Claude account (not an API key).' }
+  return { ok: true, detail: 'signed in with your Claude plan' }
+}
+
+export function judgeCodexAuth(statusText: string): { ok: boolean; detail: string; fix?: string } {
+  const t = statusText.trim().split('\n')[0] ?? ''
+  if (!/logged in/i.test(statusText) || /not logged in/i.test(statusText)) return { ok: false, detail: 'Codex is not signed in.', fix: 'Run `codex login` and choose "Sign in with ChatGPT".' }
+  if (/api key/i.test(t)) return { ok: false, detail: 'Codex is signed in with an API key, which bills per use instead of using your ChatGPT plan.', fix: 'Run `codex logout`, then `codex login` and choose "Sign in with ChatGPT".' }
+  return { ok: true, detail: t || 'signed in with your ChatGPT plan' }
 }
 
 export async function checkCodex(bin = 'codex'): Promise<Health> {
@@ -38,9 +48,8 @@ export async function checkCodex(bin = 'codex'): Promise<Health> {
   if (v.missing) return { agent: 'codex', ok: false, detail: 'Codex is not installed.', fix: 'Install it with `npm i -g @openai/codex`, then run `codex login`.' }
   const version = v.out.trim().split('\n')[0]
   const s = await run(bin, ['login', 'status'])
-  return /logged in/i.test(s.out) && !/not logged in/i.test(s.out)
-    ? { agent: 'codex', ok: true, detail: s.out.trim().split('\n')[0], version }
-    : { agent: 'codex', ok: false, detail: 'Codex is not signed in.', fix: 'Run `codex login` and choose "Sign in with ChatGPT".', version }
+  const a = judgeCodexAuth(s.out)
+  return a.ok ? { agent: 'codex', ok: true, detail: a.detail, version } : { agent: 'codex', ok: false, detail: a.detail, fix: a.fix, version }
 }
 
 // The models this account can pick, from Codex's own catalog. A model the plan does not include fails at run time, so Forge pins one from this list.
