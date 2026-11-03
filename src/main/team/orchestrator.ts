@@ -294,7 +294,7 @@ export class TeamOrchestrator {
     if (!run) return
     const b = run.config.budget
     for (const k of ['maxTokens', 'maxMinutes', 'maxAgentRuns', 'maxCostUsd'] as const) if (b[k]) b[k] = Math.ceil(b[k]! * factor * 100) / 100
-    const used = Math.max(0, ...Object.values(run.limits ?? {}).map((l) => l?.primaryPct ?? 0))
+    const used = Math.max(0, ...Object.values(run.limits ?? {}).map((l) => Math.max(l?.primaryPct ?? 0, l?.secondaryPct ?? 0)))
     if (run.config.maxLimitPercent && used >= run.config.maxLimitPercent) run.config.maxLimitPercent = Math.min(100, Math.ceil(used) + 5)
     this.save(run)
     if (run.status === 'paused') void this.resume(runId)
@@ -575,7 +575,12 @@ export class TeamOrchestrator {
     if (b.maxCostUsd && cost >= b.maxCostUsd) return `cost budget reached (about $${cost.toFixed(2)} of $${b.maxCostUsd})`
     if (b.maxMinutes && (Date.now() - run.createdAt) / 60_000 >= b.maxMinutes) return `time budget reached (${b.maxMinutes} minutes)`
     const cap = run.config.maxLimitPercent
-    if (cap) for (const [a, l] of Object.entries(run.limits ?? {})) if (l && l.primaryPct >= cap) return `${a === 'codex' ? 'your ChatGPT plan' : 'your Claude plan'} allowance is ${Math.round(l.primaryPct)}% used`
+    if (cap)
+      for (const [a, l] of Object.entries(run.limits ?? {})) {
+        const who = a === 'codex' ? 'your ChatGPT plan' : 'your Claude plan'
+        if (l && l.primaryPct >= cap) return `${who} allowance for this window is ${Math.round(l.primaryPct)}% used`
+        if (l?.secondaryPct !== undefined && l.secondaryPct >= cap) return `${who} weekly allowance is ${Math.round(l.secondaryPct)}% used`
+      }
     return null
   }
 

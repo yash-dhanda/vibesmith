@@ -584,11 +584,31 @@ app.on('second-instance', () => {
 
 // ---- team mode: Claude Code and Codex working as one team, each on its own git branch (see docs/TEAM.md) ----
 let team: TeamService | null = null
+// A long team run goes on while the user is elsewhere: say so when it needs them or ends. Same switch as the chat notifications.
+function teamNotify(ev: import('./team/types').RunEvent) {
+  if (!win || win.isDestroyed() || win.isFocused() || !Notification.isSupported() || readState().notify === false) return
+  let title = '', body = ''
+  if (ev.type === 'approval' && ev.approval.status === 'pending' && ev.approval.kind !== 'final') (title = 'Your team needs an answer'), (body = ev.approval.title)
+  else if (ev.type === 'run' && ev.status === 'awaiting_approval') (title = 'Your team is done'), (body = 'Review the result and apply it.')
+  else if (ev.type === 'run' && ev.status === 'failed') (title = 'Your team run failed'), (body = ev.reason ?? '')
+  else if (ev.type === 'run' && ev.status === 'paused' && ev.reason && !/Paused by you/.test(ev.reason)) (title = 'Your team stopped'), (body = ev.reason)
+  if (!title) return
+  const n = new Notification({ title, body: body.slice(0, 200) })
+  n.on('click', () => {
+    win?.show()
+    win?.focus()
+    win?.webContents.send('team:focus', ev.runId)
+  })
+  n.show()
+}
 const teamSvc = (): TeamService =>
   (team ??= createTeamService({
     userData: app.getPath('userData'),
     mcpScript: join(here, 'team-mcp.js').replace('app.asar' + (process.platform === 'win32' ? '\\' : '/'), 'app.asar.unpacked' + (process.platform === 'win32' ? '\\' : '/')),
-    emit: (ev) => win?.webContents.send('team:event', ev),
+    emit: (ev) => {
+      win?.webContents.send('team:event', ev)
+      teamNotify(ev)
+    },
     projectNotes: (p) => {
       const b = briefStore().get(p)
       return { brief: [b.name, b.description].filter(Boolean).join(': '), rules: b.rules }

@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -106,6 +106,22 @@ describe('verify helpers', () => {
     expect(detectVerify(d)).toBe('npm test')
     writeFileSync(join(d, 'package.json'), 'not json')
     expect(detectVerify(d)).toBeNull()
+  })
+  it('detectVerify finds Go, Rust and Python test setups', () => {
+    const mk = (files: Record<string, string>) => {
+      const d = mkdtempSync(join(tmpdir(), 'forge-v2-'))
+      for (const [f, c] of Object.entries(files)) {
+        mkdirSync(join(d, f, '..'), { recursive: true })
+        writeFileSync(join(d, f), c)
+      }
+      return d
+    }
+    expect(detectVerify(mk({ 'go.mod': 'module x', 'a_test.go': 'package x' }))).toBe('go test ./...')
+    expect(detectVerify(mk({ 'go.mod': 'module x' }))).toBeNull() // no tests yet
+    expect(detectVerify(mk({ 'Cargo.toml': '[package]' }))).toBe('cargo test')
+    expect(detectVerify(mk({ 'tests/test_a.py': 'def test_a(): pass' }))).toBe('python3 -m pytest -q')
+    expect(detectVerify(mk({ 'pyproject.toml': '[tool.pytest.ini_options]' }))).toBe('python3 -m pytest -q')
+    expect(detectVerify(mk({ 'main.py': 'print(1)' }))).toBeNull()
   })
 })
 

@@ -60,7 +60,7 @@ describe.skipIf(!process.env.TEAM_LIVE)('team live', () => {
       mcpScript: resolve('out/main/team-mcp.js'),
     })
     try {
-      const run = await orch.start(proj, process.env.TEAM_GOAL ?? 'Create slug.js exporting slugify(text) (lowercase, spaces and punctuation become single dashes, no leading/trailing dashes) and test.js that checks it with node:assert and exits non-zero on failure. Two small tasks: the module, then the tests.', { verify: process.env.TEAM_VERIFY ?? 'node test.js', maxVerifyRounds: 1, maxFixRounds: 1, ...(process.env.TEAM_QUICK ? { review: 'off' as const, finalReview: false } : {}), codexMode: process.env.TEAM_CODEX_MODE === 'exec' ? 'exec' : 'app-server' })
+      const run = await orch.start(proj, process.env.TEAM_GOAL ?? 'Create slug.js exporting slugify(text) (lowercase, spaces and punctuation become single dashes, no leading/trailing dashes) and test.js that checks it with node:assert and exits non-zero on failure. Two small tasks: the module, then the tests.', { verify: process.env.TEAM_VERIFY ?? 'node test.js', maxVerifyRounds: 1, maxFixRounds: 1, ...(process.env.TEAM_BUDGET_RUNS ? { budget: { maxAgentRuns: Number(process.env.TEAM_BUDGET_RUNS) } } : {}), ...(process.env.TEAM_QUICK ? { review: 'off' as const, finalReview: false } : {}), codexMode: process.env.TEAM_CODEX_MODE === 'exec' ? 'exec' : 'app-server' })
       let r = orch.get(run.id)!
       let paused = 0
       for (let i = 0; i < 900 && !(['awaiting_approval', 'failed', 'cancelled'].includes(r.status) || (r.status === 'paused' && !process.env.TEAM_PAUSE)); i++) {

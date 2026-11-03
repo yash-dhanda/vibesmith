@@ -99,6 +99,7 @@ const api = {
   teamExportReport: (id: string): Promise<string | null> => ipcRenderer.invoke('team:export-report', id),
   teamApply: (id: string): Promise<{ ok: boolean; message: string; checkpoint?: string }> => ipcRenderer.invoke('team:apply', id),
   teamReject: (id: string): Promise<void> => ipcRenderer.invoke('team:reject', id),
+  onTeamFocus: (cb: (runId: string) => void) => ipcRenderer.on('team:focus', (_e, runId: string) => cb(runId)),
   onTeamEvent: (cb: (ev: TeamRunEvent) => void) => ipcRenderer.on('team:event', (_e, ev: TeamRunEvent) => cb(ev)),
   updateCheck: (): Promise<{ available: boolean; version?: string; url?: string; notes?: string }> => ipcRenderer.invoke('update:check'),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke('open:external', url),

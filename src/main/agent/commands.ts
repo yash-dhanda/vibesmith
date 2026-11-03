@@ -1,5 +1,5 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 // ponytail: pattern deny-list, not a sandbox. Real containment is the approval gate; upgrade to a container if full-auto becomes the default.
@@ -133,10 +133,17 @@ export async function runVerify(command: string, cwd: string, signal: AbortSigna
 
 // A package.json test script is a safe default. Anything fancier is the user's call in Settings.
 export function detectVerify(root: string): string | null {
+  const has = (f: string) => existsSync(join(root, f))
   try {
     const test = (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { scripts?: { test?: string } }).scripts?.test
-    return test && !/no test specified/.test(test) ? 'npm test' : null
-  } catch {
-    return null
-  }
+    if (test && !/no test specified/.test(test)) return 'npm test'
+  } catch {}
+  // other ecosystems: only when the project clearly has tests
+  try {
+    if (has('go.mod') && readdirSync(root).some((f) => f.endsWith('_test.go'))) return 'go test ./...'
+    if (has('Cargo.toml')) return 'cargo test'
+    if (has('pytest.ini') || has('tox.ini') || (has('pyproject.toml') && /pytest/.test(readFileSync(join(root, 'pyproject.toml'), 'utf8')))) return 'python3 -m pytest -q'
+    if (has('tests') && readdirSync(join(root, 'tests')).some((f) => /^test_.*\.py$/.test(f))) return 'python3 -m pytest -q'
+  } catch {}
+  return null
 }

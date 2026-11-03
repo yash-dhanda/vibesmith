@@ -324,7 +324,7 @@ describe('team orchestrator', () => {
     const x = h({ limitsPct: 95, plan: { tasks: [T('a'), T('b', { deps: ['a'] })] } })
     const run = await x.orch.start(x.proj, 'limits')
     const r = await until(x.orch, run.id, (r) => r.approvals.some((a) => a.kind === 'budget' && a.status === 'pending'))
-    expect(r.pausedReason).toMatch(/plan allowance is 95% used/)
+    expect(r.pausedReason).toMatch(/plan allowance for this window is 95% used/)
     expect(r.limits?.codex ?? r.limits?.claude).toMatchObject({ primaryPct: 95, secondaryPct: 3 })
     for (let i = 0; i < 10 && x.orch.get(run.id)!.status !== 'awaiting_approval'; i++) {
       const p = x.orch.get(run.id)!.approvals.find((a) => a.kind === 'budget' && a.status === 'pending')

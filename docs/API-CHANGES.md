@@ -170,3 +170,6 @@ Typing and growing files are not written to the log; finished text, tool results
 
 **teamUndo (team mode)**
 - `teamUndo(id): Promise<{ ok, paths, message }>`: takes an applied team result back out of the project (every file the apply changed goes back as it was just before). Works only on a run whose `run.applied` is true and `run.appliedCheckpoint` is set, once (`run.undone` becomes true). Hand-made edits after the apply are undone too, like the chat Undo, so confirm first. Satisfies the UI request "Offer Undo after applying a team run".
+
+**Desktop notifications for team runs**
+- While the window is not focused (and notifications are on in settings), Forge shows a system notification when a team run needs an answer (a pending approval other than the final one), is ready to review, fails, or stops for a reason other than the user's own pause. Clicking it focuses the window and sends `onTeamFocus(runId)`: open that run.
