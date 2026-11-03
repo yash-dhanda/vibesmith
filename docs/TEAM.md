@@ -49,6 +49,6 @@ Each agent is started with the `forge_team` MCP server (`team-mcp.js`, run by th
 |---|---|
 | Codex adapter, resume, MCP mailbox, approvals | verified live |
 | Orchestrator (all of the above) | covered by tests with scripted agents on real git; one live run with Codex as the whole team (`src/eval/team-live.eval.ts`) |
-| Claude Code adapter | built to the documented protocol, **not verified live** (CLI signed out on the dev laptop: run `claude auth login`) |
+| Claude Code adapter | verified live: stream parsing, MCP mailbox, permission prompts routed to Forge policy, review and planning in a full two-agent run |
 | Codex `app-server` (default Codex mode) | verified live: mid-turn steering (the agent changed course), MCP mailbox, plan-allowance readout, full team run in 82 s. Its approval requests are routed to you; none appeared in the live runs because the sandbox already contains the agent. If the server cannot start, the run falls back to `codex exec` |
 | Screens | not started |
