@@ -32,6 +32,9 @@ export function sanitizeConfig(raw: unknown): Partial<TeamConfig> {
   if (r.review === 'cross' || r.review === 'off') out.review = r.review
   if (typeof r.finalReview === 'boolean') out.finalReview = r.finalReview
   if (typeof r.allowSubtasks === 'boolean') out.allowSubtasks = r.allowSubtasks
+  if (r.codexMode === 'exec' || r.codexMode === 'app-server') out.codexMode = r.codexMode
+  const cap = num(r.maxLimitPercent, 0, 100)
+  if (cap !== undefined) out.maxLimitPercent = cap
   if (typeof r.verify === 'string') out.verify = r.verify.slice(0, 300) || null
   else if (r.verify === null) out.verify = null
   if (r.budget && typeof r.budget === 'object') {

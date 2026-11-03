@@ -33,14 +33,14 @@ Backend is complete (phases 1 to 3 below); there is no screen yet. Hooks: `docs/
 
 ## How the agents talk
 
-Each agent is started with the `forge_team` MCP server (`team-mcp.js`, run by the app's own Electron binary as plain node). It forwards every call over a private local socket to the orchestrator: `team_post`, `team_inbox`, `team_context`, `team_decision`, `team_handoff`, `team_request_approval`, `team_propose_subtask`, `team_tasks`, and `team_permission` (Claude Code's permission prompts are routed to the same policy and to you). Delivery is turn-based: an agent reads its inbox when it starts a turn or calls `team_inbox`; nothing interrupts a turn in progress.
+Each agent is started with the `forge_team` MCP server (`team-mcp.js`, run by the app's own Electron binary as plain node). It forwards every call over a private local socket to the orchestrator: `team_post`, `team_inbox`, `team_context`, `team_decision`, `team_handoff`, `team_request_approval`, `team_propose_subtask`, `team_tasks`, and `team_permission` (Claude Code's permission prompts are routed to the same policy and to you). Delivery: an agent reads its inbox when it starts a turn or calls `team_inbox`. Codex (app-server) can also be steered while it works: `steer` reaches it immediately as a `turn/steer`. Claude Code gets steering at its next turn.
 
 ## Safety
 
 - Agents never push, and the user's folder changes only on Apply.
 - `policy.ts`: `git push`, `sudo`, remote changes are denied; deploys, destructive commands, network downloads, secret files and reads outside the task folder need your approval (Claude, through the permission tool; Codex, through the sandbox: workspace-write, no network, plus `team_request_approval`).
 - `.env`, keys and `node_modules` are never committed into the team branches (`.env.example` is).
-- Budgets per run: tokens, agent runs, minutes, cost; hitting one pauses the run and asks before spending 50% more.
+- Budgets per run: tokens, agent runs, minutes, cost; hitting one pauses the run and asks before spending 50% more. Codex app-server also reports how much of the ChatGPT plan's 5-hour allowance is used (`run.limits`); at 90% (configurable) the run pauses the same way.
 - A restart marks running runs `interrupted`; nothing resumes without a click.
 
 ## Status
@@ -50,5 +50,5 @@ Each agent is started with the `forge_team` MCP server (`team-mcp.js`, run by th
 | Codex adapter, resume, MCP mailbox, approvals | verified live |
 | Orchestrator (all of the above) | covered by tests with scripted agents on real git; one live run with Codex as the whole team (`src/eval/team-live.eval.ts`) |
 | Claude Code adapter | built to the documented protocol, **not verified live** (CLI signed out on the dev laptop: run `claude auth login`) |
-| Codex `app-server` (live steering, native approvals) | not built: `team_request_approval` plus the sandbox cover approvals, and steering is delivered at turn boundaries |
+| Codex `app-server` (default Codex mode) | verified live: mid-turn steering (the agent changed course), MCP mailbox, plan-allowance readout, full team run in 82 s. Its approval requests are routed to you; none appeared in the live runs because the sandbox already contains the agent. If the server cannot start, the run falls back to `codex exec` |
 | Screens | not started |

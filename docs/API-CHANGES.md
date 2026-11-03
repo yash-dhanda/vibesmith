@@ -141,3 +141,9 @@ No screens yet. Design and findings: `docs/TEAM.md`. All hooks are additive. Typ
 - A `paused` run with a `pausedReason` is waiting for the user (an agent is not signed in, a task failed, a budget was hit). Show the reason and the matching control.
 - The final report is Markdown (`run.final.report`).
 - Nothing touches the user's folder until `teamApply`.
+
+**Added to team mode (same day)**
+- `TeamConfig.codexMode`: `'app-server'` (default) or `'exec'`. `TeamConfig.maxLimitPercent` (default 90, 0 = off): pause when a subscription's short-window allowance is that used.
+- `agent` events can carry `ev.type === 'limits'` (`primaryPct`, `primaryResetsAt`, `secondaryPct`, `secondaryResetsAt`); the latest per agent is kept on `run.limits`. Show it as "ChatGPT plan: 27% of this window used". Claude Code does not report this.
+- `teamSteer` reaches a running Codex task immediately; other agents read it at their next turn.
+- `run.pausedReason` can now be a plan-allowance message; `teamExtendBudget` (or answering the `budget` approval) raises the limit by 5 points and continues.

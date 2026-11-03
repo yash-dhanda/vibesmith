@@ -6,14 +6,21 @@ import type { AgentName, ErrorKind, TeamEvent } from './events'
 import { addTaskWorktree, abortMerge, applyResult, changedSince, commitAll, createRunBranch, diffText, finishMerge, head, mergeBranch, removeWorktree, snapshotCommit } from './git'
 import { TeamHub, type HubCtx } from './hub'
 import { PERMISSION_TOOL, type TeamLink } from './link'
+import type { ApprovalAsk, ServerHandle } from './codexServer'
 import { errorSignature, ProjectMemoryStore, rank, routeAgent } from './memory'
-import { decideTool } from './policy'
+import { decideCommand, decideTool } from './policy'
 import { buildReport, conflictPrompt, contextFor, finalReviewPrompt, fixPrompt, parsePlan, parseVerdict, planPrompt, reviewPrompt, verifyFixPrompt, workPrompt } from './prompts'
 import type { RunResult } from './process'
 import { TeamStore } from './store'
 import { DEFAULT_CONFIG, emptyUsage, type Approval, type ApprovalKind, type Message, type MessageKind, type Run, type RunEvent, type RunStatus, type Task, type TaskPhase, type TeamConfig } from './types'
 
-export type AgentCall = { cwd: string; prompt: string; write: boolean; resume?: string; model?: string; signal: AbortSignal; link: TeamLink | null; taskId: string; onEvent: (e: TeamEvent) => void }
+export type AgentCall = {
+  cwd: string; prompt: string; write: boolean; resume?: string; model?: string; signal: AbortSignal; link: TeamLink | null; taskId: string
+  onEvent: (e: TeamEvent) => void
+  codexMode?: 'exec' | 'app-server'
+  onApproval?: (a: ApprovalAsk) => Promise<boolean> // Codex app-server asks before leaving its sandbox
+  onHandle?: (h: ServerHandle | null) => void // lets the orchestrator steer a running agent
+}
 export type AgentRunner = (agent: AgentName, o: AgentCall) => Promise<RunResult>
 
 export type Deps = {
@@ -48,6 +55,7 @@ type Live = {
   merge: Mutex // one merge at a time, conflict resolution included
   available: AgentName[]
   finishing: boolean
+  handles: Map<string, { agent: AgentName; h: ServerHandle }> // running agents that can be steered mid-turn
 }
 
 const other = (a: AgentName): AgentName => (a === 'claude' ? 'codex' : 'claude')
@@ -200,7 +208,12 @@ export class TeamOrchestrator {
   steer(runId: string, text: string, to: AgentName | 'all' = 'all') {
     const run = this.runOf(runId)
     if (!run || !text.trim()) return
-    this.post(run, { from: 'user', to, kind: 'steer', body: text.trim().slice(0, 2000) })
+    const msg = this.post(run, { from: 'user', to, kind: 'steer', body: text.trim().slice(0, 2000) })
+    // an agent that can take it mid-turn gets it now; the others read it at the start of their next turn
+    for (const { agent, h } of this.liveOf(run).handles.values()) {
+      if (to !== 'all' && to !== agent) continue
+      void h.steer(`The user says: ${msg.body}`).then((ok) => ok && !msg.readBy.includes(agent) && msg.readBy.push(agent))
+    }
   }
 
   retryTask(runId: string, taskId: string) {
@@ -246,6 +259,8 @@ export class TeamOrchestrator {
     if (!run) return
     const b = run.config.budget
     for (const k of ['maxTokens', 'maxMinutes', 'maxAgentRuns', 'maxCostUsd'] as const) if (b[k]) b[k] = Math.ceil(b[k]! * factor * 100) / 100
+    const used = Math.max(0, ...Object.values(run.limits ?? {}).map((l) => l?.primaryPct ?? 0))
+    if (run.config.maxLimitPercent && used >= run.config.maxLimitPercent) run.config.maxLimitPercent = Math.min(100, Math.ceil(used) + 5)
     this.d.store.save(run)
     if (run.status === 'paused') void this.resume(runId)
   }
@@ -279,7 +294,7 @@ export class TeamOrchestrator {
   // ------------------------------------------------------------------ plumbing
 
   private newLive(available: AgentName[]): Live {
-    return { ctl: new AbortController(), stop: null, paused: false, running: new Map(), pending: new Map(), git: new Mutex(), merge: new Mutex(), available, finishing: false }
+    return { ctl: new AbortController(), stop: null, paused: false, running: new Map(), pending: new Map(), git: new Mutex(), merge: new Mutex(), available, finishing: false, handles: new Map() }
   }
   private liveOf(run: Run): Live {
     let l = this.live.get(run.id)
@@ -358,7 +373,20 @@ export class TeamOrchestrator {
     const res = await this.d.runner(agent, {
       cwd, prompt, write, resume, signal: live.ctl.signal, taskId: task.id, link: await this.linkFor(run, task, agent),
       model: agent === 'codex' ? run.config.codexModel : run.config.claudeModel,
-      onEvent: (ev) => this.out(run, { type: 'agent', runId: run.id, taskId: task.id, phase, ev }),
+      codexMode: run.config.codexMode,
+      onEvent: (ev) => {
+        if (ev.type === 'limits') {
+          const { agent: _a, type: _t, ...rest } = ev
+          ;(run.limits ??= {})[agent] = rest
+        }
+        this.out(run, { type: 'agent', runId: run.id, taskId: task.id, phase, ev })
+      },
+      onApproval: async (a) => {
+        const v = a.command ? decideCommand(a.command) : { verdict: 'ask' as const, reason: '' }
+        if (v.verdict === 'deny') return false
+        return (await this.ask(run, { kind: 'permission', taskId: task.id, agent, title: a.title, detail: a.detail || v.reason })).allow
+      },
+      onHandle: (h) => (h ? live.handles.set(task.id, { agent, h }) : live.handles.delete(task.id)),
     })
     for (const u of [run.usage[agent], task.usage]) {
       u.input += res.usage.input
@@ -382,6 +410,8 @@ export class TeamOrchestrator {
     if (b.maxAgentRuns && runs >= b.maxAgentRuns) return `agent-run budget reached (${runs} of ${b.maxAgentRuns})`
     if (b.maxCostUsd && cost >= b.maxCostUsd) return `cost budget reached (about $${cost.toFixed(2)} of $${b.maxCostUsd})`
     if (b.maxMinutes && (Date.now() - run.createdAt) / 60_000 >= b.maxMinutes) return `time budget reached (${b.maxMinutes} minutes)`
+    const cap = run.config.maxLimitPercent
+    if (cap) for (const [a, l] of Object.entries(run.limits ?? {})) if (l && l.primaryPct >= cap) return `${a === 'codex' ? 'your ChatGPT plan' : 'your Claude plan'} allowance is ${Math.round(l.primaryPct)}% used`
     return null
   }
 

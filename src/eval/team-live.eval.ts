@@ -45,7 +45,7 @@ describe.skipIf(!process.env.TEAM_LIVE)('team live', () => {
       mcpScript: resolve('out/main/team-mcp.js'),
     })
     try {
-      const run = await orch.start(proj, 'Create slug.js exporting slugify(text) (lowercase, spaces and punctuation become single dashes, no leading/trailing dashes) and test.js that checks it with node:assert and exits non-zero on failure. Two small tasks: the module, then the tests.', { verify: 'node test.js', maxVerifyRounds: 1, maxFixRounds: 1 })
+      const run = await orch.start(proj, 'Create slug.js exporting slugify(text) (lowercase, spaces and punctuation become single dashes, no leading/trailing dashes) and test.js that checks it with node:assert and exits non-zero on failure. Two small tasks: the module, then the tests.', { verify: 'node test.js', maxVerifyRounds: 1, maxFixRounds: 1, codexMode: process.env.TEAM_CODEX_MODE === 'app-server' ? 'app-server' : 'exec' })
       let r = orch.get(run.id)!
       for (let i = 0; i < 900 && !['awaiting_approval', 'failed', 'paused', 'cancelled'].includes(r.status); i++) {
         await new Promise((res) => setTimeout(res, 1000))

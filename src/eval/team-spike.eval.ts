@@ -1,10 +1,11 @@
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { runClaude } from '../main/team/claude'
 import { runCodex } from '../main/team/codex'
+import { runCodexServer, type ServerHandle } from '../main/team/codexServer'
 import type { TeamEvent } from '../main/team/events'
 import { checkTeamTools, codexModels } from '../main/team/health'
 import { TeamHub } from '../main/team/hub'
@@ -90,4 +91,40 @@ describe.skipIf(!process.env.TEAM_SPIKE)('team spike', () => {
     expect(calls.every((c) => c.agent === 'codex')).toBe(true)
     expect(r.text).toMatch(/TANGERINE/i)
   })
+
+  it('Codex app-server: MCP mailbox, plan allowance readout, steering mid-turn, approval request', async () => {
+    const calls: string[] = []
+    const hub = new TeamHub(async (op) => (calls.push(op), op === 'inbox' ? [] : 'ok'))
+    const sock = await hub.start()
+    const model = process.env.TEAM_CODEX_MODEL ?? (await codexModels()).find((m) => /luna/.test(m)) ?? ''
+    const dir = mkdtempSync(join(tmpdir(), 'forge-team-as-'))
+    execFileSync('git', ['init', '-q'], { cwd: dir })
+    const link = { sock, token: hub.token, runId: 'r1', taskId: 't1', agent: 'codex' as const, script: resolve('out/main/team-mcp.js'), node: process.execPath }
+    line('\n== app-server: mailbox + limits ==')
+    const evs: TeamEvent[] = []
+    const a = await runCodexServer({ cwd: dir, model, write: true, team: link, onEvent: (e) => (evs.push(e), show(e)), prompt: 'Call team_handoff with notes "hi from app-server", then reply with the single word ok.' })
+    expect(a.ok, a.error?.message).toBe(true)
+    expect(calls).toContain('handoff')
+    expect(evs.some((e) => e.type === 'limits')).toBe(true)
+    expect(a.usage.input).toBeGreaterThan(0)
+
+    line('\n== app-server: steering ==')
+    let handle: ServerHandle | null = null
+    const run = runCodexServer({ cwd: dir, model, write: true, onHandle: (h) => (handle = h ?? handle), onEvent: show, prompt: 'Run the shell command `sleep 12`. After it finishes, create done.txt containing exactly the word original.' })
+    for (let i = 0; i < 100 && !handle; i++) await new Promise((r) => setTimeout(r, 100))
+    await new Promise((r) => setTimeout(r, 5000))
+    const steered = await handle!.steer('Change of plan: done.txt must contain exactly the word changed instead of original.')
+    const b = await run
+    line(`steer accepted=${steered}; done.txt=${existsSync(join(dir, 'done.txt')) ? readFileSync(join(dir, 'done.txt'), 'utf8').trim() : '(missing)'}`)
+    expect(steered).toBe(true)
+    expect(b.ok, b.error?.message).toBe(true)
+    expect(readFileSync(join(dir, 'done.txt'), 'utf8')).toMatch(/changed/i)
+
+    line('\n== app-server: approval for leaving the sandbox ==')
+    const asked: string[] = []
+    const c = await runCodexServer({ cwd: dir, model, write: true, onEvent: show, onApproval: async (x) => (asked.push(x.title), false), prompt: 'Run `curl -sI https://example.com | head -1` and tell me the first line. If you are not allowed, say so and stop.' })
+    line(`approvals asked: ${asked.length} ${asked.join(' | ')}`)
+    expect(c.error?.kind ?? 'none').not.toBe('protocol')
+    hub.stop()
+  }, 240_000)
 })

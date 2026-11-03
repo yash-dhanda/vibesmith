@@ -29,18 +29,15 @@ export function cleanEnv(env: NodeJS.ProcessEnv = process.env, extra: Record<str
   return { ...out, ...extra }
 }
 
-// Runs one agent CLI to completion. The prompt goes in on stdin (no quoting problems, no argument length limit),
-// every stdout line becomes normalised events, and the run is killed (whole process tree) when idle, too long, or aborted.
-export function runCli(agent: AgentName, bin: string, args: string[], parse: Parser, o: RunOpts): Promise<RunResult> {
-  return new Promise((resolve) => {
-    const events: TeamEvent[] = []
-    const res: RunResult = { ok: false, text: '', usage: { input: 0, output: 0, cached: 0, costUsd: 0 }, events }
-    let done = false
-    let settled = false
-    let tail = ''
-    let buf = ''
-
-    const push = (e: TeamEvent) => {
+// Collects normalised events into a RunResult (usage added up, first error kept, done recorded). Shared by every way of running an agent.
+export function makeSink(agent: AgentName, onEvent?: (e: TeamEvent) => void) {
+  const events: TeamEvent[] = []
+  const res: RunResult = { ok: false, text: '', usage: { input: 0, output: 0, cached: 0, costUsd: 0 }, events }
+  const sink = {
+    res,
+    events,
+    done: false,
+    push(e: TeamEvent) {
       events.push(e)
       if (e.type === 'session') res.sessionId = e.sessionId
       else if (e.type === 'usage') {
@@ -50,13 +47,27 @@ export function runCli(agent: AgentName, bin: string, args: string[], parse: Par
         res.usage.costUsd += e.costUsd ?? 0
       } else if (e.type === 'error') res.error ??= { kind: e.kind, message: e.message }
       else if (e.type === 'done') {
-        done = true
+        sink.done = true
         res.ok = e.ok && !res.error
         res.text = e.text
         res.sessionId = e.sessionId ?? res.sessionId
       }
-      o.onEvent?.(e)
-    }
+      onEvent?.(e)
+    },
+  }
+  void agent
+  return sink
+}
+
+// Runs one agent CLI to completion. The prompt goes in on stdin (no quoting problems, no argument length limit),
+// every stdout line becomes normalised events, and the run is killed (whole process tree) when idle, too long, or aborted.
+export function runCli(agent: AgentName, bin: string, args: string[], parse: Parser, o: RunOpts): Promise<RunResult> {
+  return new Promise((resolve) => {
+    const sink = makeSink(agent, o.onEvent)
+    const { res, events, push } = sink
+    let settled = false
+    let tail = ''
+    let buf = ''
 
     const finish = () => {
       if (settled) return
@@ -101,13 +112,13 @@ export function runCli(agent: AgentName, bin: string, args: string[], parse: Par
 
     child.on('error', (e: NodeJS.ErrnoException) => {
       if (!res.error) push({ type: 'error', agent, kind: e.code === 'ENOENT' ? 'missing' : 'other', message: e.code === 'ENOENT' ? `${bin} is not installed or not on PATH` : e.message })
-      if (!done) push({ type: 'done', agent, ok: false, text: '' })
+      if (!sink.done) push({ type: 'done', agent, ok: false, text: '' })
       finish()
     })
     child.on('close', (code) => {
       if (buf.trim()) for (const e of parse(buf.trim())) push(e)
       if (code !== 0 && !res.error) push({ type: 'error', agent, kind: classifyError(tail), message: (tail.trim() || `exited with code ${code}`).slice(-500) })
-      if (!done) push({ type: 'done', agent, ok: false, text: '' })
+      if (!sink.done) push({ type: 'done', agent, ok: false, text: '' })
       finish()
     })
   })

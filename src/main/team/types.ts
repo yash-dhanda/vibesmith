@@ -76,9 +76,11 @@ export type TeamConfig = {
   verify?: string | null // null = none, undefined = detect from the project
   allowSubtasks: boolean
   budget: Budget
+  codexMode: 'exec' | 'app-server' // app-server: live steering, approvals, plan-allowance readout
+  maxLimitPercent: number // pause when a subscription's short-window allowance is this used (0 = never)
 }
 
-export const DEFAULT_CONFIG: TeamConfig = { planner: 'auto', codexModel: '', maxParallelPerAgent: 2, maxFixRounds: 3, maxVerifyRounds: 2, review: 'cross', finalReview: true, allowSubtasks: true, budget: { maxTasks: 12 } }
+export const DEFAULT_CONFIG: TeamConfig = { planner: 'auto', codexModel: '', maxParallelPerAgent: 2, maxFixRounds: 3, maxVerifyRounds: 2, review: 'cross', finalReview: true, allowSubtasks: true, budget: { maxTasks: 12 }, codexMode: 'app-server', maxLimitPercent: 90 }
 
 export type RunFinal = { report: string; files: Task['changed']; verifyOk: boolean | null; verifyOutput: string; reviewNotes: string[] }
 
@@ -101,6 +103,7 @@ export type Run = {
   approvals: Approval[]
   usage: Record<AgentName, Usage>
   config: TeamConfig
+  limits?: Partial<Record<AgentName, { primaryPct: number; primaryResetsAt?: number; secondaryPct?: number; secondaryResetsAt?: number }>>
   final?: RunFinal
   applied?: boolean
 }

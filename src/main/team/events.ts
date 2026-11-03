@@ -1,6 +1,6 @@
 // What every agent CLI (Claude Code, Codex) is reduced to, so the rest of Forge never sees a vendor format.
 export type AgentName = 'claude' | 'codex'
-export type ErrorKind = 'auth' | 'model' | 'limit' | 'timeout' | 'aborted' | 'missing' | 'other'
+export type ErrorKind = 'auth' | 'model' | 'limit' | 'timeout' | 'aborted' | 'missing' | 'protocol' | 'other'
 
 export type TeamEvent =
   | { type: 'session'; agent: AgentName; sessionId: string }
@@ -9,6 +9,8 @@ export type TeamEvent =
   | { type: 'tool_result'; agent: AgentName; id: string; ok: boolean; text: string }
   | { type: 'usage'; agent: AgentName; input: number; output: number; cached: number; costUsd?: number }
   | { type: 'note'; agent: AgentName; text: string } // warnings that do not stop the run
+  // How much of the subscription's allowance is used (Codex app-server reports it): percent of the short window (5h) and the weekly one.
+  | { type: 'limits'; agent: AgentName; primaryPct: number; primaryResetsAt?: number; secondaryPct?: number; secondaryResetsAt?: number }
   | { type: 'error'; agent: AgentName; kind: ErrorKind; message: string }
   | { type: 'done'; agent: AgentName; ok: boolean; text: string; sessionId?: string }
 

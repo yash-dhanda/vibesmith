@@ -29,6 +29,8 @@ type Script = {
   conflict?: (cwd: string) => void
   verifyFix?: (cwd: string) => void
   delayMs?: number
+  limitsPct?: number // emitted by the work step, like Codex app-server's plan readout
+  steerable?: boolean
   fail?: (agent: AgentName, kind: 'plan' | 'work' | 'review' | 'fix', task: string, n: number) => RunResult | null
 }
 
@@ -38,6 +40,7 @@ function harness(script: Script, over: { available?: AgentName[]; cfg?: object }
   const events: RunEvent[] = []
   const calls: { agent: AgentName; kind: string; task: string; cwd: string; resume?: string }[] = []
   const counts = new Map<string, number>()
+  const steers: string[] = []
   let active = 0, maxActive = 0
   const runner: AgentRunner = async (agent, o: AgentCall) => {
     const p = o.prompt
@@ -56,10 +59,12 @@ function harness(script: Script, over: { available?: AgentName[]; cfg?: object }
     active++
     maxActive = Math.max(maxActive, active)
     try {
+      if (script.steerable && kind === 'work') o.onHandle?.({ steer: async (t) => (steers.push(t), true), interrupt() {} })
       if (script.delayMs) await sleep(script.delayMs)
       if (o.signal.aborted) return { ...ok('', agent, task), ok: false, error: { kind: 'aborted', message: 'stopped' } }
       if (kind === 'plan') return ok('```json\n' + JSON.stringify(script.plan) + '\n```', agent, task)
       if (kind === 'work') {
+        if (script.limitsPct) o.onEvent({ type: 'limits', agent, primaryPct: script.limitsPct, secondaryPct: 3 })
         if (script.work) script.work(agent, task, o.cwd)
         else writeFileSync(join(o.cwd, `${task}.txt`), `${task} by ${agent}\n`)
         return ok(`did ${task}`, agent, task)
@@ -87,7 +92,7 @@ function harness(script: Script, over: { available?: AgentName[]; cfg?: object }
   }
   const store = new TeamStore(join(teamDir, 'runs'))
   const orch = new TeamOrchestrator({ store, teamDir, runner, available: async () => over.available ?? ['claude', 'codex'], codexModels: async () => ['gpt-x-luna'], emit: (e) => events.push(e), sleep: async () => {} })
-  return { proj, orch, events, calls, store, teamDir, maxActive: () => maxActive }
+  return { proj, orch, events, calls, store, teamDir, steers, maxActive: () => maxActive }
 }
 
 async function until(orch: TeamOrchestrator, id: string, pred: (r: Run) => boolean, ms = 15000): Promise<Run> {
@@ -252,6 +257,34 @@ describe('team orchestrator', () => {
     }
     expect(x.orch.get(run.id)!.status).toBe('awaiting_approval')
     expect(x.orch.get(run.id)!.config.budget.maxAgentRuns).toBeGreaterThan(3)
+  })
+
+  it('pauses when the subscription allowance is nearly used, and continues after the user allows more', async () => {
+    const x = h({ limitsPct: 95, plan: { tasks: [T('a'), T('b', { deps: ['a'] })] } })
+    const run = await x.orch.start(x.proj, 'limits')
+    const r = await until(x.orch, run.id, (r) => r.approvals.some((a) => a.kind === 'budget' && a.status === 'pending'))
+    expect(r.pausedReason).toMatch(/plan allowance is 95% used/)
+    expect(r.limits?.codex ?? r.limits?.claude).toMatchObject({ primaryPct: 95, secondaryPct: 3 })
+    for (let i = 0; i < 10 && x.orch.get(run.id)!.status !== 'awaiting_approval'; i++) {
+      const p = x.orch.get(run.id)!.approvals.find((a) => a.kind === 'budget' && a.status === 'pending')
+      if (p) x.orch.answerApproval(run.id, p.id, true)
+      await sleep(40)
+    }
+    expect(x.orch.get(run.id)!.status).toBe('awaiting_approval')
+    expect(x.orch.get(run.id)!.config.maxLimitPercent).toBe(100)
+  })
+
+  it('steers a running agent at once when it supports it, and does not deliver the message twice', async () => {
+    const x = h({ delayMs: 300, steerable: true, plan: { tasks: [T('a', { agent: 'codex' })] } })
+    const run = await x.orch.start(x.proj, 'steer')
+    await until(x.orch, run.id, (r) => r.tasks[0]?.status === 'running')
+    await sleep(60)
+    x.orch.steer(run.id, 'use tabs', 'codex')
+    await sleep(60)
+    expect(x.steers).toEqual(['The user says: use tabs'])
+    const m = x.orch.get(run.id)!.messages.find((m) => m.kind === 'steer')!
+    expect(m.readBy).toContain('codex') // so the next turn does not repeat it
+    await x.orch.cancel(run.id)
   })
 
   it('a task that hits an auth error blocks the run with the agent named', async () => {
