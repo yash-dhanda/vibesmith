@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; font-src 'self' data:" />
+  <title>Forge</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #1e1e1e; color: #ccc; font: 13px system-ui, sans-serif; }
+    #app { display: grid; grid-template-columns: 260px 1fr; grid-template-rows: 100%; height: 100%; }
+    #side { border-right: 1px solid #333; overflow: auto; padding: 6px 0; }
+    #side button.open { margin: 4px 8px 8px; padding: 4px 10px; }
+    .row { padding: 2px 8px; cursor: pointer; white-space: nowrap; user-select: none; }
+    .row:hover { background: #2a2d2e; }
+    #main { display: grid; grid-template-rows: 32px 1fr; min-width: 0; }
+    #tabs { display: flex; background: #252526; overflow-x: auto; }
+    .tab { padding: 0 12px; line-height: 32px; cursor: pointer; border-right: 1px solid #1e1e1e; white-space: nowrap; }
+    .tab.active { background: #1e1e1e; color: #fff; }
+    #editor { min-height: 0; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="side"><button class="open" id="open">Open folder</button><div id="tree"></div></div>
+    <div id="main"><div id="tabs"></div><div id="editor"></div></div>
+  </div>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>
