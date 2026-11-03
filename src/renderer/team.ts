@@ -19,7 +19,7 @@ let refreshTimer: ReturnType<typeof setTimeout> | null = null
 
 const apiReady = () => typeof window.forge.teamStart === 'function'
 const fmtTime = (seconds: number) => seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`
-const statusLabel = (status: Run['status']) => ({ planning: 'Planning', running: 'Working', paused: 'Paused', verifying: 'Checking', awaiting_approval: 'Ready for you', done: 'Applied', failed: 'Needs attention', cancelled: 'Cancelled', interrupted: 'Interrupted' })[status]
+const statusLabel = (status: Run['status']) => ({ planning: 'Planning', running: 'Working', paused: 'Paused', verifying: 'Checking', awaiting_approval: 'Ready for you', done: 'Finished', failed: 'Needs attention', cancelled: 'Cancelled', interrupted: 'Interrupted' })[status]
 const isActive = (status: Run['status']) => ['planning', 'running', 'paused', 'verifying', 'awaiting_approval', 'interrupted'].includes(status)
 const call = async (fn: () => Promise<unknown>) => { try { await fn() } catch (e) { toast(cleanErr(e), 5000) } }
 
@@ -207,7 +207,10 @@ async function refreshRun() { if (!run || replay) return; const fresh = await wi
 function renderPauseBanner() {
   const banner = h('section', 'team-pause-banner')
   banner.append(icon('info'), h('div', '', run!.pausedReason || 'This run was interrupted when Forge closed. The agents will continue from their saved sessions.'))
-  if (/limit|budget|allowance/i.test(run!.pausedReason ?? '')) banner.append(actionButton('Allow 50% more', 'bolt', () => teamAction(() => window.forge.teamExtendBudget(run!.id)), 'primary'))
+  if (run!.status === 'done' || run!.status === 'cancelled') return banner
+  const failed = run!.tasks.find(task => task.status === 'failed' || task.status === 'blocked' || task.status === 'interrupted')
+  if (run!.status === 'failed' && failed) banner.append(actionButton('Retry failed task', 'arrowright', () => teamAction(() => window.forge.teamRetryTask(run!.id, failed.id)), 'primary'))
+  else if (/limit|budget|allowance/i.test(run!.pausedReason ?? '')) banner.append(actionButton('Allow 50% more', 'bolt', () => teamAction(() => window.forge.teamExtendBudget(run!.id)), 'primary'))
   else banner.append(actionButton('Resume team', 'arrowright', () => teamAction(() => window.forge.teamResume(run!.id)), 'primary'))
   return banner
 }

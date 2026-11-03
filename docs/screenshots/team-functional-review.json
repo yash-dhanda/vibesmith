@@ -10,7 +10,7 @@
   "diffOpened": true,
   "steerMessageRendered": true,
   "finalApplyGuard": true,
-  "applyStatus": "Applied",
+  "applyStatus": "Finished",
   "restartReplayStatus": "Interrupted",
   "composerEntry": true,
   "rendererExceptions": 0
