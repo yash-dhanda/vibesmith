@@ -46,8 +46,8 @@ export function decideTool(tool: string, input: Record<string, unknown>, worktre
   if (tool === 'Bash') return decideCommand(String(input.command ?? ''))
   const path = String(input.file_path ?? input.path ?? input.notebook_path ?? '')
   if (path && /^(Read|Edit|Write|MultiEdit|NotebookEdit|Glob|Grep)$/.test(tool)) {
-    const abs = isAbsolute(path) ? resolve(path) : resolve(worktree, path)
-    const outside = relative(worktree, abs).startsWith('..')
+    const abs = (isAbsolute(path) ? resolve(path) : resolve(worktree, path)).replace(/\\/g, '/') // one separator, so the patterns below also fit Windows paths
+    const outside = relative(worktree, abs).startsWith('..') || /^[a-z]:\//i.test(relative(worktree, abs))
     const writes = tool !== 'Read' && tool !== 'Glob' && tool !== 'Grep'
     if (SENSITIVE.test(abs)) return writes ? { verdict: 'deny', reason: 'agents may not write secrets or key files' } : { verdict: 'ask', reason: `Reading ${path} may expose a secret.` }
     if (outside) return writes ? { verdict: 'deny', reason: 'writes are limited to the task folder' } : { verdict: 'ask', reason: `Reading outside the project: ${path}` }

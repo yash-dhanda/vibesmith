@@ -616,6 +616,23 @@ ipcMain.handle('team:steer', (_e, id: unknown, text: unknown, to?: unknown) => t
 ipcMain.handle('team:retry-task', (_e, id: unknown, taskId: unknown) => teamSvc().orch.retryTask(teamId(id), teamId(taskId)))
 ipcMain.handle('team:skip-task', (_e, id: unknown, taskId: unknown) => teamSvc().orch.skipTask(teamId(id), teamId(taskId)))
 ipcMain.handle('team:extend-budget', (_e, id: unknown) => teamSvc().orch.extendBudget(teamId(id)))
+ipcMain.handle('team:delete', (_e, id: unknown) => teamSvc().orch.deleteRun(teamId(id)))
+ipcMain.handle('team:settings-get', () => {
+  const root = getRoot()
+  return root ? teamSvc().settings.get(root) : {}
+})
+ipcMain.handle('team:settings-set', (_e, cfg: unknown) => {
+  const root = getRoot()
+  if (root) teamSvc().settings.set(root, cfg)
+})
+ipcMain.handle('team:export-report', async (e, id: unknown) => {
+  const run = teamSvc().orch.get(teamId(id))
+  if (!run?.final) throw new Error('This run has no report yet.')
+  const r = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender)!, { defaultPath: join(run.project, 'TEAM-REPORT.md'), filters: [{ name: 'Markdown', extensions: ['md'] }] })
+  if (r.canceled || !r.filePath) return null
+  writeFileSync(r.filePath, run.final.report)
+  return r.filePath
+})
 ipcMain.handle('team:apply', (_e, id: unknown) => teamSvc().orch.approveFinal(teamId(id)))
 ipcMain.handle('team:reject', (_e, id: unknown) => teamSvc().orch.rejectFinal(teamId(id)))
 

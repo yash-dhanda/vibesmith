@@ -5,6 +5,7 @@ import type { AgentName } from './events'
 import { checkTeamTools, codexModels, type Health } from './health'
 import { TeamOrchestrator } from './orchestrator'
 import { realRunner } from './runner'
+import { TeamSettingsStore } from './settings'
 import { TeamStore } from './store'
 import type { Run, RunEvent, TeamConfig } from './types'
 
@@ -22,6 +23,7 @@ export function sanitizeConfig(raw: unknown): Partial<TeamConfig> {
   const out: Partial<TeamConfig> = {}
   if (r.planner === 'auto' || r.planner === 'claude' || r.planner === 'codex') out.planner = r.planner
   if (typeof r.codexModel === 'string' && /^[\w.:-]{1,60}$/.test(r.codexModel)) out.codexModel = r.codexModel
+  if (r.claudeEffort === 'low' || r.claudeEffort === 'medium' || r.claudeEffort === 'high' || r.claudeEffort === 'xhigh' || r.claudeEffort === 'max') out.claudeEffort = r.claudeEffort
   if (typeof r.claudeModel === 'string' && /^[\w.:\[\]-]{1,60}$/.test(r.claudeModel)) out.claudeModel = r.claudeModel
   const par = num(r.maxParallelPerAgent, 1, 4)
   if (par) out.maxParallelPerAgent = par
@@ -73,6 +75,8 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
     mcpScript: o.mcpScript,
   })
   orch.recoverAll()
+  void orch.sweep()
+  const settings = new TeamSettingsStore(teamDir)
 
   return {
     orch,
@@ -84,9 +88,10 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
         if (readdirSync(project).length) throw new Error('Team mode needs a git repository so each agent can work on its own branch. Run "git init" in this folder first.')
         await initRepo(project)
       }
-      return summarize(await orch.start(project, goal, config))
+      return summarize(await orch.start(project, goal, { ...settings.get(project), ...config, budget: { ...settings.get(project).budget, ...config?.budget } }))
     },
     list: () => orch.list().map(summarize),
+    settings: { get: (project: string) => settings.get(project), set: (project: string, cfg: unknown) => settings.set(project, sanitizeConfig(cfg)) },
   }
 }
 export type TeamService = ReturnType<typeof createTeamService>

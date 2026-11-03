@@ -147,3 +147,9 @@ No screens yet. Design and findings: `docs/TEAM.md`. All hooks are additive. Typ
 - `agent` events can carry `ev.type === 'limits'` (`primaryPct`, `primaryResetsAt`, `secondaryPct`, `secondaryResetsAt`); the latest per agent is kept on `run.limits`. Show it as "ChatGPT plan: 27% of this window used". Claude Code does not report this.
 - `teamSteer` reaches a running Codex task immediately; other agents read it at their next turn.
 - `run.pausedReason` can now be a plan-allowance message; `teamExtendBudget` (or answering the `budget` approval) raises the limit by 5 points and continues.
+
+**More team hooks (same day)**
+- `teamDelete(id)`: removes a finished run (done, failed, cancelled, or waiting for approval) with its branches, worktrees and log. Returns false for a run still in progress: cancel it first. Leftovers of crashed runs are also swept at startup.
+- `teamSettingsGet()` / `teamSettingsSet(cfg)`: team defaults remembered per project (verify command, budgets, planner, review on/off...). A run's own `config` wins over them.
+- `teamExportReport(id)`: opens the system save dialog and writes the final report (Markdown); returns the path or null if cancelled.
+- `TeamConfig.claudeEffort` (`low` to `max`) and `claudeModel` are passed to Claude Code.

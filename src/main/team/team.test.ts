@@ -87,8 +87,8 @@ describe('argument builders', () => {
     expect(ro).toContain('plan')
     expect(ro).not.toContain('--allowedTools')
     expect(ro.join(' ')).toContain(CLAUDE_DENY[0])
-    const rw = claudeArgs({ cwd: '/p', prompt: 'x', write: true, resume: 'abc', mcpConfig: '/m.json', model: 'sonnet' })
-    expect(rw).toEqual(expect.arrayContaining(['acceptEdits', '--resume', 'abc', '--mcp-config', '/m.json', '--model', 'sonnet', '--allowedTools']))
+    const rw = claudeArgs({ cwd: '/p', prompt: 'x', write: true, resume: 'abc', mcpConfig: '/m.json', model: 'sonnet', effort: 'high' })
+    expect(rw).toEqual(expect.arrayContaining(['acceptEdits', '--resume', 'abc', '--mcp-config', '/m.json', '--model', 'sonnet', '--effort', 'high', '--allowedTools']))
   })
   it('codex: pins the model, reads the prompt from stdin, sandboxes by role', () => {
     const a = codexArgs({ cwd: '/p', prompt: 'x', write: true, model: 'gpt-5.6-luna' })
@@ -135,5 +135,40 @@ describe('runCli', () => {
     expect((await runCli('codex', 'forge-no-such-agent', [], p(), { ...base, prompt: '' })).error?.kind).toBe('missing')
     const r = await runCli('claude', node, script(`console.error('OAuth session expired');process.exit(1)`), p(), { ...base, prompt: '' })
     expect(r).toMatchObject({ ok: false, error: { kind: 'auth' } })
+  })
+})
+
+import { resolveCommand, shimTarget } from './bin'
+describe('resolveCommand (Windows launch)', () => {
+  const shim = 'C:\\Users\\a\\AppData\\Roaming\\npm\\codex.cmd'
+  const text = '@ECHO off\r\nendLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js" %*\r\n'
+  it('leaves non-Windows names and absolute paths alone', () => {
+    expect(resolveCommand('codex', ['exec'], { platform: 'linux' })).toEqual({ cmd: 'codex', args: ['exec'], env: {} })
+    expect(resolveCommand('C:\\x\\claude.exe', ['-p'], { platform: 'win32' }).cmd).toBe('C:\\x\\claude.exe')
+  })
+  it('prefers a real .exe, else runs the script a .cmd shim points to with the app as node', () => {
+    expect(resolveCommand('claude', ['-p'], { platform: 'win32', which: () => ['C:\\b\\claude.cmd', 'C:\\b\\claude.exe'] }).cmd).toBe('C:\\b\\claude.exe')
+    const r = resolveCommand('codex', ['exec', '--json'], { platform: 'win32', which: () => [shim], read: () => text, exists: () => true, node: 'C:\\app\\Forge.exe' })
+    expect(r.cmd).toBe('C:\\app\\Forge.exe')
+    expect(r.args[0]).toMatch(/node_modules[\\/]@openai[\\/]codex[\\/]bin[\\/]codex\.js$/)
+    expect(r.args.slice(1)).toEqual(['exec', '--json'])
+    expect(r.env).toEqual({ ELECTRON_RUN_AS_NODE: '1' })
+  })
+  it('falls back to the plain name when nothing can be resolved', () => {
+    expect(resolveCommand('codex', ['x'], { platform: 'win32', which: () => [] }).cmd).toBe('codex')
+    expect(shimTarget(shim, 'nothing here', () => true)).toBeNull()
+  })
+})
+
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { TeamSettingsStore } from './settings'
+describe('TeamSettingsStore', () => {
+  it('remembers defaults per project', () => {
+    const st = new TeamSettingsStore(mkdtempSync(join(tmpdir(), 'forge-set-')))
+    st.set('/a', { verify: 'npm test', maxFixRounds: 2 })
+    expect(st.get('/a')).toEqual({ verify: 'npm test', maxFixRounds: 2 })
+    expect(st.get('/b')).toEqual({})
   })
 })

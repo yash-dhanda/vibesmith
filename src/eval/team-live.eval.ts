@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { checkClaude, checkCodex, codexModels } from '../main/team/health'
 import { TeamOrchestrator } from '../main/team/orchestrator'
 import { realRunner } from '../main/team/runner'
+import type { AgentRunner } from '../main/team/orchestrator'
 import { TeamStore } from '../main/team/store'
 import type { RunEvent } from '../main/team/types'
 
@@ -41,9 +42,14 @@ describe.skipIf(!process.env.TEAM_LIVE)('team live', () => {
       else if (e.type === 'verify') line(`${s} VERIFY ${e.ok ? 'PASS' : 'FAIL'} ${e.command}`)
       else if (e.type === 'agent' && e.ev.type === 'tool') line(`${s}   ${e.taskId}/${e.phase} ${e.ev.agent} ${e.ev.kind}: ${e.ev.summary.slice(0, 90)}`)
     }
+    // TEAM_FORCE_REVIEW_FAIL=1: the reviewers get an extra requirement the authors were never told, so the first review must FAIL
+    // and the author has to fix it from the reviewer's note: this exercises the review -> fix -> re-review loop with the real agents.
+    const runner: AgentRunner = process.env.TEAM_FORCE_REVIEW_FAIL
+      ? (a, o) => realRunner(a, /You are reviewing/.test(o.prompt) ? { ...o, prompt: o.prompt + '\n\nExtra requirement from the team lead for THIS review: every new source file must contain the exact comment line `// reviewed-by-forge`. If any new source file lacks it, the verdict MUST be FAIL and the issue must say which file lacks that line.' } : o)
+      : realRunner
     const models = await codexModels()
     const orch = new TeamOrchestrator({
-      store: new TeamStore(join(teamDir, 'runs')), teamDir, runner: realRunner, available: async () => (both ? ['claude', 'codex'] : ['codex']), codexModels: async () => models, emit: show,
+      store: new TeamStore(join(teamDir, 'runs')), teamDir, runner, available: async () => (both ? ['claude', 'codex'] : ['codex']), codexModels: async () => models, emit: show,
       mcpScript: resolve('out/main/team-mcp.js'),
     })
     try {
@@ -60,6 +66,8 @@ describe.skipIf(!process.env.TEAM_LIVE)('team live', () => {
       expect(r.status).toBe('awaiting_approval')
       expect(r.final?.verifyOk).toBe(true)
       line('\n' + r.final!.report)
+      line('agents: ' + r.tasks.map((t) => `${t.id}=${t.agent}(fixRounds ${t.fixRounds}, reviews ${t.reviews.map((v) => v.by + ':' + v.verdict).join(',')})`).join('  '))
+      if (process.env.TEAM_FORCE_REVIEW_FAIL) expect(r.tasks.some((t) => t.fixRounds >= 1 && t.reviews.some((v) => v.verdict === 'fail') && t.reviews.at(-1)?.verdict === 'pass')).toBe(true)
       const applied = await orch.approveFinal(run.id)
       expect(applied.ok, applied.message).toBe(true)
       expect(existsSync(join(proj, 'slug.js'))).toBe(true)

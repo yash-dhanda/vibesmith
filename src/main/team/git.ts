@@ -113,6 +113,8 @@ export async function removeWorktree(root: string, wt: string, branch?: string) 
   if (branch) await git(root, ['branch', '-D', branch]).catch(() => '')
 }
 
+export const pruneWorktrees = (root: string) => git(root, ['worktree', 'prune']).then(() => undefined, () => undefined)
+
 // Puts the team's result into the user's folder as ordinary uncommitted changes (nothing is committed for them).
 export async function applyResult(root: string, baseCommit: string, branch: string): Promise<{ ok: boolean; message: string }> {
   const patch = await git(root, ['diff', '--binary', '--no-renames', baseCommit, branch])

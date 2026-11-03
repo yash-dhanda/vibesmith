@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto'
+import { readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createCheckpoint } from '../checkpoint'
 import { detectVerify, runVerify } from '../agent/commands'
 import type { AgentName, ErrorKind, TeamEvent } from './events'
-import { addTaskWorktree, abortMerge, applyResult, changedSince, commitAll, createRunBranch, diffText, finishMerge, head, mergeBranch, removeWorktree, snapshotCommit } from './git'
+import { addTaskWorktree, abortMerge, applyResult, changedSince, commitAll, createRunBranch, diffText, finishMerge, head, mergeBranch, pruneWorktrees, removeWorktree, snapshotCommit } from './git'
 import { TeamHub, type HubCtx } from './hub'
 import { PERMISSION_TOOL, type TeamLink } from './link'
 import type { ApprovalAsk, ServerHandle } from './codexServer'
@@ -17,6 +18,7 @@ import { DEFAULT_CONFIG, emptyUsage, type Approval, type ApprovalKind, type Mess
 export type AgentCall = {
   cwd: string; prompt: string; write: boolean; resume?: string; model?: string; signal: AbortSignal; link: TeamLink | null; taskId: string
   onEvent: (e: TeamEvent) => void
+  effort?: string // Claude only
   codexMode?: 'exec' | 'app-server'
   onApproval?: (a: ApprovalAsk) => Promise<boolean> // Codex app-server asks before leaving its sandbox
   onHandle?: (h: ServerHandle | null) => void // lets the orchestrator steer a running agent
@@ -185,6 +187,36 @@ export class TeamOrchestrator {
     for (const t of run.tasks) if (!['done', 'failed'].includes(t.status)) t.status = 'cancelled'
     this.setStatus(run, 'cancelled', 'Cancelled by you.')
     await this.cleanup(run, true)
+  }
+
+  // Removes a finished run completely: its branches, worktrees, saved state and log. A run still in progress must be cancelled first.
+  async deleteRun(runId: string): Promise<boolean> {
+    const run = this.runOf(runId)
+    if (!run) return false
+    if (!['done', 'failed', 'cancelled', 'awaiting_approval'].includes(run.status)) return false
+    if (run.status === 'awaiting_approval') await this.cleanup(run, true)
+    else await this.cleanup(run, !run.applied).catch(() => {})
+    this.runs.delete(runId)
+    this.live.delete(runId)
+    this.d.store.delete(runId)
+    await rm(join(this.d.teamDir, 'wt', runId), { recursive: true, force: true }).catch(() => {})
+    return true
+  }
+
+  // At startup: worktree folders and branches that belong to runs that are over (or gone) are leftovers of a crash. Remove them.
+  async sweep() {
+    const known = new Map(this.list().map((r) => [r.id, r]))
+    let dirs: string[] = []
+    try {
+      dirs = await readdir(join(this.d.teamDir, 'wt'))
+    } catch {}
+    for (const id of dirs) {
+      const r = known.get(id)
+      if (r && !['done', 'failed', 'cancelled'].includes(r.status)) continue
+      if (r) await this.cleanup(r, false).catch(() => {})
+      await rm(join(this.d.teamDir, 'wt', id), { recursive: true, force: true }).catch(() => {})
+    }
+    for (const project of new Set(this.list().map((r) => r.project))) await pruneWorktrees(project)
   }
 
   answerApproval(runId: string, approvalId: string, allow: boolean, note?: string) {
@@ -373,6 +405,7 @@ export class TeamOrchestrator {
     const res = await this.d.runner(agent, {
       cwd, prompt, write, resume, signal: live.ctl.signal, taskId: task.id, link: await this.linkFor(run, task, agent),
       model: agent === 'codex' ? run.config.codexModel : run.config.claudeModel,
+      effort: agent === 'claude' ? run.config.claudeEffort : undefined,
       codexMode: run.config.codexMode,
       onEvent: (ev) => {
         if (ev.type === 'limits') {

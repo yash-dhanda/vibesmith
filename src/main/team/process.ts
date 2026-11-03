@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process'
 import { killTree } from '../agent/commands'
+import { resolveCommand } from './bin'
 import { classifyError, type AgentName, type ErrorKind, type Parser, type TeamEvent } from './events'
 
 export type RunOpts = {
@@ -78,7 +79,8 @@ export function runCli(agent: AgentName, bin: string, args: string[], parse: Par
       resolve(res)
     }
 
-    const child = spawn(bin, args, { cwd: o.cwd, env: cleanEnv(process.env, o.env), stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32', windowsHide: true })
+    const cmd = resolveCommand(bin, args)
+    const child = spawn(cmd.cmd, cmd.args, { cwd: o.cwd, env: cleanEnv(process.env, { ...cmd.env, ...o.env }), stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32', windowsHide: true })
     const stop = (kind: ErrorKind, message: string) => {
       if (!res.error) push({ type: 'error', agent, kind, message })
       killTree(child)

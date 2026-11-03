@@ -5,6 +5,7 @@ import { runCli, type RunOpts, type RunResult } from './process'
 export type ClaudeOpts = RunOpts & {
   write: boolean // false: plan mode, nothing is changed
   model?: string
+  effort?: string
   resume?: string // session id from an earlier run
   systemAppend?: string
   mcpConfig?: string // path to an MCP config file (the Forge team server)
@@ -24,6 +25,7 @@ export const CLAUDE_DENY_NO_GATE = [...CLAUDE_DENY, 'Bash(curl *)', 'Bash(wget *
 export function claudeArgs(o: ClaudeOpts): string[] {
   const a = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', o.write ? 'acceptEdits' : 'plan']
   if (o.model) a.push('--model', o.model)
+  if (o.effort) a.push('--effort', o.effort)
   if (o.resume) a.push('--resume', o.resume)
   if (o.systemAppend) a.push('--append-system-prompt', o.systemAppend)
   if (o.mcpConfig) a.push('--mcp-config', o.mcpConfig, '--strict-mcp-config')

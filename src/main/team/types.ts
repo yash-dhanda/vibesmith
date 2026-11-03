@@ -68,6 +68,7 @@ export type TeamConfig = {
   planner: AgentName | 'auto'
   codexModel: string
   claudeModel?: string
+  claudeEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   maxParallelPerAgent: number
   maxFixRounds: number
   maxVerifyRounds: number

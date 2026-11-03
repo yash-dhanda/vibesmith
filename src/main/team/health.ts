@@ -1,15 +1,18 @@
 import { execFile } from 'node:child_process'
+import { resolveCommand } from './bin'
 import { cleanEnv } from './process'
 import type { AgentName } from './events'
 
 export type Health = { agent: AgentName; ok: boolean; detail: string; fix?: string; version?: string }
 
-const run = (bin: string, args: string[]): Promise<{ ok: boolean; out: string; missing: boolean }> =>
-  new Promise((resolve) =>
-    execFile(bin, args, { env: cleanEnv(), timeout: 15_000, windowsHide: true, maxBuffer: 8 * 1024 * 1024 }, (err, out, stderr) =>
+const run = (bin: string, args: string[]): Promise<{ ok: boolean; out: string; missing: boolean }> => {
+  const c = resolveCommand(bin, args)
+  return new Promise((resolve) =>
+    execFile(c.cmd, c.args, { env: cleanEnv(process.env, c.env), timeout: 15_000, windowsHide: true, maxBuffer: 8 * 1024 * 1024 }, (err, out, stderr) =>
       resolve({ ok: !err, out: String(out) + String(stderr), missing: (err as NodeJS.ErrnoException | null)?.code === 'ENOENT' }),
     ),
   )
+}
 
 // Is the agent installed, and signed in with the user's own account? Checked with the same cleaned environment the runs use,
 // because that is what decides whether a run works (a login that only exists inside another app's session does not count).

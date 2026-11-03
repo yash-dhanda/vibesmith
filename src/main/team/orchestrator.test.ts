@@ -287,6 +287,24 @@ describe('team orchestrator', () => {
     await x.orch.cancel(run.id)
   })
 
+  it('deletes a finished run completely, refuses a running one, and sweeps leftovers of crashed runs', async () => {
+    const x = h({ plan: { tasks: [T('a')] } })
+    const run = await x.orch.start(x.proj, 'delete me')
+    expect(await x.orch.deleteRun(run.id)).toBe(false) // still planning or running
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    await x.orch.rejectFinal(run.id)
+    expect(await x.orch.deleteRun(run.id)).toBe(true)
+    expect(x.orch.get(run.id)).toBeNull()
+    expect(existsSync(join(x.teamDir, 'wt', run.id))).toBe(false)
+    expect(sh(x.proj, 'branch', '--list', 'forge/*').trim()).toBe('')
+
+    // a worktree folder whose run is gone (a crash between steps) is removed at startup
+    const { mkdirSync } = await import('node:fs')
+    mkdirSync(join(x.teamDir, 'wt', 'rghost', 'integration'), { recursive: true })
+    await x.orch.sweep()
+    expect(existsSync(join(x.teamDir, 'wt', 'rghost'))).toBe(false)
+  })
+
   it('a task that hits an auth error blocks the run with the agent named', async () => {
     const x = h({
       plan: { tasks: [T('a', { agent: 'claude' })] },

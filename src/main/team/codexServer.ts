@@ -3,6 +3,7 @@ import { killTree } from '../agent/commands'
 import { codexMcpArgs, type TeamLink } from './link'
 import type { ErrorKind, TeamEvent } from './events'
 import { classifyError } from './events'
+import { resolveCommand } from './bin'
 import { cleanEnv, makeSink, type RunOpts, type RunResult } from './process'
 import { unwrapShell } from './codexStream'
 import { relative } from 'node:path'
@@ -39,7 +40,8 @@ export function runCodexServer(o: CodexServerOpts, bin = 'codex'): Promise<RunRe
     let nextId = 0
     const waiting = new Map<number, { ok: (v: any) => void; fail: (e: Error) => void }>()
 
-    const child = spawn(bin, ['app-server', ...(o.team ? codexMcpArgs(o.team) : [])], { cwd: o.cwd, env: cleanEnv(process.env, o.env), stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32', windowsHide: true })
+    const cmd = resolveCommand(bin, ['app-server', ...(o.team ? codexMcpArgs(o.team) : [])])
+    const child = spawn(cmd.cmd, cmd.args, { cwd: o.cwd, env: cleanEnv(process.env, { ...cmd.env, ...o.env }), stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32', windowsHide: true })
     const write = (m: object) => child.stdin.writable && child.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...m }) + '\n')
     const request = (method: string, params: object) =>
       new Promise<any>((ok, fail) => {
