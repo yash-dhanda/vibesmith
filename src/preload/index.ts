@@ -25,6 +25,7 @@ const api = {
   agentStop: (chatId: string) => ipcRenderer.send('agent:stop', chatId),
   agentApprove: (chatId: string, id: string, ok: boolean) => ipcRenderer.send('agent:approve', chatId, id, ok),
   agentUndo: (chatId: string, id: string): Promise<string[]> => ipcRenderer.invoke('agent:undo', chatId, id),
+  agentUndoFile: (chatId: string, id: string, path: string): Promise<{ path: string; status: 'added' | 'modified' | 'deleted'; added: number; removed: number }[]> => ipcRenderer.invoke('agent:undo-file', chatId, id, path),
   onAgentEvent: (cb: (m: { chatId: string; ev: AgentEvent }) => void) => ipcRenderer.on('agent:event', (_e, m: { chatId: string; ev: AgentEvent }) => cb(m)),
   agentModels: (): Promise<{ id: string; label: string; group: string }[]> => ipcRenderer.invoke('agent:models'),
   // usage

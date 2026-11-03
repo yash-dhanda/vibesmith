@@ -10,7 +10,7 @@ import { isPreviewable } from './preview'
 import { runVerify } from './agent/commands'
 import { runAgent, SYSTEM_PROMPT, type AgentEvent, type Mode } from './agent/loop'
 import { ToolBox } from './agent/tools'
-import { changesSince, createCheckpoint, hasGit, initRepo, isRepo, undoTo, type Checkpoint } from './checkpoint'
+import { changesSince, createCheckpoint, hasGit, initRepo, isRepo, undoFile, undoTo, type Checkpoint } from './checkpoint'
 import { ChatStore, compact, titleFrom, type Chat, type ChatListItem, type ChatStatus } from './chatStore'
 import { clearKey, keyStatus, setKey, type KeyProvider } from './keys'
 import { listModels, makeProvider, ollamaStatus } from './models'
@@ -301,6 +301,17 @@ ipcMain.handle('agent:undo', async (_e, chatId: string, id: string) => {
   s.dirty = true
   flush(s)
   return touched
+})
+
+ipcMain.handle('agent:undo-file', async (_e, chatId: string, id: string, path: string) => {
+  const s = sessions.get(chatId)
+  const cp = s?.chat.checkpoints[id]
+  if (!s || s.run || !cp || !s.chat.project || typeof path !== 'string') throw new Error('nothing to undo')
+  const left = await undoFile(s.chat.project, cp, path)
+  s.chat.messages.push({ role: 'user', content: `[The user undid your changes to ${path}. That file is back to how it was before your edits. Re-read it before editing it again.]` })
+  s.dirty = true
+  flush(s)
+  return left
 })
 
 ipcMain.on('agent:approve', (_e, chatId: string, id: string, ok: boolean) => {

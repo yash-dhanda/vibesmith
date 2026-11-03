@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { changesSince, createCheckpoint, initRepo, isRepo, undoTo } from './checkpoint'
+import { changesSince, createCheckpoint, initRepo, isRepo, undoFile, undoTo } from './checkpoint'
 
 let dir: string
 const w = (f: string, t: string) => {
@@ -47,6 +47,18 @@ describe('checkpoint', () => {
       { path: 'gone.txt', status: 'deleted', added: 0, removed: 1 },
       { path: 'src/new.js', status: 'added', added: 2, removed: 0 },
     ])
+  })
+
+  it('undoFile puts back one file and leaves the rest of the run alone', async () => {
+    const cp = await createCheckpoint(dir)
+    w('edit.txt', 'changed\n')
+    w('new.js', 'x')
+    const left = await undoFile(dir, cp, 'edit.txt')
+    expect(r('edit.txt')).toBe('one\ntwo\n')
+    expect(r('new.js')).toBe('x')
+    expect(left.map((c) => c.path)).toEqual(['new.js'])
+    await undoFile(dir, cp, 'new.js')
+    expect(existsSync(join(dir, 'new.js'))).toBe(false)
   })
 
   it('undo restores everything, removes created files and empty dirs, keeps untracked and ignored files', async () => {

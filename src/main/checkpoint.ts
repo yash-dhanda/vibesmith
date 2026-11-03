@@ -85,7 +85,17 @@ export async function changesSince(root: string, cp: Checkpoint): Promise<Change
 // Puts every changed file back: removes files the run created, restores modified and deleted ones.
 // ponytail: edits the user made by hand during the run are undone too. Snapshot per file if that bites.
 export async function undoTo(root: string, cp: Checkpoint): Promise<string[]> {
+  return revert(root, cp, await changesSince(root, cp))
+}
+
+// Puts back one file only. Returns what is still changed, so the UI can refresh its list.
+export async function undoFile(root: string, cp: Checkpoint, path: string): Promise<Change[]> {
   const list = await changesSince(root, cp)
+  await revert(root, cp, list.filter((c) => c.path === path))
+  return changesSince(root, cp)
+}
+
+async function revert(root: string, cp: Checkpoint, list: Change[]): Promise<string[]> {
   for (const c of list.filter((c) => c.status === 'added')) {
     const p = normalize(c.path)
     if (p.startsWith('..')) continue

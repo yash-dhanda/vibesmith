@@ -42,6 +42,12 @@ export const toolDefs: ToolDef[] = [
     },
   },
   {
+    name: 'update_plan',
+    description:
+      'Show the user your plan as a short checklist, and update it as you go. One step per line, starting with [ ] (to do), [>] (doing now) or [x] (done). Use it for work with three or more steps: call it first, then again when a step finishes. It does nothing else.',
+    parameters: { type: 'object', properties: { steps: { type: 'string', description: 'The checklist, one step per line' } }, required: ['steps'] },
+  },
+  {
     name: 'edit_file',
     description:
       'Replace old_text with new_text in a file you already read. old_text must match the file exactly once. To create a new file, use an empty old_text on a path that does not exist.',
@@ -96,6 +102,7 @@ export class ToolBox {
       if (name === 'search') return await this.search(a.pattern as string)
       if (name === 'run_command') return await runCommand(a.command as string, this.root, signal)
       if (name === 'create_file') return await this.create(a.path as string, a.content as string)
+      if (name === 'update_plan') return 'Plan updated. Carry on with the next step.' // the loop shows it to the user
       return await this.edit(a.path as string, a.old_text as string, a.new_text as string)
     } catch (e) {
       return `ERROR: ${(e as Error).message}`

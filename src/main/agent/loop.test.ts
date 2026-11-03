@@ -387,3 +387,19 @@ describe('honest ending', () => {
     expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'finished' })
   })
 })
+
+describe('plan and labels', () => {
+  it('update_plan shows a checklist, not a tool row, and gives each tool a friendly label', async () => {
+    const turns: ToolCall[][] = [
+      [{ name: 'update_plan', args: { steps: '[>] Read the file\n[ ] Add a test\n[x] Look around' } }],
+      [{ name: 'read_file', args: { path: 'a.txt' } }],
+    ]
+    const events: AgentEvent[] = []
+    await runAgent({ messages: [{ role: 'user', content: 'go' }], mode: 'full-auto', provider: script(turns), tools: new ToolBox(dir), emit: (e) => events.push(e), approve: async () => true, signal: new AbortController().signal })
+    const plan = events.find((e) => e.type === 'plan')
+    expect(plan).toEqual({ type: 'plan', items: [{ text: 'Read the file', status: 'doing' }, { text: 'Add a test', status: 'todo' }, { text: 'Look around', status: 'done' }] })
+    const tools = events.filter((e) => e.type === 'tool')
+    expect(tools.map((t) => (t as { name: string }).name)).toEqual(['read_file'])
+    expect((tools[0] as { label?: string }).label).toBe('Reading a.txt')
+  })
+})

@@ -2,13 +2,15 @@ import type { Message, Provider, Turn, Usage } from './provider'
 import { isAllowlisted } from './commands'
 import { estimateTokens, trimMessages } from './context'
 import { resolveToolName } from './guards'
+import { describeTool, parsePlan, type PlanItem } from './narrate'
 import { ToolBox, toolDefs } from './tools'
 
 export type Mode = 'ask-all' | 'auto-edit' | 'full-auto'
 
 export type AgentEvent =
   | { type: 'delta'; text: string }
-  | { type: 'tool'; id: string; name: string; args: unknown; needsApproval: boolean }
+  | { type: 'tool'; id: string; name: string; args: unknown; needsApproval: boolean; label?: string }
+  | { type: 'plan'; items: PlanItem[] }
   | { type: 'tool_result'; id: string; text: string; ok: boolean }
   | { type: 'turn_end' }
   | { type: 'usage'; input: number; output: number; tps: number; ctxLimit?: number; estimated?: boolean }
@@ -23,6 +25,7 @@ export const SYSTEM_PROMPT = `You are Forge, a coding agent working inside the u
 - Make something new: create the files with create_file. Never paste a whole program into the chat. Keep each file small, under about 120 lines: split a big program into several files, written one at a time.
 - Change something that exists: read_file first, then edit_file with small exact edits.
 - If the user wants something written to a file, use create_file or edit_file. The answer belongs in the file, not in the chat.
+- For work with three or more steps, call update_plan first with a short checklist, and again whenever a step is done.
 - After changing code, run the project's tests or build with run_command when one exists, and fix what fails. When a command or test fails, read the files named in its output.
 - Match the style of the existing code, for example CommonJS (module.exports, require) versus ES modules (export, import). Do not mix them in one project.
 - Do not invent file names or APIs: use list_dir, search and read_file to check.
@@ -31,7 +34,7 @@ export const SYSTEM_PROMPT = `You are Forge, a coding agent working inside the u
 When you are finished, reply with a short summary of what you did and how to run it, then stop calling tools.
 Only when you built something new and still need a value you cannot decide yourself (a name, a token, a choice that changes the result), end your summary with one short list of what you need. Create the files first, with sensible defaults, and mention the defaults. Never ask before creating files.`
 
-const KIND: Record<string, 'read' | 'edit' | 'command'> = { list_dir: 'read', read_file: 'read', edit_file: 'edit', create_file: 'edit', search: 'read', run_command: 'command' }
+const KIND: Record<string, 'read' | 'edit' | 'command'> = { list_dir: 'read', read_file: 'read', edit_file: 'edit', create_file: 'edit', search: 'read', update_plan: 'read', run_command: 'command' }
 
 // The one place autonomy is decided. Unknown tools never execute, so they never need approval.
 export function needsApproval(tool: string, mode: Mode, args?: unknown): boolean {
@@ -176,7 +179,14 @@ export async function runAgent(o: RunOpts): Promise<void> {
       for (const call of calls) {
         const id = `${steps}-${Math.random().toString(36).slice(2, 8)}`
         const ask = needsApproval(call.name, o.mode, call.args)
-        o.emit({ type: 'tool', id, name: call.name, args: call.args, needsApproval: ask })
+        // The plan is shown as a checklist, not as a tool row.
+        if (call.name === 'update_plan') {
+          const items = parsePlan(String((call.args as { steps?: unknown } | null)?.steps ?? ''))
+          if (items.length) o.emit({ type: 'plan', items })
+          o.messages.push({ role: 'tool', content: await o.tools.run(call.name, call.args, o.signal), toolName: call.name, toolCallId: call.id })
+          continue
+        }
+        o.emit({ type: 'tool', id, name: call.name, args: call.args, needsApproval: ask, label: describeTool(call.name, call.args) })
         let text: string
         if (ask && !(await o.approve(id))) text = 'DENIED: the user rejected this action. Do not retry it; ask what to do instead.'
         else if (o.signal.aborted) return done('stopped')
