@@ -20,6 +20,7 @@ Rules for a good plan:
 - Tasks that touch different files can run in parallel. Give "deps" only when a task truly needs another one's result.
 - Make tasks touch different files where you can. Two tasks editing the same file will conflict.
 - "agent": ${agents.includes('claude') && agents.includes('codex') ? '"claude" for architecture, planning, multi-file design and research; "codex" for well-scoped implementation and tests' : `"${agents[0]}" (the only agent available)`}.
+- When both agents are available, spread the work between them where the split allows it: a task is reviewed by the other agent, and neither subscription should carry everything.
 - "kind": "build" changes files; "research" only reads and reports.
 - "acceptance": 1 to 4 concrete checks (a command that must pass, a behaviour that must hold).
 - "files": the files you expect the task to create or edit.
