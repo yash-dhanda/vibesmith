@@ -1,17 +1,17 @@
 import { getCustomIds, loadModels, setCustomIds } from './models'
-import { $, MINUTE_CHOICES, STEP_CHOICES, agentLimits, cleanErr, h, numCtxPref, setThemePref, themePref, toast, type ThemePref } from './ui'
-import { icon, type IconName } from './icons'
+import { $, MINUTE_CHOICES, STEP_CHOICES, agentLimits, cleanErr, emo, h, numCtxPref, setThemePref, themePref, toast, type ThemePref } from './ui'
+import { icon } from './icons'
 import { openLibrary } from './library'
 import { renderUsage } from './usage'
 
 export type Page = 'general' | 'models' | 'agent' | 'usage' | 'shortcuts' | 'about'
-const PAGES: [Page, IconName, string][] = [
-  ['general', 'sliders', 'General'],
-  ['models', 'cube', 'Models'],
-  ['agent', 'bolt', 'Agent'],
-  ['usage', 'chart', 'Usage'],
-  ['shortcuts', 'keyboard', 'Shortcuts'],
-  ['about', 'info', 'About'],
+const PAGES: [Page, string, string][] = [
+  ['general', '⚙️', 'General'],
+  ['models', '🧠', 'Models'],
+  ['agent', '🤖', 'Agent'],
+  ['usage', '📊', 'Usage'],
+  ['shortcuts', '⌨️', 'Shortcuts'],
+  ['about', 'ℹ️', 'About'],
 ]
 const TITLES: Record<Page, string> = { general: 'General', models: 'Models', agent: 'Agent', usage: 'Usage', shortcuts: 'Keyboard shortcuts', about: 'About Forge' }
 
@@ -32,7 +32,7 @@ function row(title: string, desc: string, ...controls: HTMLElement[]) {
   if (desc) t.append(h('div', 'st-d', desc))
   const c = h('div', 'ctl')
   c.append(...controls)
-  for (const control of c.querySelectorAll('input, select')) control.setAttribute('aria-label', title)
+  for (const control of c.querySelectorAll('input, select')) control.setAttribute('aria-label', title.replace(/^[^\p{L}]+/u, '')) // no leading emoji in the spoken name
   r.append(t, c)
   return r
 }
@@ -41,10 +41,12 @@ function seg<T extends string>(options: [T, string][], value: T, onPick: (v: T) 
   const wrap = h('div', 'seg')
   for (const [v, label] of options) {
     const b = h('button', v === value ? 'on' : '', label) as HTMLButtonElement
+    b.setAttribute('aria-pressed', String(v === value))
     b.type = 'button'
     b.onclick = () => {
-      wrap.querySelectorAll('button').forEach((x) => x.classList.remove('on'))
+      wrap.querySelectorAll('button').forEach((x) => { x.classList.remove('on'); x.setAttribute('aria-pressed', 'false') })
       b.classList.add('on')
+      b.setAttribute('aria-pressed', 'true')
       onPick(v)
     }
     wrap.append(b)
@@ -71,7 +73,7 @@ const save = (key: string, v: string) => {
 // ---- pages ----
 async function general(into: HTMLElement) {
   const a = group('Appearance')
-  a.box.append(row('Theme', 'Dark, light, or follow your system.', seg<ThemePref>([['dark', 'Dark'], ['light', 'Light'], ['system', 'System']], themePref(), setThemePref)))
+  a.box.append(row('Theme', 'Dark, light, or follow your system.', seg<ThemePref>([['dark', '🌙 Dark'], ['light', '☀️ Light'], ['system', '💻 System']], themePref(), setThemePref)))
   into.append(a.g)
 
   const b = group('Behavior')
@@ -83,7 +85,7 @@ async function general(into: HTMLElement) {
     row(
       'Default autonomy',
       'How much Forge may do before asking you. You can still change it for each message.',
-      seg<string>([['ask-all', 'Ask first'], ['auto-edit', 'Auto-edit'], ['full-auto', 'Full auto']], mode, (v) => {
+      seg<string>([['ask-all', '✋ Ask first'], ['auto-edit', '✏️ Auto-edit'], ['full-auto', '🚀 Full auto']], mode, (v) => {
         save('forge.mode', v)
         $<HTMLSelectElement>('mode').value = v
       }),
@@ -95,9 +97,9 @@ async function general(into: HTMLElement) {
 
   const m = group('What the autonomy levels mean')
   m.box.append(
-    row('Ask first', 'Asks before every file change and before every command. Reading is always allowed.', h('span', 'badge', 'safest')),
-    row('Auto-edit', 'Creates and edits files freely. Asks before commands, except safe ones like npm test and git status.', h('span', 'badge', 'balanced')),
-    row('Full auto', 'Does everything without asking. Needs a project check so something verifies the work.', h('span', 'badge', 'hands-off')),
+    row('✋ Ask first', 'Asks before every file change and before every command. Reading is always allowed.', h('span', 'badge', 'Safest')),
+    row('✏️ Auto-edit', 'Creates and edits files freely. Asks before commands, except safe ones like npm test and git status.', h('span', 'badge', 'Balanced')),
+    row('🚀 Full auto', 'Does everything without asking. Needs a project check so something verifies the work.', h('span', 'badge', 'Hands-off')),
   )
   into.append(m.g)
 }
@@ -119,10 +121,12 @@ async function models(into: HTMLElement) {
     memory.value = String(host.vramGB)
     const result = h('div', 'hint')
     result.setAttribute('role', 'status')
-    const test = h('button', 'btn', 'Test connection') as HTMLButtonElement
+    const test = h('button', 'btn', 'Test') as HTMLButtonElement
+    test.prepend(emo('📡'))
+    test.title = 'Test connection'
     test.onclick = async () => {
       test.disabled = true
-      try { const checked = await window.forge.engineHostTest(address.value); result.textContent = checked.ok ? `Connected · ${checked.models} models available` : 'Engine didn’t respond. Check the address.' }
+      try { const checked = await window.forge.engineHostTest(address.value); result.textContent = checked.ok ? `✅ Connected · ${checked.models} models available` : '⚠️ Engine didn’t respond. Check the address.' }
       catch (e) { result.textContent = cleanErr(e) }
       finally { test.disabled = false }
     }
@@ -143,7 +147,8 @@ async function models(into: HTMLElement) {
   }
 
   const local = group('AI models', 'Ollama models run on the computer selected above. No per-token fees.')
-  const lib = h('button', 'btn primary', 'Open the model library')
+  const lib = h('button', 'btn primary', 'Open library')
+  lib.prepend(emo('🧩'))
   lib.onclick = () => {
     $<HTMLDialogElement>('settings').close()
     openLibrary()
@@ -153,7 +158,7 @@ async function models(into: HTMLElement) {
     row(
       'Ollama',
       ol.up ? (ol.models.length ? `Running. These models are installed.${ol.loaded[0] ? ` ${ol.loaded[0].name} is loaded (${ol.loaded[0].gpuPercent}% on the GPU).` : ''}` : 'Running, but no models are installed yet.') : 'Not reachable at 127.0.0.1:11434.',
-      h('span', 'badge ' + (ol.up ? 'ok' : 'bad'), ol.up ? `Running · ${ol.models.length} model${ol.models.length === 1 ? '' : 's'}` : 'Not running'),
+      h('span', 'badge ' + (ol.up ? 'ok' : 'bad'), ol.up ? `Running · ${ol.models.length}` : 'Not running'),
     ),
   )
   if (ol.models.length) {
@@ -219,7 +224,7 @@ async function models(into: HTMLElement) {
       }
       ctl.push(rm)
     }
-    cloud.box.append(row(name, note, h('span', 'badge ' + (keys[p] ? 'ok' : ''), keys[p] ? 'Connected' : 'Not connected')), row('API key', '', ...ctl))
+    cloud.box.append(row(name, note, h('span', 'badge ' + (keys[p] ? 'ok' : ''), keys[p] ? 'Connected' : 'Not connected')), row('🔑 API key', '', ...ctl))
     if (p !== 'anthropic') {
       const ids = document.createElement('input')
       ids.placeholder = 'model-one, model-two'
@@ -262,10 +267,10 @@ async function agent(into: HTMLElement) {
 
   const s = group('Safety, always on')
   s.box.append(
-    row('Folder jail', 'The agent can only read and change files inside the chat’s folder, including through links and new folders.', h('span', 'badge ok', 'on')),
-    row('Undo', 'Every run is snapshotted with git first. Press Undo on the changes card to put everything back.', h('span', 'badge ok', 'on')),
-    row('Blocked commands', 'sudo, recursive deletes of / or ~, disk formatting and “pipe a download into a shell” are refused in every mode.', h('span', 'badge ok', 'on')),
-    row('Package check', 'Before an install, package names are looked up in the npm or PyPI registry. Made-up names are refused.', h('span', 'badge ok', 'on')),
+    row('🔒 Folder jail', 'The agent can only read and change files inside the chat’s folder, including through links and new folders.', h('span', 'badge ok', 'On')),
+    row('↩️ Undo', 'Every run is snapshotted with git first. Press Undo on the changes card to put everything back.', h('span', 'badge ok', 'On')),
+    row('🚫 Blocked commands', 'sudo, recursive deletes of / or ~, disk formatting and “pipe a download into a shell” are refused in every mode.', h('span', 'badge ok', 'On')),
+    row('📦 Package check', 'Before an install, package names are looked up in the npm or PyPI registry. Made-up names are refused.', h('span', 'badge ok', 'On')),
   )
   into.append(s.g)
 }
@@ -293,6 +298,7 @@ async function about(into: HTMLElement) {
   const info = await window.forge.appInfo()
   const g = group()
   const open = h('button', 'btn', 'Open folder')
+  open.prepend(emo('📂'))
   open.onclick = () => window.forge.openDataDir()
   g.box.append(
     row('Forge', 'A chat app that builds software on your computer with local or cloud AI.', h('span', 'badge', `v${info.version}`)),
@@ -344,10 +350,11 @@ export async function openSettings(page: Page = 'general') {
   const dlg = $<HTMLDialogElement>('settings')
   const nav = h('nav', 'set-nav')
   nav.append(h('h2', '', 'Settings'))
-  for (const [id, iconName, label] of PAGES) {
+  for (const [id, glyph, label] of PAGES) {
     const b = h('button')
     b.dataset.page = id
-    b.append(icon(iconName), document.createTextNode(label))
+    b.append(emo(glyph), h('span', 'lbl', label))
+    b.title = label
     b.onclick = () => show(id)
     nav.append(b)
   }

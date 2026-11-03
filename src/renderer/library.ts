@@ -1,7 +1,7 @@
 import type { CatalogItem, InstalledModel, PullEvent } from '../preload'
 import { icon } from './icons'
 import { loadModels } from './models'
-import { $, cleanErr, h, toast } from './ui'
+import { $, cleanErr, emo, h, toast } from './ui'
 
 // The model library: what is installed, what could be, and the engine that runs them. Like LM Studio, inside the app.
 type Tab = 'installed' | 'discover' | 'hf'
@@ -57,7 +57,7 @@ function pullBar(p: PullEvent): HTMLElement {
   w.dataset.pull = p.name
   const bar = h('div', 'pbar')
   const fill = h('i')
-  fill.style.width = p.percent + '%'
+  fill.style.transform = `scaleX(${p.percent / 100})`
   bar.append(fill)
   const txt = h('span', 'ptxt', progressText(p))
   const cancel = h('button', 'icon-btn sm')
@@ -74,7 +74,7 @@ function paintPulls() {
   for (const el of document.querySelectorAll<HTMLElement>('#library [data-pull]')) {
     const p = pulling.get(el.dataset.pull!)
     if (!p) continue
-    ;(el.querySelector('.pbar i') as HTMLElement).style.width = p.percent + '%'
+    ;(el.querySelector('.pbar i') as HTMLElement).style.transform = `scaleX(${p.percent / 100})`
     el.querySelector('.ptxt')!.textContent = progressText(p)
   }
   // rows that just started downloading need their button swapped for a bar
@@ -132,7 +132,7 @@ async function renderEngine() {
     card.append(h('div', 'engine-title', 'Setting up the AI engine'))
     const bar = h('div', 'pbar wide')
     const fill = h('i')
-    fill.style.width = (p.phase === 'download' && p.total ? Math.round((p.done / p.total) * 100) : p.phase === 'extract' || p.phase === 'start' ? 100 : 0) + '%'
+    fill.style.transform = `scaleX(${p.phase === 'download' && p.total ? p.done / p.total : p.phase === 'extract' || p.phase === 'start' ? 1 : 0})`
     bar.append(fill)
     card.append(bar)
     const txt = p.phase === 'download' ? `Downloading ${fmtBytes(p.done)} of ${fmtBytes(p.total)}${p.bytesPerSec ? ` · ${fmtSpeed(p.bytesPerSec)}` : ''}` : (PHASE[p.phase] ?? '')
@@ -203,7 +203,7 @@ async function renderInstalled(into: HTMLElement) {
   const list = await window.forge.modelsInstalled()
   if (!list.length) {
     const e = h('div', 'empty-box')
-    e.append(h('div', 'et', 'No models downloaded yet'), h('div', 'muted', 'Open the Discover tab and download one. Once it is here it works without internet.'))
+    e.append(h('div', 'et', '📭 No models downloaded yet'), h('div', 'muted', 'Open the Discover tab and download one. Once it is here it works without internet.'))
     const go = h('button', 'btn primary', 'Browse models')
     go.onclick = () => setTab('discover')
     e.append(go)
@@ -212,13 +212,16 @@ async function renderInstalled(into: HTMLElement) {
   }
   const box = h('div', 'sbox')
   for (const m of list as InstalledModel[]) {
-    const del = h('button', 'btn danger-quiet', 'Delete')
+    const del = h('button', 'btn danger-quiet only')
+    del.append(emo('🗑️'))
+    del.title = 'Delete model'
+    del.setAttribute('aria-label', `Delete ${m.name}`)
     let armed = false
     del.onclick = async () => {
       if (!armed) {
         armed = true
         del.textContent = 'Click again to delete'
-        setTimeout(() => ((armed = false), (del.textContent = 'Delete')), 3000)
+        setTimeout(() => ((armed = false), del.replaceChildren(emo('🗑️'))), 3000)
         return
       }
       try {
@@ -256,11 +259,11 @@ async function renderDiscover(into: HTMLElement) {
     g.append(box)
     into.append(g)
   }
-  section('Best for this computer', best)
+  section('⭐ Best for this computer', best)
   section(best.length ? 'More models' : 'Models', rest)
 
   const g = h('div', 'sgroup')
-  g.append(h('div', 'gt', 'Download any model by name'))
+  g.append(h('div', 'gt', '⬇️ Download any model by name'))
   const f = h('form', 'custom')
   const input = document.createElement('input')
   input.placeholder = 'for example llama3.1:8b'
@@ -345,7 +348,7 @@ export async function openLibrary(opts: { welcome?: boolean; tab?: Tab } = {}) {
   const wrap = h('div', 'lib')
   const head = h('div', 'lib-head')
   const titles = h('div')
-  titles.append(h('h3', '', welcome ? 'Welcome to Forge' : 'Models'), h('div', 'muted', welcome ? 'Pick a model to download. It runs on your computer, so once it is here Forge works offline.' : 'Download models and run them on this computer.'))
+  titles.append(h('h3', '', welcome ? '👋 Welcome to Forge' : '🧩 Models'), h('div', 'muted', welcome ? 'Pick a model to download. It runs on your computer, so once it is here Forge works offline.' : 'Download models and run them on this computer.'))
   const close = h('button', 'icon-btn')
   close.append(icon('x'))
   close.title = 'Close (Esc)'
@@ -357,8 +360,9 @@ export async function openLibrary(opts: { welcome?: boolean; tab?: Tab } = {}) {
   dlBox = h('div', 'downloads')
   dlBox.hidden = true
   const tabs = h('div', 'lib-tabs')
-  for (const [id, label] of [['installed', 'Installed'], ['discover', 'Discover'], ['hf', 'Hugging Face']] as [Tab, string][]) {
+  for (const [id, glyph, label] of [['installed', '📦', 'Installed'], ['discover', '🧭', 'Discover'], ['hf', '🤗', 'Hugging Face']] as [Tab, string, string][]) {
     const b = h('button', '', label)
+    b.prepend(emo(glyph))
     b.dataset.tab = id
     b.onclick = () => setTab(id)
     tabs.append(b)
