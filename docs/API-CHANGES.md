@@ -27,3 +27,9 @@ Claude appends every new `window.forge` call or event here. Additive only.
 ## 2026-11-03 — undo prompt
 
 - No API change. Behaviour: a chat in an empty folder gets undo (git) set up silently. A folder with files asks once, in plain words ("Turn on undo for this folder?"), and a "no" is remembered per folder.
+
+## 2026-11-03 — roadmap #1: steerable plan
+
+- **`plan` event is now `{ type: 'plan', revision: number, items: { id: string; text: string; status: 'todo'|'doing'|'done'; skipped: boolean; userAdded?: boolean }[] }`.** Still the whole checklist each time (replace). `revision` goes up on every change by the agent or the user. Old transcripts replay without `id`/`revision`: treat missing `skipped` as false, and do not edit a plan you did not get an `id` for (the next `planUpdate` reply gives ids).
+- **`forge.planUpdate(chatId, { revision, items }): Promise<{ revision, items, conflict }>`**. Send the full list the user wants, in order. Keep each step's `id`; omit `id` for a new step. `skipped: true` skips a step; leaving a step out removes it. `conflict: true` means your `revision` was stale: nothing changed, and `items` is the current plan to show. A successful edit also arrives as a `plan` event.
+- The agent is told about every user edit before its next step ("skipped X (do not do it)", new order, added steps) and keeps user-added steps and skips when it rewrites its own plan. Edits made while the chat is idle are delivered with the next message.

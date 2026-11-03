@@ -2,7 +2,8 @@ import type { Message, Provider, Turn, Usage } from './provider'
 import { isAllowlisted } from './commands'
 import { estimateTokens, trimMessages } from './context'
 import { resolveToolName } from './guards'
-import { describeTool, parsePlan, type PlanItem } from './narrate'
+import { describeTool, parsePlan } from './narrate'
+import { mergeAgentPlan, planNote, type PlanState, type PlanStep } from './plan'
 import { ToolBox, toolDefs } from './tools'
 
 export type Mode = 'ask-all' | 'auto-edit' | 'full-auto'
@@ -10,7 +11,7 @@ export type Mode = 'ask-all' | 'auto-edit' | 'full-auto'
 export type AgentEvent =
   | { type: 'delta'; text: string }
   | { type: 'tool'; id: string; name: string; args: unknown; needsApproval: boolean; label?: string }
-  | { type: 'plan'; items: PlanItem[] }
+  | { type: 'plan'; revision: number; items: PlanStep[] }
   | { type: 'tool_result'; id: string; text: string; ok: boolean }
   | { type: 'turn_end' }
   | { type: 'usage'; input: number; output: number; tps: number; ctxLimit?: number; estimated?: boolean }
@@ -100,6 +101,10 @@ export type RunOpts = {
   contextLimit?: number
   // The project's own check. Runs when the model says it is done after editing files; a failure goes back to the model.
   verify?: () => Promise<{ command: string; ok: boolean; output: string }>
+  // The shared plan (the agent and the user both edit it). Mutated in place. Changes the user makes between model calls are
+  // handed to the model through `takeSteering`.
+  plan?: PlanState
+  takeSteering?: () => string | null
 }
 
 export async function runAgent(o: RunOpts): Promise<void> {
@@ -135,6 +140,8 @@ export async function runAgent(o: RunOpts): Promise<void> {
           o.emit({ type: 'note', text: "Older steps were shortened to fit the model's memory. It can re-read files when it needs them." })
         }
       }
+      const steer = o.takeSteering?.()
+      if (steer) o.messages.push({ role: 'user', content: steer })
       // The self-check turn is usually just "Done". Hold its text and only show it when it says something.
       const reflecting = holdNext
       holdNext = false
@@ -182,8 +189,16 @@ export async function runAgent(o: RunOpts): Promise<void> {
         // The plan is shown as a checklist, not as a tool row.
         if (call.name === 'update_plan') {
           const items = parsePlan(String((call.args as { steps?: unknown } | null)?.steps ?? ''))
-          if (items.length) o.emit({ type: 'plan', items })
-          o.messages.push({ role: 'tool', content: await o.tools.run(call.name, call.args, o.signal), toolName: call.name, toolCallId: call.id })
+          let reply = await o.tools.run(call.name, call.args, o.signal)
+          if (items.length && o.plan) {
+            const next = mergeAgentPlan(o.plan, items)
+            o.plan.revision = next.revision
+            o.plan.items = next.items
+            o.emit({ type: 'plan', revision: next.revision, items: next.items })
+            const skipped = next.items.filter((s) => s.skipped).map((s) => `"${s.text}"`)
+            if (skipped.length) reply += ` The user skipped: ${skipped.join(', ')}. Do not do those steps.`
+          }
+          o.messages.push({ role: 'tool', content: reply, toolName: call.name, toolCallId: call.id })
           continue
         }
         o.emit({ type: 'tool', id, name: call.name, args: call.args, needsApproval: ask, label: describeTool(call.name, call.args) })

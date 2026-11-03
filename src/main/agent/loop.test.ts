@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { setRoot } from '../project'
 import { looksUnfinished, needsApproval, repeatNudge, requestOf, runAgent, type AgentEvent, type Mode, type RunOpts } from './loop'
 import type { Message, Provider, ToolCall } from './provider'
+import { emptyPlan } from './plan'
 import { ToolBox } from './tools'
 
 let dir: string
@@ -395,11 +396,42 @@ describe('plan and labels', () => {
       [{ name: 'read_file', args: { path: 'a.txt' } }],
     ]
     const events: AgentEvent[] = []
-    await runAgent({ messages: [{ role: 'user', content: 'go' }], mode: 'full-auto', provider: script(turns), tools: new ToolBox(dir), emit: (e) => events.push(e), approve: async () => true, signal: new AbortController().signal })
-    const plan = events.find((e) => e.type === 'plan')
-    expect(plan).toEqual({ type: 'plan', items: [{ text: 'Read the file', status: 'doing' }, { text: 'Add a test', status: 'todo' }, { text: 'Look around', status: 'done' }] })
+    await runAgent({ messages: [{ role: 'user', content: 'go' }], mode: 'full-auto', provider: script(turns), tools: new ToolBox(dir), emit: (e) => events.push(e), approve: async () => true, signal: new AbortController().signal, plan: emptyPlan() })
+    const plan = events.find((e) => e.type === 'plan') as Extract<AgentEvent, { type: 'plan' }>
+    expect(plan.revision).toBe(1)
+    expect(plan.items.map(({ id: _id, ...s }) => s)).toEqual([{ text: 'Read the file', status: 'doing', skipped: false }, { text: 'Add a test', status: 'todo', skipped: false }, { text: 'Look around', status: 'done', skipped: false }])
     const tools = events.filter((e) => e.type === 'tool')
     expect(tools.map((t) => (t as { name: string }).name)).toEqual(['read_file'])
     expect((tools[0] as { label?: string }).label).toBe('Reading a.txt')
+  })
+})
+
+describe('steering', () => {
+  it('hands the user\'s plan change to the model before its next call, and tells it what was skipped', async () => {
+    const seen: string[][] = []
+    let i = 0
+    const provider: Provider = {
+      async chat(m) {
+        seen.push(m.filter((x) => x.role === 'user' || x.role === 'tool').map((x) => x.content))
+        return { content: 'ok', toolCalls: i++ === 0 ? [{ name: 'update_plan', args: { steps: '[ ] a\n[ ] b' } }] : [] }
+      },
+    }
+    const plan = emptyPlan()
+    let steer: string | null = null
+    await runAgent({
+      messages: [{ role: 'user', content: 'go' }], mode: 'full-auto', provider, tools: new ToolBox(dir), approve: async () => true, signal: new AbortController().signal, plan,
+      emit: (e) => {
+        if (e.type === 'plan') {
+          plan.items[1].skipped = true // the user skips step b right after the agent posts it
+          steer = '[Forge: the user changed your plan: skipped "b"]'
+        }
+      },
+      takeSteering: () => {
+        const s = steer
+        steer = null
+        return s
+      },
+    })
+    expect(seen[1].some((c) => c.includes('skipped "b"'))).toBe(true)
   })
 })

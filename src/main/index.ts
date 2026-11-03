@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { getRoot, inRoot, resolveIn, setRoot } from './project'
 import { isPreviewable } from './preview'
 import { PreviewServer } from './previewServer'
+import { applyUserPlan, planFromTranscript, planNote, type PlanState } from './agent/plan'
 import { runVerify } from './agent/commands'
 import { runAgent, SYSTEM_PROMPT, type AgentEvent, type Mode } from './agent/loop'
 import { ToolBox } from './agent/tools'
@@ -76,8 +77,9 @@ const rememberProject = (p: string) => writeState({ lastProject: p })
 
 // ---- chat sessions: each chat has its own run, so work carries on in the background while you look at another chat ----
 type Run = { ctl: AbortController; pending: Map<string, (ok: boolean) => void>; model: string; stoppedByUser: boolean }
-type Session = { chat: Chat; tools: ToolBox; run: Run | null; dirty: boolean; saveTimer: NodeJS.Timeout | null }
+type Session = { chat: Chat; tools: ToolBox; run: Run | null; dirty: boolean; saveTimer: NodeJS.Timeout | null; plan: PlanState | null; steer: string[] }
 const sessions = new Map<string, Session>()
+const planOf = (s: Session): PlanState => (s.plan ??= planFromTranscript(s.chat.transcript))
 let viewing: string | null = null // the chat on screen; the renderer tells us
 
 const changed = () => win?.webContents.send('chats:changed')
@@ -92,7 +94,7 @@ function sessionFor(id: string): Session | null {
   if (s) return s
   const chat = store.load(id)
   if (!chat) return null
-  s = { chat, tools: new ToolBox(chat.project ?? '/nonexistent'), run: null, dirty: false, saveTimer: null }
+  s = { chat, tools: new ToolBox(chat.project ?? '/nonexistent'), run: null, dirty: false, saveTimer: null, plan: null, steer: [] }
   sessions.set(id, s)
   return s
 }
@@ -257,7 +259,7 @@ ipcMain.handle('agent:send', async (e, p: { chatId: string; text: string; mode: 
   if (!s) {
     const chat = store.create(root, p.chatId)
     chat.messages.push({ role: 'system', content: SYSTEM_PROMPT })
-    s = { chat, tools: new ToolBox(root), run: null, dirty: false, saveTimer: null }
+    s = { chat, tools: new ToolBox(root), run: null, dirty: false, saveTimer: null, plan: null, steer: [] }
     sessions.set(chat.id, s)
   }
   const session = s
@@ -300,6 +302,8 @@ ipcMain.handle('agent:send', async (e, p: { chatId: string; text: string; mode: 
     maxMs: clamp(p.maxMinutes, 1, 240, 30) * 60_000,
     contextLimit: local ? numCtx : 150_000,
     verify: verifyCmd ? () => runVerify(verifyCmd, root, run.ctl.signal) : undefined,
+    plan: planOf(session),
+    takeSteering: () => (session.steer.length ? session.steer.splice(0).join('\n') : null),
   })
     .then(async () => {
       const files = cp ? await changesSince(root, cp) : []
@@ -327,6 +331,21 @@ ipcMain.handle('agent:undo', async (_e, chatId: string, id: string) => {
   s.dirty = true
   flush(s)
   return touched
+})
+
+// The user steers the plan: reorder, rename, skip, add, remove. A stale revision is refused and the current plan returned.
+ipcMain.handle('agent:plan-update', (_e, chatId: string, p: { revision: number; items: unknown }) => {
+  const s = sessionFor(chatId)
+  if (!s) throw new Error('that chat could not be loaded')
+  const cur = planOf(s)
+  const r = applyUserPlan(cur, Number(p?.revision), p?.items)
+  if (r.changed) {
+    s.plan = r.plan
+    const note = planNote(cur, r.plan)
+    if (note) s.steer.push(note)
+    emit(s, { type: 'plan', revision: r.plan.revision, items: r.plan.items })
+  }
+  return { revision: r.plan.revision, items: r.plan.items, conflict: r.conflict }
 })
 
 ipcMain.handle('agent:undo-file', async (_e, chatId: string, id: string, path: string) => {
