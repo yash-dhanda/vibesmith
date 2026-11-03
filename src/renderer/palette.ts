@@ -1,7 +1,6 @@
-import { $, h } from './ui'
-import { icon } from './icons'
+import { $, emo, h } from './ui'
 
-export type Command = { label: string; detail?: string; run: () => void }
+export type Command = { label: string; glyph?: string; detail?: string; run: () => void }
 export function initPalette(commands: () => Command[]) {
   const dialog = $<HTMLDialogElement>('palette')
   const input = $<HTMLInputElement>('command-search')
@@ -19,8 +18,9 @@ export function initPalette(commands: () => Command[]) {
       b.setAttribute('role', 'option')
       b.setAttribute('aria-selected', String(i === active))
       const text = h('span')
-      text.append(h('strong', '', c.label), h('small', '', c.detail ?? 'Action'))
-      b.append(icon('arrowright'), text)
+      text.append(h('strong', '', c.label))
+      if (c.detail) text.append(h('small', '', c.detail))
+      b.append(emo(c.glyph ?? '⚡'), text)
       b.onmousedown = e => e.preventDefault()
       b.onclick = () => { dialog.close(); c.run() }
       list.append(b)
@@ -28,19 +28,21 @@ export function initPalette(commands: () => Command[]) {
     if (!matches.length) list.append(h('p', 'palette-empty', 'No matches. Try a chat title, model, or action.'))
     if (matches.length) input.setAttribute('aria-activedescendant', `command-${active}`)
     else input.removeAttribute('aria-activedescendant')
-    $('command-count').textContent = `${matches.length} results`
+    $('command-count').textContent = `${matches.length}`
   }
   const open = () => {
     input.value = ''
     active = 0
+    list.classList.add('opening') // results stagger in on open, not on every keystroke
     paint()
     if (!dialog.open) dialog.showModal()
     input.focus()
   }
-  input.oninput = () => { active = 0; paint() }
+  input.oninput = () => { list.classList.remove('opening'); active = 0; paint() }
   input.onkeydown = e => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
+      list.classList.remove('opening')
       active = matches.length ? (active + (e.key === 'ArrowDown' ? 1 : -1) + matches.length) % matches.length : 0
       paint()
       list.children[active]?.scrollIntoView({ block: 'nearest' })

@@ -4,6 +4,7 @@ import { icon } from './icons'
 import { h } from './ui'
 
 const list = document.getElementById('chat-list')!
+const seen = new Set<string>() // only chats appearing for the first time animate in, so live re-renders stay still
 
 export { folderName }
 
@@ -16,6 +17,7 @@ export function renderHistory(chats: ChatListItem[], activeId: string, query: st
     return
   }
   let last = ''
+  let fresh = 0
   for (const c of chats) {
     const g = groupOf(c.updatedAt)
     if (g !== last) {
@@ -23,6 +25,7 @@ export function renderHistory(chats: ChatListItem[], activeId: string, query: st
       last = g
     }
     const item = h('div', 'chat-item' + (c.id === activeId ? ' active' : ''))
+    if (!seen.has(c.id)) { seen.add(c.id); item.classList.add('enter'); item.style.setProperty('--i', String(Math.min(fresh++, 12))) }
     item.title = c.project ?? ''
     const open = h('button', 'chat-open')
     open.setAttribute('aria-label', `Open ${c.title}`)
@@ -31,8 +34,7 @@ export function renderHistory(chats: ChatListItem[], activeId: string, query: st
     if (c.status !== 'idle') row.append(h('span', 'st ' + c.status))
     const title = h('span', 't', c.title)
     row.append(title)
-    const sub = h('span', 's', c.status === 'running' ? 'Working…' : c.status === 'waiting' ? 'Needs your approval' : `${folderName(c.project)} · ${timeAgo(c.updatedAt)}`)
-    if (c.status === 'waiting') sub.style.color = 'var(--warn)'
+    const sub = h('span', 's' + (c.status === 'waiting' ? ' wait' : ''), c.status === 'running' ? '🔨 Working…' : c.status === 'waiting' ? '✋ Needs your approval' : `${folderName(c.project)} · ${timeAgo(c.updatedAt)}`)
     const x = h('button', 'x')
     x.append(icon('x', 'sm'))
     x.title = 'Delete chat'

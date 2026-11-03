@@ -1,6 +1,6 @@
 import type { AgentEvent } from '../preload'
 import { folderName } from './format'
-import { $, h, cleanErr, toast } from './ui'
+import { $, emo, h, cleanErr, toast } from './ui'
 import { icon } from './icons'
 
 type Priority = { text: string; skipped: boolean }
@@ -52,15 +52,17 @@ function renderPriorities() {
     up.append(icon('arrowup', 'sm'))
     up.disabled = index === 0
     up.setAttribute('aria-label', `Move ${item.text} earlier`)
+    up.title = 'Move earlier'
     up.onclick = () => { [priorities[index - 1], priorities[index]] = [item, priorities[index - 1]]; save(); renderPriorities(); ($('priorities').children[index - 1].querySelector('input') as HTMLElement).focus() }
     const remove = h('button', 'icon-btn sm')
     remove.append(icon('x', 'sm'))
     remove.setAttribute('aria-label', `Remove ${item.text}`)
+    remove.title = 'Remove'
     remove.onclick = () => { priorities.splice(index, 1); save(); renderPriorities(); $('priority-input').focus() }
     row.append(label, up, remove)
     list.append(row)
   }
-  $('priority-count').textContent = `${priorities.filter(p => !p.skipped).length} included`
+  $('priority-count').textContent = `${priorities.filter(p => !p.skipped).length}/${priorities.length}`
   $<HTMLInputElement>('priority-input').disabled = priorities.length >= 12
 }
 
@@ -123,20 +125,22 @@ function render() {
   for (const item of plan) {
     const row = h('li', `plan-item ${item.status}`)
     row.setAttribute('aria-label', `${item.status === 'doing' ? 'In progress' : item.status === 'done' ? 'Complete' : 'To do'}: ${item.text}`)
-    row.append(h('span', 'plan-marker', item.status === 'done' ? '✓' : item.status === 'doing' ? '•' : '○'), h('span', '', item.text))
+    const marker = h('span', 'plan-marker', item.status === 'done' ? '✅' : item.status === 'doing' ? '🔨' : '○')
+    marker.setAttribute('aria-hidden', 'true')
+    row.append(marker, h('span', '', item.text))
     checklist.append(row)
   }
   $('brief-goal').textContent = goal || 'A small idea can become something real. Describe yours to start the build.'
   $('brief-status').textContent = state
   const files = $('brief-files')
   files.replaceChildren()
-  $('brief-files-title').textContent = changed.size ? `Taking shape · ${changed.size} files` : 'Taking shape'
+  $('brief-files-title').replaceChildren(emo('🌱'), changed.size ? `Taking shape · ${changed.size}` : 'Taking shape')
   if (!changed.size) files.append(h('p', 'brief-muted', 'Files you change will appear here as your idea takes shape.'))
   for (const [path, status] of [...changed].slice(-8)) {
     const b = h('button', 'artifact') as HTMLButtonElement
     const info = h('span')
     info.append(h('strong', '', folderName(path)), h('small', '', `${status === 'added' ? 'Created' : status === 'deleted' ? 'Removed' : 'Updated'} · ${path}`))
-    b.append(icon('code'), info, icon('chevron', 'sm'))
+    b.append(emo(status === 'added' ? '🆕' : status === 'deleted' ? '🗑️' : '✏️'), info, icon('chevron', 'sm'))
     b.disabled = status === 'deleted'
     b.onclick = () => openFile(path)
     files.append(b)

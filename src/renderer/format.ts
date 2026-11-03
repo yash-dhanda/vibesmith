@@ -110,7 +110,7 @@ export function md(src: string): string {
       const nl = part.indexOf('\n') // first line is the language tag
       const lang = (nl === -1 ? part : part.slice(0, nl)).trim().replace(/[^\w+#.-]/g, '')
       const code = (nl === -1 ? '' : part.slice(nl + 1)).replace(/\n$/, '')
-      return `<div class="code"><div class="code-head"><span>${esc(lang || 'code')}</span><button class="copy" type="button">Copy</button></div><pre><code>${esc(code)}</code></pre></div>`
+      return `<div class="code"><div class="code-head"><span>${esc(lang || 'code')}</span><button class="copy" type="button" title="Copy code" aria-label="Copy code">📋</button></div><pre><code>${esc(code)}</code></pre></div>`
     })
     .join('')
 }
