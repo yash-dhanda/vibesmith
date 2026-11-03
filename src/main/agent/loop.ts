@@ -1,5 +1,6 @@
 import type { Message, Provider, Turn, Usage } from './provider'
 import { isAllowlisted } from './commands'
+import { estimateTokens, trimMessages } from './context'
 import { resolveToolName } from './guards'
 import { ToolBox, toolDefs } from './tools'
 
@@ -39,6 +40,8 @@ export function needsApproval(tool: string, mode: Mode, args?: unknown): boolean
 }
 
 const MAX_VERIFY_FAILURES = 2
+const REFLECT = '[Forge: before you finish, check your work. Use read_file or search to confirm every change is in place and nothing was missed. If something is wrong, fix it. If it is all correct, reply with just "Done".]'
+const MAX_RUN_MS = 30 * 60_000
 
 // Providers that report no usage still get a rough number (about 4 characters per token), flagged as an estimate.
 export function estimateUsage(messages: Message[], turn: Turn): Usage {
@@ -55,6 +58,9 @@ export type RunOpts = {
   approve: (id: string) => Promise<boolean>
   signal: AbortSignal
   maxSteps?: number
+  maxMs?: number
+  // The model's memory in tokens. When the conversation nears it, old bulky output is shrunk (files are on disk and can be re-read).
+  contextLimit?: number
   // The project's own check. Runs when the model says it is done after editing files; a failure goes back to the model.
   verify?: () => Promise<{ command: string; ok: boolean; output: string }>
 }
@@ -66,20 +72,45 @@ export async function runAgent(o: RunOpts): Promise<void> {
   let steps = 0
   let edited = false
   let verifyFailures = 0
+  let reflected = false
+  let holdNext = false
+  let lastInput = 0 // real prompt size of the previous model call, when the provider reports it
+  let trimNoted = false
+  const deadline = Date.now() + (o.maxMs ?? MAX_RUN_MS)
   const done = (reason: 'finished' | 'unverified' | 'stopped' | 'stuck' | 'max_steps') => o.emit({ type: 'done', reason, steps })
 
   try {
-    while (steps < max) {
+    while (steps < max && Date.now() < deadline) {
       if (o.signal.aborted) return done('stopped')
       steps++
-      const turn = await o.provider.chat(o.messages, toolDefs, (text) => o.emit({ type: 'delta', text }), o.signal)
+      if (o.contextLimit && Math.max(estimateTokens(o.messages), lastInput) > o.contextLimit * 0.75) {
+        const n = trimMessages(o.messages, o.contextLimit)
+        if (n && !trimNoted) {
+          trimNoted = true
+          o.emit({ type: 'note', text: "Older steps were shortened to fit the model's memory. It can re-read files when it needs them." })
+        }
+      }
+      // The self-check turn is usually just "Done". Hold its text and only show it when it says something.
+      const reflecting = holdNext
+      holdNext = false
+      let held = ''
+      const turn = await o.provider.chat(o.messages, toolDefs, (text) => (reflecting ? (held += text) : o.emit({ type: 'delta', text })), o.signal)
+      if (reflecting && (turn.toolCalls.length || held.trim().length > 60)) o.emit({ type: 'delta', text: held })
       const u = turn.usage ?? estimateUsage(o.messages, turn)
+      if (!u.estimated) lastInput = u.input
       o.emit({ type: 'usage', input: u.input, output: u.output, tps: u.genMs > 0 ? u.output / (u.genMs / 1000) : 0, ctxLimit: u.ctxLimit, estimated: u.estimated })
       // Resolve near-miss names (read, cat, write_file) BEFORE the gate, so an alias can never dodge approval.
       const calls = turn.toolCalls.map((c, i) => ({ ...c, id: c.id ?? `call_${steps}_${i}`, name: resolveToolName(c.name) ?? c.name }))
       o.messages.push({ role: 'assistant', content: turn.content, toolCalls: calls.length ? calls : undefined })
       o.emit({ type: 'turn_end' })
       if (!calls.length) {
+        // Without a project check, one self-review turn catches half-finished work (a misspelling left in one file).
+        if (edited && !o.verify && !reflected) {
+          reflected = true
+          holdNext = true
+          o.messages.push({ role: 'user', content: REFLECT })
+          continue
+        }
         if (!o.verify || !edited) return done('finished')
         const v = await o.verify()
         if (o.signal.aborted) return done('stopped')

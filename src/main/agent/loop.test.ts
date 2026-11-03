@@ -210,3 +210,87 @@ describe('usage events', () => {
     expect(e2.find((e) => e.type === 'usage')).toMatchObject({ input: 200, output: 100, tps: 0, estimated: true })
   })
 })
+
+describe('self-review before finishing', () => {
+  const edit: ToolCall[] = [{ name: 'edit_file', args: { path: 'a.txt', old_text: 'hello', new_text: 'bye' } }]
+  const read: ToolCall[] = [{ name: 'read_file', args: { path: 'a.txt' } }]
+
+  // A provider that records what it was asked, and answers from a script of [text, calls].
+  const scripted = (turns: [string, ToolCall[]][]) => {
+    const seen: Message[][] = []
+    let i = 0
+    const p: Provider = {
+      async chat(m, _t, onText) {
+        seen.push(m.map((x) => ({ ...x })))
+        const [text, calls] = turns[i++] ?? ['Done', []]
+        if (text) onText(text)
+        return { content: text, toolCalls: calls }
+      },
+    }
+    return { p, seen }
+  }
+  const go = async (turns: [string, ToolCall[]][], verify?: RunOpts['verify']) => {
+    const { p, seen } = scripted(turns)
+    const events: AgentEvent[] = []
+    await runAgent({ messages: [{ role: 'user', content: 'go' }], mode: 'full-auto', provider: p, tools: new ToolBox(dir), emit: (e) => events.push(e), approve: async () => true, signal: new AbortController().signal, verify })
+    return { events, seen }
+  }
+  const shown = (events: AgentEvent[]) => events.filter((e): e is Extract<AgentEvent, { type: 'delta' }> => e.type === 'delta').map((e) => e.text).join('|')
+
+  it('asks the model to check its work once after editing, and hides a bare "Done"', async () => {
+    const { events, seen } = await go([['', read], ['', edit], ['All fixed, summary here.', []], ['Done', []]])
+    expect(seen.at(-1)!.at(-1)).toMatchObject({ role: 'user' })
+    expect((seen.at(-1)!.at(-1) as { content: string }).content).toMatch(/^\[Forge: before you finish/)
+    expect(shown(events)).toBe('All fixed, summary here.') // the "Done" of the self-review is not shown
+    expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'finished' })
+  })
+
+  it('shows the self-review when it actually found something to say or do', async () => {
+    const fix: ToolCall[] = [{ name: 'edit_file', args: { path: 'a.txt', old_text: 'bye', new_text: 'ciao' } }]
+    const { events } = await go([['', read], ['', edit], ['Fixed.', []], ['I noticed one spot was missed, fixing it now.', fix], ['Fixed both places.', []], ['Done', []]])
+    expect(shown(events)).toContain('I noticed one spot was missed')
+    expect(readFileSync(join(dir, 'a.txt'), 'utf8')).toBe('ciao\n')
+  })
+
+  it('only reviews once, never when nothing changed, and never when a project check exists', async () => {
+    const a = await go([['', read], ['Nothing to change.', []]])
+    expect(a.seen).toHaveLength(2) // no review turn
+    const b = await go([['', read], ['', edit], ['ok', []]], async () => ({ command: 'npm test', ok: true, output: '' }))
+    expect(b.seen).toHaveLength(3) // the check replaces the review
+    writeFileSync(join(dir, 'a.txt'), 'hello\n') // the previous run edited it
+    const c = await go([['', read], ['', edit], ['ok', []], ['Still not sure about this part, let me explain at length what I would do here.', []]])
+    expect(c.seen).toHaveLength(4)
+    expect(c.events.at(-1)).toMatchObject({ type: 'done', reason: 'finished' })
+  })
+
+  it('stops at the time limit', async () => {
+    const { p } = scripted([['', read], ['', read]])
+    const events: AgentEvent[] = []
+    await runAgent({ messages: [], mode: 'full-auto', provider: p, tools: new ToolBox(dir), emit: (e) => events.push(e), approve: async () => true, signal: new AbortController().signal, maxMs: -1 })
+    expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'max_steps' })
+  })
+})
+
+describe('long runs keep within the model memory', () => {
+  it('shrinks old output when the conversation nears the limit, and tells the user once', async () => {
+    writeFileSync(join(dir, 'big.txt'), 'z'.repeat(9000))
+    const readBig: ToolCall[] = [{ name: 'read_file', args: { path: 'big.txt' } }]
+    const events: AgentEvent[] = []
+    const sizes: number[] = []
+    let i = 0
+    const p: Provider = {
+      async chat(m) {
+        sizes.push(m.reduce((n, x) => n + x.content.length, 0))
+        // distinct paths avoid the stuck detector; each read returns ~9000 chars
+        const path = `big.txt`
+        i++
+        return i < 7 ? { content: '', toolCalls: [{ name: 'read_file', args: { path, n: i } }] } : { content: 'done', toolCalls: [] }
+      },
+    }
+    await runAgent({ messages: [{ role: 'system', content: 's' }, { role: 'user', content: 'go' }], mode: 'full-auto', provider: p, tools: new ToolBox(dir), emit: (e) => events.push(e), approve: async () => true, signal: new AbortController().signal, contextLimit: 8000 })
+    void readBig
+    expect(events.filter((e) => e.type === 'note')).toHaveLength(1)
+    expect(Math.max(...sizes)).toBeLessThan(9000 * 3) // without trimming the 6th call would carry ~45k characters
+    expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'finished' })
+  })
+})

@@ -22,6 +22,13 @@ const out = (dir: string, file: string): string => {
     return '(crashed)'
   }
 }
+const runArgs = (dir: string, args: string[]): string => {
+  try {
+    return execFileSync(process.execPath, args, { cwd: dir, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, encoding: 'utf8', timeout: 10_000 }).trim()
+  } catch {
+    return '(crashed)'
+  }
+}
 const all = (dir: string): string[] => readdirSync(dir).flatMap((n) => (statSync(join(dir, n)).isDirectory() ? all(join(dir, n)).map((f) => join(n, f)) : [n]))
 const read = (dir: string, f: string) => readFileSync(join(dir, f), 'utf8')
 
@@ -111,5 +118,35 @@ export const TASKS: Task[] = [
     files: { 'broken.js': 'function total(items) {\n  let t = 0\n  for (const i of items) {\n    t += i\n  }\n  return t\n\nmodule.exports = { total }\n' },
     goal: 'broken.js has a syntax error. Fix it without changing what total() does.',
     check: (d) => node(d, "const { total } = require('./broken.js'); if (total([1, 2, 3]) !== 6) throw new Error('total wrong')"),
+  },
+  {
+    name: 'build-from-nothing',
+    files: {},
+    goal: 'Create a file hello.js that prints hello world when run with node.',
+    check: (d) => (existsSync(join(d, 'hello.js')) ? (out(d, 'hello.js').toLowerCase() === 'hello world' ? null : `prints "${out(d, 'hello.js').slice(0, 40)}"`) : 'hello.js was not created'),
+  },
+  {
+    name: 'build-todo-cli',
+    files: {},
+    goal: 'Build a tiny command line todo app in Node. `node todo.js add "buy milk"` saves a todo, and `node todo.js list` prints all saved todos, one per line.',
+    check: (d) => {
+      if (!existsSync(join(d, 'todo.js'))) return 'todo.js was not created'
+      runArgs(d, ['todo.js', 'add', 'buy milk'])
+      const listed = runArgs(d, ['todo.js', 'list'])
+      return /buy milk/.test(listed) ? null : `list printed "${listed.slice(0, 60)}"`
+    },
+  },
+  {
+    name: 'secrets-in-env',
+    files: {},
+    goal: 'Make bot.js that sends the message "hello" through the Telegram Bot API. It needs a bot token and a chat id.',
+    check: (d) => {
+      if (!existsSync(join(d, 'bot.js'))) return 'bot.js was not created'
+      const code = read(d, 'bot.js')
+      const text = all(d).map((f) => read(d, f)).join('\n')
+      if (!/process\.env/.test(code)) return 'bot.js does not read its secrets from the environment'
+      if (/\d{6,}:[A-Za-z0-9_-]{20,}/.test(text)) return 'a token is written into a file'
+      return all(d).some((f) => /^\.env/.test(f)) ? null : 'no .env or .env.example file with placeholders'
+    },
   },
 ]

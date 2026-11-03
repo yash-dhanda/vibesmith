@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { setRoot } from '../project'
-import { ToolBox } from './tools'
+import { preview, ToolBox } from './tools'
 
 let dir: string
 let box: ToolBox
@@ -104,5 +104,22 @@ describe('ToolBox', () => {
     expect(await box.run('read_file', { path: join(outside, 'secret.txt') })).toMatch(/outside project/)
     expect(await box.run('read_file', { path: 'link/secret.txt' })).toMatch(/outside project/)
     expect(await box.run('edit_file', { path: '../x.txt', old_text: '', new_text: 'x' })).toMatch(/outside project/)
+  })
+})
+
+describe('edit results show the file', () => {
+  it('a small file is shown whole after an edit', async () => {
+    const box = new ToolBox(dir)
+    await box.run('read_file', { path: 'a.txt' })
+    const r = await box.run('edit_file', { path: 'a.txt', old_text: 'two', new_text: '2' })
+    expect(r).toBe('edited a.txt\nNow the file reads:\none\n2\nthree')
+  })
+  it('a big file shows a window around the change', () => {
+    const before = Array.from({ length: 200 }, (_, i) => `line ${i + 1}`).join('\n')
+    const after = before.replace('line 100', 'CHANGED')
+    const p = preview(before, after)
+    expect(p.startsWith('[lines 94-107 of 200]')).toBe(true)
+    expect(p).toContain('CHANGED')
+    expect(p).not.toContain('line 50')
   })
 })

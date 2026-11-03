@@ -3,7 +3,7 @@ import { exportMarkdown, folderName, formatRate, formatTokens, matchesQuery, md,
 import { renderHistory } from './history'
 import { initModels, noModels, selectedModel } from './models'
 import { openSettings } from './settings'
-import { $, cleanErr, copy, h, numCtxPref, showMenu, toast } from './ui'
+import { $, agentLimits, cleanErr, copy, h, numCtxPref, showMenu, toast } from './ui'
 import { initUsage } from './usage'
 
 const thread = $('thread')
@@ -93,7 +93,7 @@ function setUsageChips(ev: Extract<AgentEvent, { type: 'usage' }>) {
     rateChip.textContent = `${formatRate(ev.tps)} tok/s`
   }
   ctxChip.hidden = false
-  ctxChip.textContent = ev.ctxLimit ? `${formatTokens(ev.input)} / ${formatTokens(ev.ctxLimit)} memory` : `${formatTokens(ev.input)} in context`
+  ctxChip.textContent = ev.ctxLimit ? `${formatTokens(ev.input)} / ${Math.round(ev.ctxLimit / 1024)}k memory` : `${formatTokens(ev.input)} in context`
   const full = !!ev.ctxLimit && ev.input / ev.ctxLimit > 0.8
   ctxChip.classList.toggle('warn', full)
   ctxChip.title = full
@@ -123,7 +123,7 @@ function showEmpty() {
     const b = h('div', 'banner')
     b.append(h('div', '', 'No AI model found. Start Ollama and pull a model, or add an API key.'))
     const open = h('button', '', 'Open settings')
-    open.onclick = openSettings
+    open.onclick = () => openSettings('models')
     b.append(open)
     emptyEl.append(b)
   }
@@ -433,7 +433,7 @@ async function send() {
     localStorage.setItem('forge.mode', modeSel.value)
   } catch {}
   try {
-    await window.forge.agentSend({ chatId: activeId, text, mode: modeSel.value as Mode, model: selectedModel(), numCtx: numCtxPref() })
+    await window.forge.agentSend({ chatId: activeId, text, mode: modeSel.value as Mode, model: selectedModel(), numCtx: numCtxPref(), ...agentLimits() })
   } catch (e) {
     hideThinking()
     add(h('div', 'errcard', cleanErr(e)))
@@ -623,7 +623,8 @@ export async function initChat(opts: {
   }
   sendBtn.onclick = () => (running ? window.forge.agentStop(activeId) : send())
   projectBtn.onclick = chooseFolder
-  $('gear').onclick = openSettings
+  $('gear').onclick = () => openSettings()
+  $('usage-badge').onclick = () => openSettings('usage')
   $('new-chat').onclick = newChat
   $('more').onclick = moreMenu
   titleEl.onclick = startTitleEdit
@@ -664,7 +665,7 @@ export async function initChat(opts: {
       else if (k === 'l') run(() => prompt.focus())
       else if (k === 'b') run(() => $('hist-toggle').click())
       else if (k === 'j') run(() => $('ws-toggle').click())
-      else if (k === ',') run(openSettings)
+      else if (k === ',') run(() => openSettings())
     }
   })
 

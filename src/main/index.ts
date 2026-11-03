@@ -12,7 +12,7 @@ import { ToolBox } from './agent/tools'
 import { changesSince, createCheckpoint, initRepo, isRepo, undoTo, type Checkpoint } from './checkpoint'
 import { ChatStore, compact, titleFrom, type Chat, type ChatListItem, type ChatStatus } from './chatStore'
 import { clearKey, keyStatus, setKey, type KeyProvider } from './keys'
-import { listModels, makeProvider } from './models'
+import { listModels, makeProvider, ollamaStatus } from './models'
 import { getVerify, setVerify } from './settings'
 import { UsageStore } from './usageStore'
 
@@ -45,16 +45,21 @@ ipcMain.on('term:write', (_e, d: string) => term?.write(d))
 ipcMain.on('term:resize', (_e, cols: number, rows: number) => term?.resize(cols, rows))
 
 // ---- remembered folder: a new chat starts in the project you were just using ----
+type State = { lastProject?: string; notify?: boolean }
 const stateFile = () => join(app.getPath('userData'), 'state.json')
-const lastProject = (): string | null => {
+const readState = (): State => {
   try {
-    const p = (JSON.parse(readFileSync(stateFile(), 'utf8')) as { lastProject?: string }).lastProject
-    return p && existsSync(p) ? p : null
+    return JSON.parse(readFileSync(stateFile(), 'utf8'))
   } catch {
-    return null
+    return {}
   }
 }
-const rememberProject = (p: string) => writeFileSync(stateFile(), JSON.stringify({ lastProject: p }))
+const writeState = (patch: Partial<State>) => writeFileSync(stateFile(), JSON.stringify({ ...readState(), ...patch }))
+const lastProject = (): string | null => {
+  const p = readState().lastProject
+  return p && existsSync(p) ? p : null
+}
+const rememberProject = (p: string) => writeState({ lastProject: p })
 
 // ---- chat sessions: each chat has its own run, so work carries on in the background while you look at another chat ----
 type Run = { ctl: AbortController; pending: Map<string, (ok: boolean) => void>; model: string; stoppedByUser: boolean }
@@ -103,7 +108,7 @@ function emit(s: Session, ev: AgentEvent) {
 }
 
 function notify(title: string, body: string, chatId: string) {
-  if (!Notification.isSupported()) return
+  if (!Notification.isSupported() || readState().notify === false) return
   const n = new Notification({ title, body })
   n.on('click', () => {
     win?.show()
@@ -173,7 +178,7 @@ ipcMain.handle('open:external', (_e, url: string) => {
 })
 
 // ---- the agent ----
-ipcMain.handle('agent:send', async (e, p: { chatId: string; text: string; mode: Mode; model: string; numCtx?: number }) => {
+ipcMain.handle('agent:send', async (e, p: { chatId: string; text: string; mode: Mode; model: string; numCtx?: number; maxSteps?: number; maxMinutes?: number }) => {
   let s = sessionFor(p.chatId)
   if (s?.run) throw new Error('This chat is still working. Wait for it, or press stop.')
   const root = s ? s.chat.project : getRoot()
@@ -206,6 +211,12 @@ ipcMain.handle('agent:send', async (e, p: { chatId: string; text: string; mode: 
   session.dirty = true
   flush(session)
 
+  // How much the model can remember decides how much of a file is read at once and when old output is shrunk.
+  const local = p.model.startsWith('ollama:')
+  const numCtx = Math.min(131_072, Math.max(2048, p.numCtx ?? 8192))
+  tools.maxRead = local ? Math.min(20_000, Math.max(4000, numCtx)) : 20_000
+  const clamp = (n: unknown, lo: number, hi: number, d: number) => (typeof n === 'number' && isFinite(n) ? Math.min(hi, Math.max(lo, Math.round(n))) : d)
+
   const run: Run = { ctl: new AbortController(), pending: new Map(), model: p.model, stoppedByUser: false }
   session.run = run
   changed()
@@ -228,6 +239,9 @@ ipcMain.handle('agent:send', async (e, p: { chatId: string; text: string; mode: 
         if (unseen(chat.id)) notify('Forge needs your approval', chat.title, chat.id)
       }),
     signal: run.ctl.signal,
+    maxSteps: clamp(p.maxSteps, 5, 500, 50),
+    maxMs: clamp(p.maxMinutes, 1, 240, 30) * 60_000,
+    contextLimit: local ? numCtx : 150_000,
     verify: verifyCmd ? () => runVerify(verifyCmd, root, run.ctl.signal) : undefined,
   })
     .then(async () => {
@@ -278,6 +292,13 @@ ipcMain.handle('verify:get', () => (getRoot() ? getVerify(getRoot()!) : null))
 ipcMain.handle('verify:set', (_e, cmd: string) => getRoot() && setVerify(getRoot()!, cmd))
 
 ipcMain.handle('agent:models', () => listModels())
+ipcMain.handle('ollama:status', () => ollamaStatus())
+ipcMain.handle('app:info', () => ({ version: app.getVersion(), dataDir: app.getPath('userData'), electron: process.versions.electron, platform: process.platform }))
+ipcMain.handle('app:open-data', () => shell.openPath(app.getPath('userData')))
+ipcMain.handle('prefs:get', () => ({ notify: readState().notify !== false }))
+ipcMain.handle('prefs:set', (_e, key: string, value: boolean) => {
+  if (key === 'notify') writeState({ notify: !!value })
+})
 ipcMain.handle('keys:status', () => keyStatus())
 ipcMain.handle('keys:set', (_e, p: KeyProvider, key: string) => setKey(p, key))
 ipcMain.handle('keys:clear', (_e, p: KeyProvider) => clearKey(p))

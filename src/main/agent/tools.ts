@@ -58,11 +58,26 @@ export const toolDefs: ToolDef[] = [
 ]
 
 const MAX_READ = 20_000
+
+// After an edit the model sees the result, so it can notice a damaged file instead of assuming it worked.
+export function preview(before: string, after: string): string {
+  const lines = after.split('\n')
+  if (lines.length <= 60) return after.replace(/\n$/, '')
+  const old = before.split('\n')
+  let i = 0
+  while (i < old.length && i < lines.length && old[i] === lines[i]) i++
+  const from = Math.max(0, i - 6)
+  const to = Math.min(lines.length, i + 8)
+  return `[lines ${from + 1}-${to} of ${lines.length}]\n${lines.slice(from, to).join('\n')}`
+}
 const hash = (s: string) => createHash('sha1').update(s).digest('hex')
 
 // Tool errors are returned as text so the model can recover. Nothing here throws to the loop.
 export class ToolBox {
   constructor(private root: string) {}
+
+  // Longest file read returned in one go. The app lowers it for models with a small memory.
+  maxRead = MAX_READ
 
   private inRoot = (p: string) => resolveIn(this.root, p)
 
@@ -127,7 +142,7 @@ export class ToolBox {
   private async read(path: string) {
     const text = await readFile(this.inRoot(path), 'utf8')
     this.seen.set(this.inRoot(path), hash(text))
-    return text.length > MAX_READ ? text.slice(0, MAX_READ) + `\n[truncated, file is ${text.length} chars]` : text
+    return text.length > this.maxRead ? text.slice(0, this.maxRead) + `\n[truncated at ${this.maxRead} of ${text.length} chars]` : text
   }
 
   private async create(path: string, content: string) {
@@ -178,6 +193,7 @@ export class ToolBox {
       note += ' (file already had a syntax error before this edit)'
     }
     this.seen.set(real, hash(after))
-    return before === null ? `created ${path} (${after.length} chars)` : `edited ${path}${note}`
+    if (before === null) return `created ${path} (${after.length} chars)`
+    return `edited ${path}${note}\nNow the file reads:\n${preview(before, after)}`
   }
 }

@@ -84,3 +84,16 @@ export function numCtxPref(): number {
     return 8192
   }
 }
+
+const pick = (key: string, allowed: number[], fallback: number) => {
+  try {
+    const n = Number(localStorage.getItem(key))
+    return allowed.includes(n) ? n : fallback
+  } catch {
+    return fallback
+  }
+}
+export const STEP_CHOICES = [25, 50, 100, 200]
+export const MINUTE_CHOICES = [15, 30, 60, 120]
+// How long one run may go on: more steps and time for big builds, fewer to stay cautious.
+export const agentLimits = () => ({ maxSteps: pick('forge.maxsteps', STEP_CHOICES, 50), maxMinutes: pick('forge.maxmin', MINUTE_CHOICES, 30) })

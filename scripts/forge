@@ -1,0 +1,8 @@
+#!/bin/sh
+# Starts Forge. Rebuilds first when the source is newer than the last build.
+ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+cd "$ROOT" || exit 1
+if [ ! -f out/main/index.js ] || [ -n "$(find src package.json -newer out/main/index.js -print -quit 2>/dev/null)" ]; then
+  ./node_modules/.bin/electron-vite build >/dev/null 2>&1 || { echo "Forge: build failed. Run 'npm run build' in $ROOT to see why." >&2; exit 1; }
+fi
+exec ./node_modules/.bin/electron . "$@"

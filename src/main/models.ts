@@ -1,7 +1,9 @@
 import { buildProvider } from './agent/factory'
 import type { Provider } from './agent/provider'
 import { getKey, keyStatus } from './keys'
+import { ollamaStatus } from './ollama'
 
+export { ollamaStatus }
 export type ModelOption = { id: string; label: string; group: string }
 
 // Anthropic ids are known. OpenAI and OpenRouter catalogues change too fast to hardcode: the user adds ids in Settings.
@@ -11,12 +13,7 @@ export const makeProvider = (id: string, numCtx?: number): Provider => buildProv
 
 export async function listModels(): Promise<ModelOption[]> {
   const out: ModelOption[] = []
-  try {
-    const j = (await (await fetch('http://127.0.0.1:11434/api/tags', { signal: AbortSignal.timeout(2000) })).json()) as { models: { name: string }[] }
-    for (const m of j.models) out.push({ id: `ollama:${m.name}`, label: m.name, group: 'Local (Ollama)' })
-  } catch {
-    // Ollama not running: cloud models can still be listed
-  }
+  for (const name of (await ollamaStatus()).models) out.push({ id: `ollama:${name}`, label: name, group: 'Local (Ollama)' }) // cloud models are listed even when Ollama is not running
   if (keyStatus().anthropic) for (const m of ANTHROPIC_MODELS) out.push({ id: `anthropic:${m}`, label: m, group: 'Anthropic' })
   return out
 }

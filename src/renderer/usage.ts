@@ -14,18 +14,18 @@ export function setUsage(u: UsageSummary) {
   badge.querySelector('.u-sub')!.textContent = total ? `${formatTokens(today)} today${top ? ` · ${formatRate(top.avgTps)} tok/s` : ''}` : 'no usage yet'
 }
 
-export async function openUsage() {
+// The usage page inside Settings.
+export async function renderUsage(into: HTMLElement) {
   const u = (last = await window.forge.usageSummary())
-  const dlg = $<HTMLDialogElement>('usage')
-  const box = h('div', 'dlg')
   const total = u.allTime.input + u.allTime.output
+  const hero = h('div', 'sgroup')
   const big = h('div', 'big')
-  big.append(document.createTextNode(formatTokens(total)), h('small', '', 'tokens used, all time'))
-  box.append(h('h3', '', 'Usage'), big)
-  if (total >= 1_000_000) box.append(h('p', 'note', `${total.toLocaleString()} tokens exactly (${u.allTime.input.toLocaleString()} read, ${u.allTime.output.toLocaleString()} written) across ${u.allTime.calls.toLocaleString()} model calls.`))
-  else box.append(h('p', 'note', `${total.toLocaleString()} tokens (${u.allTime.input.toLocaleString()} read, ${u.allTime.output.toLocaleString()} written) across ${u.allTime.calls.toLocaleString()} model calls.`))
+  big.append(document.createTextNode(formatTokens(total)), h('small', '', ' tokens used, all time'))
+  hero.append(big, h('div', 'note', `${total.toLocaleString()} tokens (${u.allTime.input.toLocaleString()} read, ${u.allTime.output.toLocaleString()} written) across ${u.allTime.calls.toLocaleString()} model calls.`))
+  into.append(hero)
 
   const cards = h('div', 'cards')
+  cards.style.marginTop = '16px'
   const card = (k: string, v: string) => {
     const c = h('div', 'card')
     c.append(h('div', 'k', k), h('div', 'v', v))
@@ -35,9 +35,10 @@ export async function openUsage() {
   card('Last 7 days', formatTokens(u.last7.input + u.last7.output))
   card('Read (input)', formatTokens(u.allTime.input))
   card('Written (output)', formatTokens(u.allTime.output))
-  box.append(cards)
+  into.append(cards)
 
-  box.append(h('h3', '', 'Last 14 days'))
+  const chart = h('div', 'sgroup')
+  chart.append(h('div', 'gt', 'Last 14 days'))
   const max = Math.max(1, ...u.byDay.map((d) => d.tokens))
   const bars = h('div', 'bars')
   for (const d of u.byDay) {
@@ -48,10 +49,12 @@ export async function openUsage() {
   }
   const axis = h('div', 'axis')
   axis.append(h('span', '', u.byDay[0]?.day.slice(5) ?? ''), h('span', '', u.byDay.at(-1)?.day.slice(5) ?? ''))
-  box.append(bars, axis)
+  chart.append(bars, axis)
+  into.append(chart)
 
-  box.append(h('h3', '', 'By model'))
-  if (!u.byModel.length) box.append(h('p', 'note', 'Nothing yet. Send a message and the numbers appear here.'))
+  const models = h('div', 'sgroup')
+  models.append(h('div', 'gt', 'By model'))
+  if (!u.byModel.length) models.append(h('div', 'note', 'Nothing yet. Send a message and the numbers appear here.'))
   else {
     const t = document.createElement('table')
     t.className = 'models'
@@ -68,18 +71,12 @@ export async function openUsage() {
       body.append(tr)
     }
     t.append(body)
-    box.append(t)
-    box.append(h('p', 'note', 'Speed is output tokens divided by the time the model spent generating. Cloud models without timing are left out of it.'))
+    models.append(t, h('div', 'note', 'Speed is output tokens divided by the time the model spent generating. Calls without timing are left out of it.'))
   }
-  const close = h('button', 'close', 'Done')
-  close.onclick = () => dlg.close()
-  box.append(close)
-  dlg.replaceChildren(box)
-  dlg.showModal()
+  into.append(models)
 }
 
 export function initUsage() {
-  $('usage-badge').onclick = openUsage
   let timer: ReturnType<typeof setTimeout> | null = null
   const refresh = async () => setUsage(await window.forge.usageSummary())
   window.forge.onUsageChanged(() => {
