@@ -39,6 +39,17 @@ Each agent is started with the `forge_team` MCP server (`team-mcp.js`, run by th
 
 Everything an agent does is visible as it happens: its text and reasoning as it is typed (`delta`), each tool call and result, a file as it is being written (`code`), the files that currently differ in its folder (`live`, polled), what a command prints while it runs, and the exact context it was handed (`prompt`). The shared memory (decisions, messages, handoffs, problems, project history) is one call away (`teamMemory`). Event shapes: `docs/API-CHANGES.md`.
 
+## Robustness (what happens when things go wrong)
+
+- **Restart or crash:** runs found half-done are marked `interrupted` and wait for a click. Resuming puts each task back where it stopped (an interrupted review or merge does not redo the agent's work); sessions are resumed so agents keep their memory; a session that no longer exists is replaced by a fresh one with a note.
+- **Agent signed out / missing / model rejected:** the task is `blocked` and the run pauses with the agent named. Sign in, press resume: blocked tasks are re-queued.
+- **Usage limits:** a Claude or Codex limit error waits and retries (3 times). Codex also reports the plan's allowance: at 90% of the 5-hour or weekly window the run pauses and asks.
+- **Last steps fail** (checks, final review): the run pauses with the reason; everything stays on the team branch; resume tries again.
+- **Many events:** typing is merged per 100 ms, the run file is written at most every 250 ms, the message log keeps the newest 1500.
+- **Secrets:** obvious keys, tokens and private keys are masked in what Forge shows and saves (agents are not affected); `.env` and key files never enter team commits.
+- **Crash leftovers:** worktree folders and branches of finished or deleted runs are removed at startup.
+- **Notifications:** with the window unfocused, Forge notifies when a run needs an answer, is ready to review, fails or stops.
+
 ## Safety
 
 - Agents never push, and the user's folder changes only on Apply.
