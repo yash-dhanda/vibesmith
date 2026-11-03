@@ -41,6 +41,7 @@ export function replayRun(state = 'running'): { run: Run; events: { t: number; e
     { t: now - 58_000, ev: { type: 'agent', runId: run.id, taskId: 'interface', phase: 'work', ev: { type: 'text', agent: 'codex', text: 'The task board is taking shape. I’m making the waiting states visible first.' } } },
     { t: now - 52_000, ev: { type: 'agent', runId: run.id, taskId: 'interface', phase: 'work', ev: { type: 'prompt', agent: 'codex', text: 'Goal: Build a shared planning space.\n\nTask: Build the calm team workspace.\n\nAcceptance: light and dark themes, narrow layouts, and honest live activity.\n\nHandoff from Claude: the data model is ready; keep controls keyboard reachable.' } } },
     { t: now - 31_000, ev: { type: 'agent', runId: run.id, taskId: 'interface', phase: 'work', ev: { type: 'tool', agent: 'codex', id: 't2', kind: 'edit', name: 'Edit', summary: 'Building the run controls and activity lanes' } } },
+    { t: now - 28_000, ev: { type: 'agent', runId: run.id, taskId: 'interface', phase: 'work', ev: { type: 'delta', agent: 'codex', channel: 'output', id: 'live-command', text: 'Checking renderer bundle…\ntransforming modules…' } } },
     { t: now - 24_000, ev: { type: 'agent', runId: run.id, taskId: 'interface', phase: 'work', ev: { type: 'delta', agent: 'codex', channel: 'thinking', id: 'thought-1', text: 'I should keep live code subordinate to the task story, and make the exact prompt available without putting it in the main reading path.' } } },
     { t: now - 22_000, ev: { type: 'agent', runId: run.id, taskId: 'interface', phase: 'work', ev: { type: 'delta', agent: 'codex', channel: 'text', id: 'answer-1', text: 'I’m connecting ' } } },
     { t: now - 20_000, ev: { type: 'agent', runId: run.id, taskId: 'interface', phase: 'work', ev: { type: 'delta', agent: 'codex', channel: 'text', id: 'answer-1', text: 'the live files panel and shared memory now' } } },
@@ -57,6 +58,9 @@ export function replayRun(state = 'running'): { run: Run; events: { t: number; e
     errors: [{ id: 'e1', taskId: 'foundation', signature: 'worker failed to load', text: 'The diff worker initially failed to load.', fix: 'Use the bundled local Monaco worker.', at: now - 90_000 }],
     project: { decisions: [{ id: 'pd1', text: 'Use warm neutrals and ember for intent.', by: 'user', at: now - 86_400_000 }], errors: [], stats: { 'claude:research': { ok: 4, fail: 0 }, 'codex:build': { ok: 7, fail: 1 } } },
   }
-  if (state === 'settled') events.push({ t: now - 4_000, ev: { type: 'agent', runId: run.id, taskId: 'interface', phase: 'work', ev: { type: 'text', agent: 'codex', text: 'The live files panel and shared memory are connected.' } } })
+  if (state === 'settled') events.push(
+    { t: now - 5_000, ev: { type: 'agent', runId: run.id, taskId: 'interface', phase: 'work', ev: { type: 'tool_result', agent: 'codex', id: 'live-command', ok: true, text: 'Renderer bundle passed.' } } },
+    { t: now - 4_000, ev: { type: 'agent', runId: run.id, taskId: 'interface', phase: 'work', ev: { type: 'text', agent: 'codex', text: 'The live files panel and shared memory are connected.' } } },
+  )
   return { run, events: state === 'planning' ? [] : events, memory }
 }
