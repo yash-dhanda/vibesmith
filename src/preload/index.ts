@@ -38,8 +38,11 @@ const api = {
   verifyGet: (): Promise<{ configured: string | null; detected: string | null; effective: string | null } | null> => ipcRenderer.invoke('verify:get'),
   verifySet: (cmd: string): Promise<void> => ipcRenderer.invoke('verify:set', cmd),
   // AI engine and model library
-  engineStatus: (): Promise<{ state: 'ready-external' | 'ready-managed' | 'installed' | 'missing'; version?: string; installing: boolean; cpuOnly: boolean }> => ipcRenderer.invoke('engine:status'),
+  engineStatus: (): Promise<{ state: 'ready-external' | 'ready-managed' | 'installed' | 'missing' | 'remote-down'; version?: string; installing: boolean; cpuOnly: boolean; remote: boolean; host: string }> => ipcRenderer.invoke('engine:status'),
   engineInstall: (): Promise<void> => ipcRenderer.invoke('engine:install'),
+  engineHostGet: (): Promise<{ host: string; vramGB: number }> => ipcRenderer.invoke('engine:host-get'),
+  engineHostTest: (host: string): Promise<{ ok: boolean; host: string; models: number }> => ipcRenderer.invoke('engine:host-test', host),
+  engineHostSet: (host: string, vramGB?: number): Promise<void> => ipcRenderer.invoke('engine:host-set', host, vramGB),
   engineCancel: () => ipcRenderer.send('engine:cancel'),
   engineStart: (): Promise<void> => ipcRenderer.invoke('engine:start'),
   onEngineProgress: (cb: (p: { phase: string; done: number; total: number; bytesPerSec?: number }) => void) => ipcRenderer.on('engine:progress', (_e, p) => cb(p)),

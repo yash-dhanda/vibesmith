@@ -1,3 +1,4 @@
+import { getHost } from './ollamaHost'
 // Asks the local Ollama server what it has and where it is running. Free of Electron so it can be tested.
 type Fetch = (url: string, init?: { signal?: AbortSignal }) => Promise<{ json(): Promise<unknown> }>
 
@@ -7,7 +8,7 @@ export type OllamaStatus = {
   loaded: { name: string; gpuPercent: number }[] // models in memory right now, and how much of each sits in video memory
 }
 
-export async function ollamaStatus(host = 'http://127.0.0.1:11434', f: Fetch = (u, i) => fetch(u, i)): Promise<OllamaStatus> {
+export async function ollamaStatus(host = getHost(), f: Fetch = (u, i) => fetch(u, i)): Promise<OllamaStatus> {
   try {
     const tags = (await (await f(`${host}/api/tags`, { signal: AbortSignal.timeout(2000) })).json()) as { models?: { name: string }[] }
     let loaded: OllamaStatus['loaded'] = []

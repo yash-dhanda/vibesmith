@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { chmodSync, createReadStream, createWriteStream, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { patientFetch } from './net'
+import { getHost } from './ollamaHost'
 
 // The AI engine is Ollama. Forge uses one that is already running; if there is none it can download the official build
 // into its own folder and run it privately. Nothing is installed system-wide, and removing the Forge data folder removes it.
@@ -59,14 +60,17 @@ type Opts = { host?: string; fetchFn?: (url: string, init?: RequestInit) => Prom
 
 export class Engine {
   private child: ChildProcess | null = null
-  readonly host: string
+  private fixedHost: string | undefined
+  get host(): string {
+    return this.fixedHost ?? getHost()
+  }
   private f: NonNullable<Opts['fetchFn']>
   private platform: NodeJS.Platform
   private arch: string
   private releaseUrl: string
 
   constructor(private dir: string, private modelsDir: string, o: Opts = {}) {
-    this.host = o.host ?? 'http://127.0.0.1:11434'
+    this.fixedHost = o.host
     this.f = o.fetchFn ?? patientFetch
     this.platform = o.platform ?? process.platform
     this.arch = o.arch ?? process.arch

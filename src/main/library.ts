@@ -1,3 +1,4 @@
+import { readFileSync, writeFileSync } from 'node:fs'
 import { app, ipcMain, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { rank } from './catalog'
@@ -7,6 +8,7 @@ import { patientFetch } from './net'
 import { ollamaStatus, runsOnCpu } from './ollama'
 import { PullTracker } from './pull'
 import { systemInfo, type SystemInfo } from './system'
+import { getHost, isRemote, normalizeHost, remoteVramGB, setHost } from './ollamaHost'
 
 // Model names go to the local engine only, but they still come from the screen: keep to what a model name can contain.
 const NAME = /^[\w][\w.\-/:@]{0,199}$/
@@ -18,15 +20,41 @@ const checkName = (n: string) => {
 export function registerLibrary(getWin: () => BrowserWindow | null) {
   const data = app.getPath('userData')
   const engine = new Engine(join(data, 'engine'), join(data, 'models'))
-  const host = engine.host
   const send = (channel: string, payload?: unknown) => getWin()?.webContents.send(channel, payload)
   let installing: AbortController | null = null
   const pulls = new Map<string, AbortController>()
   let sys: SystemInfo | null = null
   const system = async () => (sys = await systemInfo(data))
 
-  ipcMain.handle('engine:status', async () => ({ ...(await engine.status()), installing: !!installing, cpuOnly: runsOnCpu(await ollamaStatus(host)) }))
+  ipcMain.handle('engine:status', async () => {
+    const st = await engine.status()
+    // Pointed at another computer that does not answer: never offer to install here, say what is wrong.
+    const state = isRemote() && !st.state.startsWith('ready') ? ('remote-down' as const) : st.state
+    return { ...st, state, installing: !!installing, remote: isRemote(), host: getHost(), cpuOnly: runsOnCpu(await ollamaStatus(engine.host)) }
+  })
+
+  // The engine on another computer (for example the desktop with the big card). Remembered between runs.
+  const hostFile = join(data, 'engine-host.json')
+  try {
+    const saved = JSON.parse(readFileSync(hostFile, 'utf8')) as { host?: string; vramGB?: number }
+    setHost(saved.host ?? '', saved.vramGB)
+  } catch {
+    /* none saved: this computer */
+  }
+  ipcMain.handle('engine:host-get', () => ({ host: isRemote() ? getHost() : '', vramGB: remoteVramGB() }))
+  ipcMain.handle('engine:host-test', async (_e, input: string) => {
+    const host = normalizeHost(String(input ?? ''))
+    const st = await ollamaStatus(host)
+    return { ok: st.up, host, models: st.models.length }
+  })
+  ipcMain.handle('engine:host-set', async (_e, input: string, vramGB?: number) => {
+    const host = setHost(String(input ?? ''), typeof vramGB === 'number' ? vramGB : undefined)
+    writeFileSync(hostFile, JSON.stringify({ host: isRemote() ? host : '', vramGB: remoteVramGB() }))
+    send('engine:changed')
+    send('models:changed')
+  })
   ipcMain.handle('engine:install', async () => {
+    if (isRemote()) throw new Error('Forge is using an AI engine on another computer, so there is nothing to install here.')
     if (installing) throw new Error('The engine is already being installed.')
     installing = new AbortController()
     try {
@@ -40,6 +68,7 @@ export function registerLibrary(getWin: () => BrowserWindow | null) {
   })
   ipcMain.on('engine:cancel', () => installing?.abort())
   ipcMain.handle('engine:start', async () => {
+    if (isRemote()) throw new Error('The engine runs on another computer. Start it there.')
     await engine.start()
     send('engine:changed')
   })
@@ -47,17 +76,19 @@ export function registerLibrary(getWin: () => BrowserWindow | null) {
   ipcMain.handle('system:info', () => system())
 
   ipcMain.handle('models:catalog', async () => {
-    const [s, st] = await Promise.all([sys ?? system(), ollamaStatus(host)])
+    const [s, st] = await Promise.all([sys ?? system(), ollamaStatus(engine.host)])
     const have = new Set(st.models.flatMap((m) => [m, m.replace(/:latest$/, '')]))
-    return rank(s).map((m) => ({ ...m, installed: have.has(m.id) }))
+    // A remote engine's card is not ours: rate models against the memory the user gave for it.
+    const target = isRemote() ? { ...s, gpu: { name: 'Remote GPU', vramGB: remoteVramGB(), freeGB: remoteVramGB() } } : s
+    return rank(target).map((m) => ({ ...m, installed: have.has(m.id) }))
   })
 
   ipcMain.handle('models:installed', async () => {
     try {
-      const j = (await (await patientFetch(`${host}/api/tags`, { signal: AbortSignal.timeout(4000) })).json()) as {
+      const j = (await (await patientFetch(`${engine.host}/api/tags`, { signal: AbortSignal.timeout(4000) })).json()) as {
         models?: { name: string; size: number; modified_at: string; details?: { parameter_size?: string; quantization_level?: string; family?: string } }[]
       }
-      const st = await ollamaStatus(host)
+      const st = await ollamaStatus(engine.host)
       return (j.models ?? []).map((m) => ({
         name: m.name,
         sizeBytes: m.size,
@@ -79,7 +110,7 @@ export function registerLibrary(getWin: () => BrowserWindow | null) {
     try {
       let res: Response
       try {
-        res = await patientFetch(`${host}/api/pull`, { method: 'POST', body: JSON.stringify({ model: name, stream: true }), signal: ctl.signal })
+        res = await patientFetch(`${engine.host}/api/pull`, { method: 'POST', body: JSON.stringify({ model: name, stream: true }), signal: ctl.signal })
       } catch (e) {
         if (ctl.signal.aborted) throw e
         throw new Error('The AI engine is not running. Start it from the model library first.')
@@ -111,7 +142,7 @@ export function registerLibrary(getWin: () => BrowserWindow | null) {
 
   ipcMain.handle('models:delete', async (_e, rawName: string) => {
     const name = checkName(rawName)
-    const res = await patientFetch(`${host}/api/delete`, { method: 'DELETE', body: JSON.stringify({ model: name }) })
+    const res = await patientFetch(`${engine.host}/api/delete`, { method: 'DELETE', body: JSON.stringify({ model: name }) })
     if (!res.ok) throw new Error(`Could not delete ${name} (${res.status}).`)
     send('models:changed')
   })

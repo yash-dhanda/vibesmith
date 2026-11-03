@@ -1,6 +1,7 @@
 import { patientFetch } from '../net'
 import { parseTextToolCalls } from './guards'
 import type { ToolDef } from './tools'
+import { getHost } from '../ollamaHost'
 
 export type ToolCall = { name: string; args: unknown; id?: string }
 export type Message =
@@ -37,7 +38,7 @@ type OllamaLine = {
 
 // Native /api/chat, not the OpenAI-compatible /v1: only the native API accepts num_ctx per request.
 export function ollama(opts: { model: string; host?: string; numCtx?: number; temperature?: number; fetchFn?: (url: string, init: RequestInit) => Promise<Response> }): Provider {
-  const host = opts.host ?? 'http://127.0.0.1:11434'
+  const host = opts.host ?? getHost()
   const f = opts.fetchFn ?? patientFetch
   const numCtx = opts.numCtx ?? 8192
   return {
