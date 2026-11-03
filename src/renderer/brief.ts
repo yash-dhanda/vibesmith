@@ -80,8 +80,8 @@ export function resetBrief(id: string, project: string | null) {
   render()
 }
 
-export function projectBrief(project: string | null) {
-  $('brief-name').textContent = project ? folderName(project) : 'Your next idea'
+export function projectBrief(project: string | null, name?: string) {
+  $('brief-name').textContent = name || (project ? folderName(project) : 'Your next idea')
   $('brief-folder').textContent = project ? 'Saved in your project folder' : 'Choose a folder to begin'
 }
 

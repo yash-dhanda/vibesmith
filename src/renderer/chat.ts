@@ -107,7 +107,8 @@ function setUsageChips(ev: Extract<AgentEvent, { type: 'usage' }>) {
     rateChip.textContent = `${formatRate(ev.tps)} tok/s`
   }
   ctxChip.hidden = false
-  ctxChip.textContent = ev.ctxLimit ? `${formatTokens(ev.input)} / ${Math.round(ev.ctxLimit / 1024)}k memory` : `${formatTokens(ev.input)} in context`
+  const estimate = ev.estimated ? '~' : ''
+  ctxChip.textContent = estimate + (ev.ctxLimit ? `${formatTokens(ev.input)} / ${Math.round(ev.ctxLimit / 1024)}k memory` : `${formatTokens(ev.input)} in context`)
   const full = !!ev.ctxLimit && ev.input / ev.ctxLimit > 0.8
   ctxChip.classList.toggle('warn', full)
   ctxChip.title = full
@@ -576,6 +577,7 @@ async function refreshHistory() {
     }
   }
   setProject(project)
+  projectBrief(project, me?.title)
 }
 
 async function openChat(id: string) {
@@ -735,7 +737,14 @@ export async function initChat(opts: {
   }
   toBottom.onclick = toEnd
   scroller.addEventListener('scroll', () => (toBottom.hidden = nearBottom(240)))
+  const compactWindow = matchMedia('(max-width: 1000px)')
+  let autoHidden = false
+  compactWindow.addEventListener('change', ({ matches }) => {
+    if (matches && !$('app').classList.contains('no-hist')) { $('app').classList.add('no-hist'); autoHidden = true }
+    else if (!matches && autoHidden) { $('app').classList.remove('no-hist'); autoHidden = false }
+  })
   $('hist-toggle').onclick = () => {
+    autoHidden = false
     const off = $('app').classList.toggle('no-hist')
     try {
       localStorage.setItem('forge.hist', off ? '0' : '1')
