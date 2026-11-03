@@ -146,12 +146,13 @@ export function buildStage(files: StageCode[], opts: { agents: StageAgentInfo[];
   const title = el('header', 'stage-title')
   const dots = el('span', 'stage-dots'); dots.append(el('i'), el('i'), el('i'))
   const chips = el('div', 'stage-chips')
-  title.append(dots, el('strong', 'stage-name', 'Live coding'), chips, el('span', 'lane-live', opts.live), opts.details)
+  const name = el('strong', 'stage-name', 'Live coding'); const glyph = el('span', 'emo', '✍️'); glyph.setAttribute('aria-hidden', 'true'); name.prepend(glyph)
+  title.append(dots, name, chips, el('span', `lane-live${opts.running ? ' on' : ''}`, opts.live), opts.details)
   const view = el('div', 'stage-view')
   const scroll = el('div', 'stage-scroll'); scroll.hidden = true
   const gutter = el('pre', 'stage-gutter'); const doc = el('div', 'stage-doc'); scroll.append(gutter, doc); view.append(scroll)
   const where = el('span', 'stage-where')
-  const follow = el('button', 'stage-follow', 'Follow live'); follow.type = 'button'; follow.hidden = true
+  const follow = el('button', 'stage-follow', '⬇ Follow'); follow.type = 'button'; follow.title = 'Follow the live typing'; follow.setAttribute('aria-label', 'Follow live'); follow.hidden = true
   const status = el('footer', 'stage-status'); status.append(where, follow)
   root.append(title, view, status)
   const stage: Stage = { root, scroll, gutter, doc, view, where, follow, blocks: new Map(), order: [], chips: new Map(), following: true, live: opts.running, raf: 0, idleTimer: null, rateTimer: null }
