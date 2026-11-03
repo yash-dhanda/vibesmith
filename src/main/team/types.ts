@@ -47,7 +47,7 @@ export type Message = { id: string; from: AgentName | 'orchestrator' | 'user'; t
 export type Decision = { id: string; text: string; by: string; taskId?: string; at: number }
 export type ErrorRecord = { id: string; taskId?: string; signature: string; text: string; fix?: string; at: number }
 
-export type ApprovalKind = 'action' | 'permission' | 'question' | 'review_override' | 'subtask' | 'budget' | 'final'
+export type ApprovalKind = 'plan' | 'action' | 'permission' | 'question' | 'review_override' | 'subtask' | 'budget' | 'final'
 export type Approval = {
   id: string
   kind: ApprovalKind
@@ -79,10 +79,11 @@ export type TeamConfig = {
   allowSubtasks: boolean
   budget: Budget
   codexMode: 'exec' | 'app-server' // app-server: live steering, approvals, plan-allowance readout
+  reviewPlan?: boolean // stop after planning so the user can edit and approve the plan before any agent works on it
   maxLimitPercent: number // pause when a subscription's short-window allowance is this used (0 = never)
 }
 
-export const DEFAULT_CONFIG: TeamConfig = { planner: 'auto', codexModel: '', maxParallelPerAgent: 2, maxFixRounds: 3, maxVerifyRounds: 2, review: 'cross', finalReview: 'auto', allowSubtasks: true, budget: { maxTasks: 12 }, codexMode: 'app-server', maxLimitPercent: 80 }
+export const DEFAULT_CONFIG: TeamConfig = { planner: 'auto', codexModel: '', maxParallelPerAgent: 2, maxFixRounds: 3, maxVerifyRounds: 2, review: 'cross', finalReview: 'auto', allowSubtasks: true, budget: { maxTasks: 12 }, codexMode: 'app-server', reviewPlan: false, maxLimitPercent: 80 }
 
 export type RunFinal = { report: string; files: Task['changed']; verifyOk: boolean | null; verifyOutput: string; reviewNotes: string[] }
 

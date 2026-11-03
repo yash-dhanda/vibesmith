@@ -141,7 +141,7 @@ export class TeamOrchestrator {
     const live = this.newLive(available)
     this.live.set(runId, live)
     this.out(run, { type: 'run', runId, status: 'planning' })
-    void this.plan(run).then(() => this.pump(run)).catch((e) => this.fail(run, (e as Error).message))
+    void this.plan(run).then(() => this.afterPlan(run)).catch((e) => this.fail(run, (e as Error).message))
     return run
   }
 
@@ -176,7 +176,7 @@ export class TeamOrchestrator {
       else if (t.status === 'blocked' && !/depends on failed/.test(t.error ?? '')) (t.status = 'queued'), (t.error = undefined) // blocked by a missing sign-in, which may be fixed now
     }
     this.setStatus(run, run.tasks.length ? 'running' : 'planning')
-    if (!run.tasks.length) void this.plan(run).then(() => this.pump(run)).catch((e) => this.fail(run, (e as Error).message))
+    if (!run.tasks.length) void this.plan(run).then(() => this.afterPlan(run)).catch((e) => this.fail(run, (e as Error).message))
     else this.pump(run)
   }
 
@@ -283,6 +283,48 @@ export class TeamOrchestrator {
       await this.resume(run.id)
     } else this.touch(run)
     this.pump(run)
+  }
+
+  // With `reviewPlan` the run waits here: the user can edit the plan (updatePlan) and then approves it or cancels the run.
+  private afterPlan(run: Run) {
+    if (!run.config.reviewPlan || run.status !== 'running' || run.tasks.some((t) => t.status !== 'queued')) return this.pump(run)
+    const live = this.liveOf(run)
+    live.paused = true
+    this.setStatus(run, 'paused', 'Review the plan, change what you want, then approve it to start.')
+    void this.ask(run, { kind: 'plan', title: 'Start with this plan?', detail: `${run.tasks.length} task${run.tasks.length === 1 ? '' : 's'}. You can edit, reassign or skip tasks first.` }).then((r) => (r.allow ? this.resume(run.id) : this.cancel(run.id)))
+  }
+
+  // Edits to a plan that has not started: reword a task, change its agent or acceptance checks, change dependencies, or skip it.
+  updatePlan(runId: string, edits: { id: string; title?: string; goal?: string; agent?: AgentName; acceptance?: string[]; deps?: string[]; skip?: boolean }[]): { ok: boolean; message: string } {
+    const run = this.runOf(runId)
+    if (!run || run.status !== 'paused' || run.tasks.some((t) => t.status !== 'queued' && t.status !== 'cancelled')) return { ok: false, message: 'The plan can only be changed before work starts.' }
+    const next = run.tasks.map((t) => ({ ...t }))
+    for (const e of edits) {
+      const t = next.find((x) => x.id === e.id)
+      if (!t) return { ok: false, message: `Unknown task ${e.id}.` }
+      if (typeof e.title === 'string' && e.title.trim()) t.title = e.title.trim().slice(0, 120)
+      if (typeof e.goal === 'string' && e.goal.trim()) t.goal = e.goal.trim().slice(0, 2000)
+      if (e.agent === 'claude' || e.agent === 'codex') {
+        if (!this.liveOf(run).available.includes(e.agent)) return { ok: false, message: `${e.agent} is not available for this run.` }
+        t.agent = e.agent
+      }
+      if (Array.isArray(e.acceptance)) t.acceptance = e.acceptance.map((a) => String(a).slice(0, 300)).filter(Boolean).slice(0, 8)
+      if (Array.isArray(e.deps)) t.deps = [...new Set(e.deps.filter((d) => d !== t.id && next.some((x) => x.id === d)))]
+      if (e.skip === true) (t.status = 'cancelled'), (t.error = 'Skipped by you.')
+      else if (e.skip === false && t.status === 'cancelled') (t.status = 'queued'), (t.error = undefined)
+    }
+    // no circle: every task must be reachable once its dependencies are done
+    const done = new Set<string>()
+    for (let progress = true; progress && done.size < next.length; ) {
+      progress = false
+      for (const t of next) if (!done.has(t.id) && t.deps.every((d) => done.has(d))) (done.add(t.id), (progress = true))
+    }
+    if (done.size < next.length) return { ok: false, message: 'Those changes make tasks wait for each other in a circle.' }
+    if (!next.some((t) => t.status === 'queued')) return { ok: false, message: 'At least one task has to stay.' }
+    run.tasks = next
+    this.save(run)
+    this.out(run, { type: 'plan', runId: run.id, summary: run.plan.summary, tasks: run.tasks })
+    return { ok: true, message: 'Plan updated.' }
   }
 
   // The change for the diff view: one task's, or (no task) everything the team has merged so far.

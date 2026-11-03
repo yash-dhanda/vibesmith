@@ -175,3 +175,8 @@ Typing and growing files are not written to the log; finished text, tool results
 - While the window is not focused (and notifications are on in settings), Forge shows a system notification when a team run needs an answer (a pending approval other than the final one), is ready to review, fails, or stops for a reason other than the user's own pause. Clicking it focuses the window and sends `onTeamFocus(runId)`: open that run.
 
 **Config change:** `TeamConfig.finalReview` is now `true | false | 'auto'` (default `'auto'`: only runs of 3 or more build tasks get the final whole-result review, to save plan usage). A UI toggle can keep writing booleans; offer "Automatic" as a third state.
+
+**Review the plan before any agent works (optional)**
+- `TeamConfig.reviewPlan: true` (default off) makes a run stop after planning: status `paused` with `pausedReason` "Review the plan...", and one pending approval of `kind: 'plan'`. Nothing has started yet.
+- `teamUpdatePlan(id, edits)` with `edits: [{ id, title?, goal?, agent?, acceptance?, deps?, skip? }]` changes tasks of an unstarted plan (reword, reassign, change checks or dependencies, skip with `skip: true`, un-skip with `false`). Returns `{ ok, message }`; refused if it would create a dependency circle, leave no task, use an unavailable agent, or if work has started. Each success emits a new `plan` event.
+- Answer the `plan` approval with `teamAnswer(id, approvalId, true)` to start, or `false` to cancel the run. This saves plan usage when the plan is wrong: the agents have only planned so far.

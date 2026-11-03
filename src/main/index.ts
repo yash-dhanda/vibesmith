@@ -638,6 +638,13 @@ ipcMain.handle('team:skip-task', (_e, id: unknown, taskId: unknown) => teamSvc()
 ipcMain.handle('team:extend-budget', (_e, id: unknown) => teamSvc().orch.extendBudget(teamId(id)))
 ipcMain.handle('team:live-diff', (_e, id: unknown, taskId: unknown, path?: unknown) => teamSvc().orch.liveDiff(teamId(id), teamId(taskId), typeof path === 'string' ? path.slice(0, 500) : undefined))
 ipcMain.handle('team:memory', (_e, id: unknown) => teamSvc().orch.memorySnapshot(teamId(id)))
+ipcMain.handle('team:update-plan', (_e, id: unknown, edits: unknown) => {
+  const list = (Array.isArray(edits) ? edits : []).slice(0, 30).map((x) => {
+    const o = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>
+    return { id: teamId(o.id), title: typeof o.title === 'string' ? o.title : undefined, goal: typeof o.goal === 'string' ? o.goal : undefined, agent: o.agent === 'claude' || o.agent === 'codex' ? o.agent : undefined, acceptance: Array.isArray(o.acceptance) ? o.acceptance.map(String) : undefined, deps: Array.isArray(o.deps) ? o.deps.map(String) : undefined, skip: typeof o.skip === 'boolean' ? o.skip : undefined } as const
+  })
+  return teamSvc().orch.updatePlan(teamId(id), list as never)
+})
 ipcMain.handle('team:undo', (_e, id: unknown) => teamSvc().orch.undoApply(teamId(id)))
 ipcMain.handle('team:delete', (_e, id: unknown) => teamSvc().orch.deleteRun(teamId(id)))
 ipcMain.handle('team:settings-get', () => {

@@ -332,6 +332,32 @@ describe('team orchestrator', () => {
     await until(z.orch, run3.id, (r) => r.status === 'awaiting_approval')
   })
 
+  it('can stop after planning so the user edits the plan, and starts only on approval', async () => {
+    const x = h({ plan: { tasks: [T('a', { agent: 'claude' }), T('b', { agent: 'claude' }), T('c', { agent: 'claude', deps: ['a'] })] } })
+    const run = await x.orch.start(x.proj, 'review the plan', { reviewPlan: true })
+    const r = await until(x.orch, run.id, (r) => r.approvals.some((a) => a.kind === 'plan' && a.status === 'pending'))
+    expect(r.status).toBe('paused')
+    expect(x.calls.filter((c) => c.kind === 'work')).toHaveLength(0) // nothing started
+    expect(x.orch.updatePlan(run.id, [{ id: 't3', deps: ['t1', 't3'] }]).ok).toBe(true) // a self-dependency is dropped, not an error
+    expect(x.orch.updatePlan(run.id, [{ id: 't1', deps: ['t3'] }])).toMatchObject({ ok: false, message: expect.stringMatching(/circle/) })
+    expect(x.orch.updatePlan(run.id, [{ id: 't2', skip: true }, { id: 't1', agent: 'codex', goal: 'do t1 differently' }]).ok).toBe(true)
+    expect(x.orch.updatePlan(run.id, [{ id: 'zzz', skip: true }]).ok).toBe(false)
+    x.orch.answerApproval(run.id, r.approvals.find((a) => a.kind === 'plan')!.id, true)
+    const end = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect(end.tasks.map((t) => [t.id, t.status, t.agent])).toEqual([['t1', 'done', 'codex'], ['t2', 'cancelled', 'claude'], ['t3', 'done', 'claude']])
+    expect(x.calls.find((c) => c.kind === 'work' && c.task === 't1')!.agent).toBe('codex')
+    expect(x.orch.updatePlan(run.id, [{ id: 't1', skip: true }]).ok).toBe(false) // too late to change
+  })
+
+  it('cancels the run when the user turns the plan down', async () => {
+    const x = h({ plan: { tasks: [T('a')] } })
+    const run = await x.orch.start(x.proj, 'no thanks', { reviewPlan: true })
+    const r = await until(x.orch, run.id, (r) => r.approvals.some((a) => a.kind === 'plan' && a.status === 'pending'))
+    x.orch.answerApproval(run.id, r.approvals[0].id, false)
+    await until(x.orch, run.id, (r) => r.status === 'cancelled')
+    expect(x.calls.filter((c) => c.kind === 'work')).toHaveLength(0)
+  })
+
   it('stops at the budget and asks before spending more', async () => {
     const x = h({ plan: { tasks: [T('a'), T('b', { deps: ['a'] }), T('c', { deps: ['b'] })] } })
     const run = await x.orch.start(x.proj, 'budget', { budget: { maxAgentRuns: 3 } })
