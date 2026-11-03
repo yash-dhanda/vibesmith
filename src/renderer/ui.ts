@@ -8,7 +8,14 @@ export const h = (tag: string, cls = '', text = '') => {
   return el
 }
 
-export const cleanErr = (e: unknown) => String((e as Error).message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+// An emoji for meaning; the words stay in the control's title / aria-label.
+export const emo = (glyph: string) => {
+  const s = h('span', 'emo', glyph)
+  s.setAttribute('aria-hidden', 'true')
+  return s
+}
+
+export const cleanErr =(e: unknown) => String((e as Error).message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
 
 export function toast(msg: string, ms = 1800, action?: { label: string; run: () => void }) {
   const t = h('div', 'toast' + (action ? ' act' : ''), msg)
@@ -21,7 +28,11 @@ export function toast(msg: string, ms = 1800, action?: { label: string; run: () 
     t.append(b)
   }
   $('toasts').append(t)
-  setTimeout(() => t.remove(), action ? Math.max(ms, 6000) : ms)
+  setTimeout(() => {
+    t.classList.add('out')
+    t.addEventListener('animationend', () => t.remove(), { once: true })
+    setTimeout(() => t.remove(), 400) // reduced motion: no animationend fires
+  }, action ? Math.max(ms, 6000) : ms)
 }
 
 export async function copy(text: string, what = 'Copied') {
@@ -34,11 +45,12 @@ export async function copy(text: string, what = 'Copied') {
 }
 
 // A small popup under an element. It closes on the next click anywhere or on Escape.
-export function showMenu(anchor: HTMLElement, items: { label: string; danger?: boolean; run: () => void }[]) {
+export function showMenu(anchor: HTMLElement, items: { label: string; glyph?: string; danger?: boolean; run: () => void }[]) {
   const menu = $('menu')
   menu.replaceChildren(
     ...items.map((i) => {
       const b = h('button', i.danger ? 'danger' : '', i.label)
+      if (i.glyph) b.prepend(emo(i.glyph))
       b.onclick = () => {
         menu.hidden = true
         i.run()

@@ -10,16 +10,17 @@
 <body>
   <div id="app">
     <aside id="history" aria-label="Chats and navigation">
-      <div class="brand"><span class="brand-mark">f</span><strong>forge<span> / </span></strong><span class="brand-caption">IDEAS INTO REALITY</span></div>
-      <button class="command-trigger" id="commands"><i data-icon="search"></i><span>Find anything</span><kbd>Ctrl K</kbd></button>
-      <button class="new-chat" id="new-chat"><i data-icon="plus"></i><span>New chat</span><kbd>Ctrl N</kbd></button>
-      <button class="side-btn team-nav" id="team-nav" hidden><i data-icon="spark"></i><span>Team runs</span><span class="team-nav-dot" hidden></span></button>
-      <input id="chat-search" type="search" aria-label="Search chats" placeholder="Filter your chats…" autocomplete="off" />
-      <div class="nav-eyebrow">YOUR BUILDS</div>
+      <div class="brand"><span class="brand-mark" aria-hidden="true">f</span><strong>forge</strong></div>
+      <button class="new-chat" id="new-chat" title="New chat (Ctrl N)"><span class="emo" aria-hidden="true">✏️</span><span>New chat</span><kbd>Ctrl N</kbd></button>
+      <button class="command-trigger" id="commands" title="Find anything (Ctrl K)"><span class="emo" aria-hidden="true">🔍</span><span>Search</span><kbd>Ctrl K</kbd></button>
+      <button class="side-btn team-nav" id="team-nav" hidden title="Team runs"><span class="emo" aria-hidden="true">🤝</span><span>Team runs</span><span class="team-nav-dot" hidden></span></button>
+      <input id="chat-search" type="search" aria-label="Filter chats" placeholder="Filter chats" autocomplete="off" />
       <div id="chat-list"></div>
-      <button class="usage-badge" id="usage-badge" title="Token usage"><span class="u-main">0 tokens</span><span class="u-sub">no usage yet</span></button>
-      <button class="side-btn" id="models-btn"><i data-icon="cube"></i>Models</button>
-      <button class="side-btn" id="gear"><i data-icon="sliders"></i>Settings</button>
+      <div class="side-foot">
+        <button class="usage-badge" id="usage-badge" title="Token usage" aria-label="Token usage"><span class="u-main"><span class="emo" aria-hidden="true">🪙</span>0</span><span class="u-sub"></span></button>
+        <button class="icon-btn" id="models-btn" title="Models" aria-label="Models"><span class="emo" aria-hidden="true">🧩</span></button>
+        <button class="icon-btn" id="gear" title="Settings (Ctrl ,)" aria-label="Settings"><span class="emo" aria-hidden="true">⚙️</span></button>
+      </div>
     </aside>
 
     <main id="chat">
@@ -29,46 +30,46 @@
         <span class="grow"></span>
         <span class="chip" id="rate" hidden title="Generation speed"></span>
         <span class="chip" id="ctx" hidden title="How much of the model's memory this chat uses"></span>
-        <button class="head-btn" id="brief-toggle" aria-expanded="false" aria-controls="build-brief"><i data-icon="cube"></i>Build brief</button>
-        <button class="head-btn" id="ws-toggle" title="Show the files, editor and terminal (Ctrl J)"><i data-icon="code"></i>Workspace</button>
+        <button class="head-btn" id="brief-toggle" aria-expanded="false" aria-controls="build-brief" title="Build brief" aria-label="Build brief"><span class="emo" aria-hidden="true">📋</span></button>
+        <button class="head-btn" id="ws-toggle" title="Workspace: files, editor and terminal (Ctrl J)" aria-label="Workspace"><span class="emo" aria-hidden="true">💻</span></button>
         <button class="icon-btn" id="more" title="More" aria-label="More"><i data-icon="dots"></i></button>
       </header>
       <div id="thread-wrap"><div id="thread-scroll"><div id="thread"></div></div><button id="to-bottom" hidden title="Jump to the latest message" aria-label="Jump to the latest message"><i data-icon="arrowdown"></i></button></div>
       <div id="composer-wrap">
         <div id="composer">
-          <div class="composer-modes" role="group" aria-label="Build mode"><button id="mode-chat" class="composer-mode active" type="button">Chat</button><button id="mode-team" class="composer-mode" type="button" hidden>Team</button></div>
-          <textarea id="prompt" rows="1" aria-label="Describe what to build" placeholder="Describe your idea. We’ll build it together."></textarea>
+          <div class="composer-modes" role="group" aria-label="Build mode"><button id="mode-chat" class="composer-mode active" type="button" title="Chat with one agent"><span class="emo" aria-hidden="true">💬</span>Chat</button><button id="mode-team" class="composer-mode" type="button" hidden title="Team Mode: several agents together"><span class="emo" aria-hidden="true">🤝</span>Team</button></div>
+          <textarea id="prompt" rows="1" aria-label="Describe what to build" placeholder="Describe what you want to build"></textarea>
           <div class="bar">
             <button class="pill" id="project" title="The folder the agent works in">Choose folder</button>
             <select aria-label="Agent autonomy" id="mode" title="How much the agent may do without asking">
-              <option value="ask-all">Ask before edits</option>
-              <option value="auto-edit">Auto-edit</option>
-              <option value="full-auto">Full auto</option>
+              <option value="ask-all">✋ Ask before edits</option>
+              <option value="auto-edit">✏️ Auto-edit</option>
+              <option value="full-auto">🚀 Full auto</option>
             </select>
             <select aria-label="AI model" id="model" title="Model"></select>
             <span class="grow"></span>
             <button id="send" title="Send" aria-label="Send"><i data-icon="arrowup"></i></button>
           </div>
         </div>
-        <div class="composer-note"><span id="model-honesty">Checking model availability…</span><span>Enter to send <span aria-hidden="true">↵</span></span></div>
+        <div class="composer-note"><span id="model-honesty">Checking model availability…</span><span title="Enter sends, Shift+Enter adds a new line">↵ send · ⇧↵ new line</span></div>
       </div>
       <aside id="build-brief" aria-label="What we’re building">
-        <div class="brief-top"><span class="eyebrow">THE BUILD BRIEF</span><button id="brief-close" class="icon-btn" aria-label="Close build brief"><i data-icon="x"></i></button></div>
+        <div class="brief-top"><span class="eyebrow"><span class="emo" aria-hidden="true">📋</span>Build brief</span><button id="brief-close" class="icon-btn" aria-label="Close build brief" title="Close"><i data-icon="x"></i></button></div>
         <div class="project-object"><div class="object-icon"><i data-icon="cube"></i></div><h2 id="brief-name">Your next idea</h2><p id="brief-folder"></p><p id="brief-goal"></p></div>
         <div id="brief-status" role="status">Ready when you are</div>
-        <section class="brief-section" id="agent-plan-section" hidden><h3>The plan</h3><p class="brief-muted">Updated by Forge as it works. Add your direction below for the next message.</p><ol id="agent-plan"></ol></section>
-        <section class="brief-section"><div class="brief-section-head"><h3>Your priorities</h3><span id="priority-count">0 included</span></div><p class="brief-muted">Steer the next message. Uncheck to skip; move a priority earlier with ↑.</p><ol id="priorities"></ol><form id="priority-form"><input id="priority-input" aria-label="New build priority" placeholder="Keep it simple, add dark mode…" maxlength="240"/><button class="icon-btn" type="submit" aria-label="Add priority"><i data-icon="plus"></i></button></form></section>
-        <section class="brief-section"><h3 id="brief-files-title">Taking shape</h3><div id="brief-files"></div><button id="brief-preview" class="btn" hidden><i data-icon="globe"></i>Live preview in browser</button></section>
-        <div class="brief-foot"><i data-icon="folder"></i>Your project lives on your computer.</div>
+        <section class="brief-section" id="agent-plan-section" hidden><h3><span class="emo" aria-hidden="true">🗺️</span>Plan</h3><ol id="agent-plan"></ol></section>
+        <section class="brief-section"><div class="brief-section-head"><h3><span class="emo" aria-hidden="true">🎯</span>Priorities</h3><span id="priority-count" title="Priorities included in the next message">0</span></div><p class="brief-muted">Sent with your next message, in order.</p><ol id="priorities"></ol><form id="priority-form"><input id="priority-input" aria-label="New build priority" placeholder="Add a priority" maxlength="240"/><button class="icon-btn sm" type="submit" aria-label="Add priority" title="Add priority"><i data-icon="plus" class="sm"></i></button></form></section>
+        <section class="brief-section"><h3 id="brief-files-title"><span class="emo" aria-hidden="true">🌱</span>Taking shape</h3><div id="brief-files"></div><button id="brief-preview" class="btn" hidden><span class="emo" aria-hidden="true">🌐</span>Open preview</button></section>
+        <div class="brief-foot"><span class="emo" aria-hidden="true">🔒</span>Stays on your computer</div>
       </aside>
     </main>
 
     <main id="team-screen" hidden aria-label="Team Mode">
       <header class="team-head">
-        <button class="icon-btn" id="team-hist-toggle" aria-label="Toggle navigation"><i data-icon="sidebar"></i></button>
-        <div class="team-brand"><span class="team-knot"><i data-icon="spark"></i></span><span>Team Mode</span></div>
+        <button class="icon-btn" id="team-hist-toggle" aria-label="Toggle navigation" title="Show or hide the sidebar"><i data-icon="sidebar"></i></button>
+        <div class="team-brand"><span class="emo" aria-hidden="true">🤝</span><span>Team Mode</span></div>
         <span class="grow"></span>
-        <button class="head-btn" id="team-back"><i data-icon="arrowright"></i>Back to chat</button>
+        <button class="head-btn" id="team-back" title="Back to chat" aria-label="Back to chat"><span class="emo" aria-hidden="true">💬</span></button>
       </header>
       <div id="team-root"></div>
     </main>
@@ -80,7 +81,7 @@
   </div>
   <div id="menu" class="menu" hidden></div>
   <div id="toasts"></div>
-  <dialog id="palette" aria-label="Find anything"><div class="palette-search"><i data-icon="search"></i><input id="command-search" role="combobox" aria-label="Search actions, chats, and models" aria-controls="command-results" aria-expanded="true" aria-autocomplete="list" placeholder="Where do you want to go?" autocomplete="off"/><kbd>Esc</kbd></div><div id="command-results" role="listbox" aria-label="Commands"></div><div class="palette-foot"><span>↑ ↓ navigate · Enter to open</span><span id="command-count"></span></div></dialog>
+  <dialog id="palette" aria-label="Find anything"><div class="palette-search"><i data-icon="search"></i><input id="command-search" role="combobox" aria-label="Search actions, chats, and models" aria-controls="command-results" aria-expanded="true" aria-autocomplete="list" placeholder="Where do you want to go?" autocomplete="off"/><kbd>Esc</kbd></div><div id="command-results" role="listbox" aria-label="Commands"></div><div class="palette-foot"><span><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>↵</kbd> open</span><span id="command-count"></span></div></dialog>
   <dialog id="settings" aria-label="Settings"></dialog>
   <dialog id="library" aria-label="Model library"></dialog>
   <script type="module" src="./main.ts"></script>
