@@ -208,10 +208,19 @@ ipcMain.handle('chats:rename', (_e, id: string, title: string) => {
   changed()
 })
 
+ipcMain.handle('chats:pin', (_e, id: string, pinned: boolean) => {
+  const s = sessionFor(id)
+  if (!s) throw new Error('that chat could not be loaded')
+  s.chat.pinned = !!pinned || undefined
+  store.save(s.chat, false) // pinning is not activity: the chat keeps its place in time
+  changed()
+})
+ipcMain.handle('chats:search', (_e, query: string) => store.search(String(query ?? '')).map((h) => ({ ...h, status: status(h.id) })))
+
 ipcMain.handle('chats:delete', (_e, id: string) => {
+  if (sessions.get(id)?.run) throw new Error('Stop this chat first.')
   stopPreview(id)
   attachments().removeChat(id)
-  if (sessions.get(id)?.run) throw new Error('Stop this chat first.')
   store.delete(id)
   sessions.delete(id)
 })

@@ -98,3 +98,40 @@ describe('ChatStore', () => {
     expect(readFileSync(join(dir, 'index.json'), 'utf8')).toContain('New chat')
   })
 })
+
+describe('pinning and search', () => {
+  const make = (id: string, title: string, items: TranscriptItem[], project: string | null = '/p/a') => {
+    const c = store.create(project, id)
+    c.title = title
+    c.transcript = items
+    store.save(c)
+    return c
+  }
+
+  it('pinning keeps the chat\'s place in time and shows in the list', () => {
+    const a = make('a', 'first', [])
+    make('b', 'second', [])
+    const before = store.list().find((s) => s.id === 'a')!.updatedAt
+    a.pinned = true
+    store.save(a, false)
+    const item = store.list().find((s) => s.id === 'a')!
+    expect(item.pinned).toBe(true)
+    expect(item.updatedAt).toBe(before)
+    a.pinned = undefined
+    store.save(a, false)
+    expect(store.list().find((s) => s.id === 'a')!.pinned).toBeUndefined()
+  })
+
+  it('finds chats by title, user and assistant text, needs every word, shows a snippet', () => {
+    make('a', 'Flower shop', [{ type: 'user', text: 'please add a checkout page with stripe' }, { type: 'delta', text: 'I created '}, { type: 'delta', text: 'checkout.html for you' }, { type: 'turn_end' }])
+    make('b', 'Todo app', [{ type: 'user', text: 'a to-do list' }, { type: 'delta', text: 'Done: dark mode added' }])
+    expect(store.search('checkout stripe').map((h) => h.id)).toEqual(['a'])
+    expect(store.search('DARK mode').map((h) => h.id)).toEqual(['b'])
+    expect(store.search('flower').map((h) => h.snippets[0])).toEqual([{ where: 'title', text: 'Flower shop' }])
+    const hit = store.search('checkout')[0]
+    expect(hit.snippets.map((s) => s.where)).toEqual(['user', 'assistant'])
+    expect(hit.snippets[1].text).toContain('checkout.html')
+    expect(store.search('nothing here')).toEqual([])
+    expect(store.search('a')).toEqual([]) // one-letter words are ignored
+  })
+})

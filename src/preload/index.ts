@@ -19,6 +19,8 @@ const api = {
   chatsOpen: (id: string): Promise<OpenedChat> => ipcRenderer.invoke('chats:open', id),
   chatsRename: (id: string, title: string): Promise<void> => ipcRenderer.invoke('chats:rename', id, title),
   chatsRewind: (id: string, userIndex: number, restoreFiles: boolean): Promise<{ text: string; files: string[]; transcript: TranscriptItem[] }> => ipcRenderer.invoke('chats:rewind', id, userIndex, restoreFiles),
+  chatsPin: (id: string, pinned: boolean): Promise<void> => ipcRenderer.invoke('chats:pin', id, pinned),
+  chatsSearch: (query: string): Promise<(ChatListItem & { snippets: { where: 'title' | 'user' | 'assistant'; text: string }[] })[]> => ipcRenderer.invoke('chats:search', query),
   chatsDelete: (id: string): Promise<void> => ipcRenderer.invoke('chats:delete', id),
   onChatsChanged: (cb: () => void) => ipcRenderer.on('chats:changed', () => cb()),
   onChatsFocus: (cb: (id: string) => void) => ipcRenderer.on('chats:focus', (_e, id: string) => cb(id)),

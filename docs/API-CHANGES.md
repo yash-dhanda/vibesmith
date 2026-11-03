@@ -74,3 +74,10 @@ Claude appends every new `window.forge` call or event here. Additive only.
 
 - **No new calls.** The brief from roadmap #2 gains **`rules: string`** (standing instructions in the user's own words, up to 3000 chars, line breaks kept). Read it with `projectBriefGet`, save it with `projectBriefSet({ revision, rules })`; leaving `rules` out keeps it. Forge adds the project's description and rules to the agent's prompt on every message, so a change applies from the next message.
 - UI idea: a plain "How should Forge work on this project?" box in the brief with a few tap-to-add suggestions ("Keep it simple", "Use plain HTML, CSS and JavaScript", "Explain changes in plain language"). Rules sit in the app's data folder, not in the project, so a cloned repo cannot slip instructions in.
+
+## 2026-11-03 — roadmap #9: pinned chats, content search
+
+- **`forge.chatsPin(chatId, pinned: boolean): Promise<void>`**. Pinned chats keep their place in time (pinning is not activity). Fires `onChatsChanged`.
+- **`ChatListItem` (from `chatsList`, `appInit`) now has `pinned?: true`.** Grouping by project is a screen concern: every item already has `project` (the folder path, or null). Suggested sections: Pinned, then by project, newest first.
+- **`forge.chatsSearch(query): Promise<(ChatListItem & { snippets: { where: 'title'|'user'|'assistant'; text: string }[] })[]>`** — full-text over title, the user's messages and the assistant's replies. Every word of the query must appear (words under 2 letters are ignored); case-insensitive; newest first, up to 30 chats, up to 3 snippets each (about 120 chars around the match, with … where cut). Under 2 usable letters returns `[]`. It reads every chat file, so debounce typing by about 200 ms.
+- Fixed: deleting a running chat no longer wipes its attachments before refusing.
