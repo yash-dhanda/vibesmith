@@ -1,6 +1,7 @@
 import { getCustomIds, loadModels, setCustomIds } from './models'
 import { $, MINUTE_CHOICES, STEP_CHOICES, agentLimits, cleanErr, h, numCtxPref, setThemePref, themePref, toast, type ThemePref } from './ui'
 import { icon, type IconName } from './icons'
+import { openLibrary } from './library'
 import { renderUsage } from './usage'
 
 export type Page = 'general' | 'models' | 'agent' | 'usage' | 'shortcuts' | 'about'
@@ -104,6 +105,12 @@ async function models(into: HTMLElement) {
   const [ol, keys] = await Promise.all([window.forge.ollamaStatus(), window.forge.keysStatus()])
 
   const local = group('Local models', 'Run on this computer through Ollama: free and private.')
+  const lib = h('button', 'btn primary', 'Open the model library')
+  lib.onclick = () => {
+    $<HTMLDialogElement>('settings').close()
+    openLibrary()
+  }
+  local.box.append(row('Model library', 'Download, switch and delete models without leaving Forge.', lib))
   local.box.append(
     row(
       'Ollama',

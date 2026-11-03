@@ -14,11 +14,13 @@ import { ChatStore, compact, titleFrom, type Chat, type ChatListItem, type ChatS
 import { clearKey, keyStatus, setKey, type KeyProvider } from './keys'
 import { listModels, makeProvider, ollamaStatus } from './models'
 import { getVerify, setVerify } from './settings'
+import { registerLibrary } from './library'
 import { UsageStore } from './usageStore'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
 let win: BrowserWindow | null = null
+let library: ReturnType<typeof registerLibrary> | null = null
 let store: ChatStore
 let usage: UsageStore
 
@@ -329,6 +331,8 @@ app.on('second-instance', () => {
 })
 
 app.whenReady().then(() => {
+  library = registerLibrary(() => win)
+  library.ensureStarted()
   store = new ChatStore(join(app.getPath('userData'), 'chats'))
   usage = new UsageStore(app.getPath('userData'))
   win = new BrowserWindow({
@@ -379,5 +383,8 @@ app.whenReady().then(() => {
   else win.loadFile(join(here, '../renderer/index.html'))
 })
 
-app.on('before-quit', saveAll)
+app.on('before-quit', () => {
+  saveAll()
+  library?.stop()
+})
 app.on('window-all-closed', () => app.quit())

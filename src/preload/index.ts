@@ -3,6 +3,9 @@ import type { AgentEvent, Mode } from '../main/agent/loop'
 import type { ChatListItem, ChatStatus, TranscriptItem } from '../main/chatStore'
 import type { UsageSummary } from '../main/usageStore'
 
+export type CatalogItem = { id: string; name: string; sizeGB: number; q: number; tags: string[]; blurb: string; fit: 'gpu' | 'partial' | 'cpu' | 'too-big'; best: boolean; installed: boolean }
+export type InstalledModel = { name: string; sizeBytes: number; modified: string; params: string; quant: string; loaded: boolean }
+export type PullEvent = { name: string; status: string; completed: number; total: number; percent: number; bytesPerSec: number; done: boolean; error?: string; cancelled?: boolean }
 type KeyStatus = Record<'anthropic' | 'openai' | 'openrouter', boolean>
 export type OpenedChat = { id: string; title: string; project: string | null; missing: boolean; status: ChatStatus; transcript: TranscriptItem[] }
 
@@ -33,6 +36,22 @@ const api = {
   keysClear: (p: string): Promise<void> => ipcRenderer.invoke('keys:clear', p),
   verifyGet: (): Promise<{ configured: string | null; detected: string | null; effective: string | null } | null> => ipcRenderer.invoke('verify:get'),
   verifySet: (cmd: string): Promise<void> => ipcRenderer.invoke('verify:set', cmd),
+  // AI engine and model library
+  engineStatus: (): Promise<{ state: 'ready-external' | 'ready-managed' | 'installed' | 'missing'; version?: string; installing: boolean; cpuOnly: boolean }> => ipcRenderer.invoke('engine:status'),
+  engineInstall: (): Promise<void> => ipcRenderer.invoke('engine:install'),
+  engineCancel: () => ipcRenderer.send('engine:cancel'),
+  engineStart: (): Promise<void> => ipcRenderer.invoke('engine:start'),
+  onEngineProgress: (cb: (p: { phase: string; done: number; total: number; bytesPerSec?: number }) => void) => ipcRenderer.on('engine:progress', (_e, p) => cb(p)),
+  onEngineChanged: (cb: () => void) => ipcRenderer.on('engine:changed', () => cb()),
+  systemInfo: (): Promise<{ ramGB: number; cpu: string; cores: number; gpu: { name: string; vramGB: number; freeGB: number } | null; diskFreeGB: number | null }> => ipcRenderer.invoke('system:info'),
+  modelsCatalog: (): Promise<CatalogItem[]> => ipcRenderer.invoke('models:catalog'),
+  modelsInstalled: (): Promise<InstalledModel[]> => ipcRenderer.invoke('models:installed'),
+  modelsPull: (name: string): Promise<void> => ipcRenderer.invoke('models:pull', name),
+  modelsCancel: (name: string) => ipcRenderer.send('models:cancel', name),
+  modelsDelete: (name: string): Promise<void> => ipcRenderer.invoke('models:delete', name),
+  modelsSearch: (q: string): Promise<{ id: string; pullName: string; downloads: number; likes: number }[]> => ipcRenderer.invoke('models:search', q),
+  onModelsProgress: (cb: (p: PullEvent) => void) => ipcRenderer.on('models:progress', (_e, p: PullEvent) => cb(p)),
+  onModelsChanged: (cb: () => void) => ipcRenderer.on('models:changed', () => cb()),
   // app
   ollamaStatus: (): Promise<{ up: boolean; models: string[]; loaded: { name: string; gpuPercent: number }[] }> => ipcRenderer.invoke('ollama:status'),
   appInfo: (): Promise<{ version: string; dataDir: string; electron: string; platform: string }> => ipcRenderer.invoke('app:info'),

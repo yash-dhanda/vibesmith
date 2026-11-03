@@ -4,13 +4,25 @@ A desktop app that builds software for you. Describe what you want in a chat; an
 
 The editor, file tree and terminal exist but stay hidden behind the **Workspace** button. The app opens as a chat.
 
-## Run it
+## Download
+
+Installers for Linux (`.AppImage`, `.deb`) and Windows (`.exe`) are on the [Releases page](https://github.com/yash-dhanda/vibesmith/releases). They contain only the app, no AI model.
+
+On first start Forge opens its **model library**, like LM Studio:
+
+1. It finds an AI engine on your computer, or downloads the open-source one (Ollama, about 1.5 GB) into its own folder and runs it privately. Nothing is installed system-wide.
+2. You pick a model. The library shows which ones fit your graphics card and memory, downloads with progress and a cancel button, and also searches Hugging Face for community models.
+3. After that it works fully offline. Cloud models (your own API keys) are optional.
+
+The installers are not code-signed, so Windows SmartScreen and some Linux desktops will warn on first run. Choose "More info, Run anyway" (Windows) or make the AppImage executable (`chmod +x Forge-*.AppImage`).
+
+## Run it from source
 
 ```bash
 npm install
-npx electron-rebuild -f -w node-pty   # once, builds the terminal for Electron
 npm run dev                           # development
 scripts/install-desktop.sh            # adds Forge to the app menu and a `forge` command
+npm run dist                          # builds the installers for this system into release/
 ```
 
 For local models install [Ollama](https://ollama.com) and pull one, for example `ollama pull qwen3:8b`. On Arch use the GPU build (`ollama-cuda`); the plain `ollama` package runs on the CPU and is several times slower. Settings > Models shows what Ollama is doing.

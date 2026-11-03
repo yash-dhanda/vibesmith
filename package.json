@@ -57,7 +57,7 @@
     "asarUnpack": [
       "**/node_modules/node-pty/**"
     ],
-    "npmRebuild": true,
+    "npmRebuild": false,
     "linux": {
       "target": [
         "AppImage",

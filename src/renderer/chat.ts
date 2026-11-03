@@ -2,6 +2,7 @@ import type { AgentEvent, ChatListItem, Mode, TranscriptItem } from '../preload'
 import { exportMarkdown, folderName, formatRate, formatTokens, matchesQuery, md, toolTarget, toolVerb } from './format'
 import { icon } from './icons'
 import { renderHistory } from './history'
+import { initLibrary, openLibrary } from './library'
 import { initModels, noModels, selectedModel } from './models'
 import { openSettings } from './settings'
 import { $, agentLimits, cleanErr, copy, h, numCtxPref, showMenu, toast } from './ui'
@@ -141,8 +142,8 @@ function showEmpty() {
   if (noModels) {
     const b = h('div', 'banner')
     b.append(h('div', '', 'No AI model found. Download one from the model library, or add an API key.'))
-    const open = h('button', 'btn', 'Open settings')
-    open.onclick = () => openSettings('models')
+    const open = h('button', 'btn primary', 'Open the model library')
+    open.onclick = () => openLibrary()
     b.append(open)
     emptyEl.append(b)
   }
@@ -644,6 +645,8 @@ export async function initChat(opts: {
   sendBtn.onclick = () => (running ? window.forge.agentStop(activeId) : send())
   projectBtn.onclick = chooseFolder
   $('gear').onclick = () => openSettings()
+  $('models-btn').onclick = () => openLibrary()
+  initLibrary()
   $('usage-badge').onclick = () => openSettings('usage')
   $('new-chat').onclick = newChat
   $('more').onclick = moreMenu
@@ -697,4 +700,10 @@ export async function initChat(opts: {
   renderHistory(chats.filter((c) => matchesQuery(c, query)), activeId, query, { open: openChat, remove: removeChat, rename: renameChat })
   if (project) await onProject(project)
   await initUsage()
+  // First run: nothing to talk to yet, so open the library with a welcome instead of an empty chat.
+  let onboarded = false
+  try {
+    onboarded = localStorage.getItem('forge.onboarded') === '1'
+  } catch {}
+  if (noModels && !onboarded) openLibrary({ welcome: true })
 }
