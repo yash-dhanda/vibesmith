@@ -182,3 +182,5 @@ Typing and growing files are not written to the log; finished text, tool results
 - Answer the `plan` approval with `teamAnswer(id, approvalId, true)` to start, or `false` to cancel the run. This saves plan usage when the plan is wrong: the agents have only planned so far.
 
 **teamDiagnostics()**: returns plain text for bug reports: platform and versions, whether each agent is ready (and the fix), Codex models, plan allowance used, and the last 5 runs with their status. Contains no secrets or file contents. Offer it as "Copy diagnostics".
+
+**UI for the plan-usage hooks (Claude wrote this in `src/renderer/team.ts` while Codex was out of allowance):** `finalReview` third state "Automatic", `reviewPlan` setting, plan approval card with edit/reassign/skip (`teamUpdatePlan`), ChatGPT allowance row in the health box (warns at 80%), "Copy diagnostics", `onTeamFocus` opens the run. Replay scenario `planreview`.

@@ -768,3 +768,15 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; 
 @media (max-width: 1180px) { .team-story { grid-template-columns: minmax(0, 1fr); }.team-side-story { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }.team-run { width: min(100% - 32px, 1100px); } }
 @media (max-width: 900px) { #app.team-mode { grid-template-columns: minmax(0, 1fr); } #app.team-mode #history { display: none; } .team-entry { width: calc(100% - 32px); padding-top: 38px; }.team-run-header { grid-template-columns: auto minmax(0, 1fr) auto; }.team-run-header > .status-pill, .team-run-header > .team-elapsed { display: none; }.team-controls { grid-column: 2 / -1; justify-content: flex-start; }.team-usage-strip { grid-column: 2 / -1; }.team-lanes { grid-template-columns: minmax(0, 1fr); }.team-approval-card { grid-template-columns: minmax(0, 1fr); }.team-side-story { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 600px) { .team-head { padding-inline: 12px; }.team-head #team-back { font-size: 0; }.team-head #team-back .ic { display: block; }.team-health, .team-config-grid, .team-run-tools { grid-template-columns: minmax(0, 1fr); }.team-intro h1 { font-size: 38px; }.team-run { width: calc(100% - 20px); }.team-run-header { grid-template-columns: auto minmax(0, 1fr); }.team-controls, .team-usage-strip { grid-column: 1 / -1; }.team-board { grid-template-columns: minmax(0, 1fr); }.team-final { padding: 18px; }.team-final-actions { flex-direction: column; }.team-applied { grid-template-columns: minmax(0, 1fr); }.team-applied > .btn { grid-column: 1; grid-row: auto; margin-top: 8px; } }
+.health-allowance { grid-column: 1 / -1; padding: 9px 11px; border-radius: 10px; background: var(--bg); color: var(--muted); font-size: 11px; }
+.health-allowance.high { color: var(--warn); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 45%, transparent); }
+.health-allowance small { display: block; margin-top: 3px; color: var(--faint); }
+.team-plan-review { display: grid; gap: 12px; padding: 14px 12px; border-top: 1px solid color-mix(in srgb, var(--warn) 25%, transparent); }
+.team-plan-review h3 { margin: 2px 0; font-size: 15px; }
+.team-plan-review > p { margin: 0; color: var(--muted); font-size: 12px; }
+.plan-edit-list { display: grid; gap: 8px; }
+.plan-edit-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 10px; border-radius: 10px; background: var(--bg); }
+.plan-edit-row input[type="text"], .plan-edit-row select { min-width: 0; border: 1px solid var(--border); background: var(--panel); border-radius: 7px; padding: 6px 8px; }
+.plan-edit-row .plan-goal, .plan-edit-row .task-deps, .plan-edit-row .plan-checks { grid-column: 2 / -1; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.plan-skip { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; }
+.team-start-actions .btn[title] { margin-right: 6px; }

@@ -34,14 +34,14 @@ const statusLabel = (status: Run['status']) => ({ planning: 'Planning', running:
 const isActive = (status: Run['status']) => ['planning', 'running', 'paused', 'verifying', 'awaiting_approval', 'interrupted'].includes(status)
 const call = async (fn: () => Promise<unknown>) => { try { await fn() } catch (e) { toast(cleanErr(e), 5000) } }
 
-function showTeam() {
+function showTeam(entry = true) {
   app.classList.add('team-mode')
   $('mode-team').classList.add('active')
   $('mode-chat').classList.remove('active')
   $('team-screen').hidden = false
   $('chat').hidden = true
   $('workspace').setAttribute('aria-hidden', 'true')
-  void showEntry()
+  if (entry) void showEntry()
 }
 function showChat() {
   app.classList.remove('team-mode')
@@ -72,8 +72,8 @@ async function showEntry() {
   replay = localStorage.getItem('forge.teamReplay') === '1' || new URLSearchParams(location.search).has('team-replay')
   const replayState = localStorage.getItem('forge.teamReplayState') ?? 'entry'; replayScenario = replayState
   const replayHealth = replayState === 'unavailable'
-    ? { agents: [{ agent: 'claude' as const, ok: false, detail: 'Claude Code is not signed in.', fix: 'Run: claude auth login' }, { agent: 'codex' as const, ok: true, detail: 'Ready' }], codexModels: ['qwen3:0.6b'] }
-    : { agents: [{ agent: 'claude' as const, ok: true, detail: 'Ready' }, { agent: 'codex' as const, ok: true, detail: 'Ready' }], codexModels: ['qwen3:0.6b'] }
+    ? { agents: [{ agent: 'claude' as const, ok: false, detail: 'Claude Code is not signed in.', fix: 'Run: claude auth login' }, { agent: 'codex' as const, ok: true, detail: 'Ready' }], codexModels: ['qwen3:0.6b'], limits: {} }
+    : { agents: [{ agent: 'claude' as const, ok: true, detail: 'Ready' }, { agent: 'codex' as const, ok: true, detail: 'Ready' }], codexModels: ['qwen3:0.6b'], limits: { codex: { primaryPct: 27, primaryResetsAt: Date.now() / 1000 + 9000, secondaryPct: 12 } } }
   const replaySummary: Summary = { id: 'replay-team-run', goal: 'Build a shared planning space where two agents can work together', project: '/tmp/forge-team-replay', status: 'interrupted', createdAt: Date.now() - 3_600_000, updatedAt: Date.now() - 62_000, tasks: { total: 3, done: 1, running: 0, failed: 0 }, pendingApprovals: 0 }
   let loadError: unknown
   const loaded = await Promise.all([
@@ -101,7 +101,8 @@ async function showEntry() {
   const planner = select([['auto', 'Choose for me'], ['claude', 'Claude'], ['codex', 'Codex']], defaults.planner ?? 'auto')
   const parallel = input('number', String(defaults.maxParallelPerAgent ?? 2)); parallel.min = '1'; parallel.max = '4'
   const review = select([['cross', 'Cross-review every task'], ['off', 'No cross-review']], defaults.review ?? 'cross')
-  const finalReview = select([['true', 'Check the combined result'], ['false', 'Skip the final review']], String(defaults.finalReview ?? true))
+  const finalReview = select([['auto', 'Automatic (bigger runs only)'], ['true', 'Always check the combined result'], ['false', 'Skip the final review']], String(defaults.finalReview ?? 'auto'))
+  const reviewPlan = select([['false', 'Start right away'], ['true', 'Let me review the plan first']], String(defaults.reviewPlan ?? false))
   const fixRounds = input('number', String(defaults.maxFixRounds ?? 3)); fixRounds.min = '0'; fixRounds.max = '5'
   const codexMode = select([['app-server', 'Live Codex session'], ['exec', 'Simple Codex run']], defaults.codexMode ?? 'app-server')
   const verify = input('text', defaults.verify === null ? '' : defaults.verify ?? ''); verify.placeholder = 'Detect from project'
@@ -114,15 +115,15 @@ async function showEntry() {
   const maxTasks = input('number', String(defaults.budget?.maxTasks ?? 12)); maxTasks.min = '1'; maxTasks.max = '30'
   const limit = input('number', String(defaults.maxLimitPercent ?? 90)); limit.min = '0'; limit.max = '100'
   const grid = h('div', 'team-config-grid')
-  grid.append(field('Planner', planner, 'Chooses who splits the goal into tasks.'), field('Parallel tasks per agent', parallel, 'More tasks can finish sooner, but use more allowance.'), field('Task review', review), field('Final review', finalReview), field('Fix attempts per task', fixRounds), field('Project check', verify, 'Leave blank to detect it from the project.'), field('Codex connection', codexMode, 'Live sessions support streaming and immediate steering.'), field('Codex model', codexModel), field('Claude model', claudeModel), field('Claude effort', effort), field('Time budget (minutes)', minutes), field('Token budget', tokens), field('Agent runs', runs), field('Maximum tasks', maxTasks), field('Pause at plan usage %', limit, '0 disables this limit.'))
+  grid.append(field('Planner', planner, 'Chooses who splits the goal into tasks.'), field('Parallel tasks per agent', parallel, 'More tasks can finish sooner, but use more allowance.'), field('Task review', review), field('Final review', finalReview, 'Automatic checks the whole result only for runs of 3 or more tasks, which saves plan usage.'), field('Plan approval', reviewPlan, 'Stops after planning so you can edit, reassign or skip tasks before any agent works.'), field('Fix attempts per task', fixRounds), field('Project check', verify, 'Leave blank to detect it from the project.'), field('Codex connection', codexMode, 'Live sessions support streaming and immediate steering.'), field('Codex model', codexModel), field('Claude model', claudeModel), field('Claude effort', effort), field('Time budget (minutes)', minutes), field('Token budget', tokens), field('Agent runs', runs), field('Maximum tasks', maxTasks), field('Pause at plan usage %', limit, '0 disables this limit.'))
   const validation = h('div', 'team-config-error'); validation.setAttribute('role', 'alert')
   const numeric = [parallel, fixRounds, minutes, tokens, runs, maxTasks, limit]
   const readConfig = (): Partial<TeamConfig> | null => {
     if (numeric.some(item => !item.checkValidity() || !Number.isFinite(Number(item.value)))) { validation.textContent = 'Check the highlighted team settings.'; numeric.find(item => !item.checkValidity())?.focus(); return null }
     validation.textContent = ''
-    return { planner: planner.value as TeamConfig['planner'], maxParallelPerAgent: Number(parallel.value), review: review.value as TeamConfig['review'], finalReview: finalReview.value === 'true', maxFixRounds: Number(fixRounds.value), codexMode: codexMode.value as TeamConfig['codexMode'], verify: verify.value.trim() || undefined, codexModel: codexModel.value, claudeModel: claudeModel.value.trim() || undefined, claudeEffort: effort.value as TeamConfig['claudeEffort'], maxLimitPercent: Number(limit.value), budget: { maxMinutes: Number(minutes.value), maxTokens: Number(tokens.value), maxAgentRuns: Number(runs.value), maxTasks: Number(maxTasks.value) } }
+    return { planner: planner.value as TeamConfig['planner'], maxParallelPerAgent: Number(parallel.value), review: review.value as TeamConfig['review'], finalReview: finalReview.value === 'auto' ? 'auto' : finalReview.value === 'true', reviewPlan: reviewPlan.value === 'true', maxFixRounds: Number(fixRounds.value), codexMode: codexMode.value as TeamConfig['codexMode'], verify: verify.value.trim() || undefined, codexModel: codexModel.value, claudeModel: claudeModel.value.trim() || undefined, claudeEffort: effort.value as TeamConfig['claudeEffort'], maxLimitPercent: Number(limit.value), budget: { maxMinutes: Number(minutes.value), maxTokens: Number(tokens.value), maxAgentRuns: Number(runs.value), maxTasks: Number(maxTasks.value) } }
   }
-  const reset = h('button', 'btn', 'Reset team defaults') as HTMLButtonElement; reset.type = 'button'; reset.onclick = () => { planner.value = 'auto'; parallel.value = '2'; review.value = 'cross'; finalReview.value = 'true'; fixRounds.value = '3'; verify.value = ''; codexMode.value = 'app-server'; claudeModel.value = ''; effort.value = 'high'; minutes.value = '60'; tokens.value = '500000'; runs.value = '20'; maxTasks.value = '12'; limit.value = '90'; validation.textContent = 'Defaults restored. They will save when you start a run.' }
+  const reset = h('button', 'btn', 'Reset team defaults') as HTMLButtonElement; reset.type = 'button'; reset.onclick = () => { planner.value = 'auto'; parallel.value = '2'; review.value = 'cross'; finalReview.value = 'auto'; reviewPlan.value = 'false'; fixRounds.value = '3'; verify.value = ''; codexMode.value = 'app-server'; claudeModel.value = ''; effort.value = 'high'; minutes.value = '60'; tokens.value = '500000'; runs.value = '20'; maxTasks.value = '12'; limit.value = '90'; validation.textContent = 'Defaults restored. They will save when you start a run.' }
   const saveDefaults = h('button', 'btn', 'Save team defaults') as HTMLButtonElement; saveDefaults.type = 'button'; saveDefaults.onclick = () => void call(async () => { const config = readConfig(); if (!config || typeof window.forge.teamSettingsSet !== 'function') return; await window.forge.teamSettingsSet(config); validation.textContent = 'Team defaults saved for this project.' })
   const settingActions = h('div', 'team-setting-actions'); settingActions.append(reset, saveDefaults)
   advanced.append(summary, grid, validation, settingActions)
@@ -133,10 +134,19 @@ async function showEntry() {
     if (!agent.ok && 'fix' in agent && agent.fix) row.append(h('code', '', agent.fix))
     healthBox.append(row)
   }
+  const allowance = health.limits?.codex
+  if (allowance) {
+    const worst = Math.max(allowance.primaryPct, allowance.secondaryPct ?? 0), resets = allowance.primaryResetsAt ? new Date(allowance.primaryResetsAt * (allowance.primaryResetsAt < 1e12 ? 1000 : 1)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''
+    const meter = h('div', `health-allowance ${worst >= 80 ? 'high' : ''}`, `ChatGPT plan: ${Math.round(allowance.primaryPct)}% of this window used${resets ? ` · resets ${resets}` : ''}${allowance.secondaryPct !== undefined ? ` · ${Math.round(allowance.secondaryPct)}% of the week` : ''}`)
+    if (worst >= 80) meter.append(h('small', '', 'Codex may be left out of new runs until the allowance resets.'))
+    healthBox.append(meter)
+  }
   const ready = health.agents.filter(a => a.ok)
   const start = h('button', 'btn primary team-start', ready.length ? `Start with ${ready.length === 2 ? 'the team' : ready[0].agent === 'claude' ? 'Claude' : 'Codex'}` : 'No agent is ready') as HTMLButtonElement
   start.disabled = !ready.length
-  const actions = h('div', 'team-start-actions'); actions.append(project, h('span', 'grow'), start)
+  const diagnostics = h('button', 'btn', 'Copy diagnostics') as HTMLButtonElement; diagnostics.type = 'button'; diagnostics.title = 'Copies versions, agent status and recent runs for a bug report. No secrets or file contents.'
+  diagnostics.onclick = () => void call(async () => { const text = replay ? 'Forge replay diagnostics' : await window.forge.teamDiagnostics(); await navigator.clipboard.writeText(text); toast('Diagnostics copied') })
+  const actions = h('div', 'team-start-actions'); actions.append(project, diagnostics, h('span', 'grow'), start)
   form.append(goal, healthBox, advanced, actions)
   form.onsubmit = async e => {
     e.preventDefault(); const text = goal.value.trim(); if (!text || start.disabled) return
@@ -216,7 +226,9 @@ function renderRunHeader() {
   const status = h('span', `status-pill ${run!.status}`, statusLabel(run!.status)); status.setAttribute('role', 'status')
   const elapsed = h('span', 'team-elapsed', fmtTime(Math.floor((Date.now() - run!.createdAt) / 1000))); elapsed.id = 'team-elapsed'
   const controls = h('div', 'team-controls')
-  if (['paused', 'interrupted'].includes(run!.status)) controls.append(actionButton('Resume', 'arrowright', () => teamAction(() => window.forge.teamResume(run!.id))))
+  const planPending = run!.approvals.some(a => a.kind === 'plan' && a.status === 'pending')
+  if (planPending) { /* the plan card starts the team */ }
+  else if (['paused', 'interrupted'].includes(run!.status)) controls.append(actionButton('Resume', 'arrowright', () => teamAction(() => window.forge.teamResume(run!.id))))
   else if (['planning', 'running', 'verifying'].includes(run!.status)) controls.append(pauseButton())
   if (isActive(run!.status) && run!.status !== 'awaiting_approval') controls.append(actionButton('Cancel', 'x', () => teamAction(() => window.forge.teamCancel(run!.id)), 'danger'))
   if (run!.final && typeof window.forge.teamExportReport === 'function') controls.append(actionButton('Export report', 'download', () => call(() => window.forge.teamExportReport(run!.id))))
@@ -248,6 +260,7 @@ function renderPauseBanner() {
   const banner = h('section', 'team-pause-banner')
   banner.append(icon('info'), h('div', '', run!.pausedReason || 'This run was interrupted when Forge closed. The agents will continue from their saved sessions.'))
   if (run!.status === 'done' || run!.status === 'cancelled') return banner
+  if (run!.approvals.some(a => a.kind === 'plan' && a.status === 'pending')) return banner
   const failed = run!.tasks.find(task => task.status === 'failed' || task.status === 'blocked' || task.status === 'interrupted')
   if (run!.status === 'failed' && failed) banner.append(actionButton('Retry failed task', 'arrowright', () => teamAction(() => window.forge.teamRetryTask(run!.id, failed.id)), 'primary'))
   else if (run!.status === 'failed') return banner
@@ -259,6 +272,7 @@ function renderPauseBanner() {
 function renderApprovals(items: Run['approvals']) {
   const tray = h('section', 'approval-tray'); tray.setAttribute('role', 'alert'); tray.setAttribute('aria-live', 'assertive'); const title = h('div', 'team-section-head'); title.append(h('div', '', 'Waiting for you'), h('span', '', `${items.length} blocking`)); tray.append(title)
   for (const approval of items) {
+    if (approval.kind === 'plan') { tray.append(renderPlanReview(approval)); continue }
     const card = h('article', 'team-approval-card'); const copy = h('div', 'approval-copy')
     copy.append(h('span', 'approval-kind', approval.kind.replace('_', ' ')), h('h3', '', approval.title), h('p', '', approval.detail))
     const note = input('text'); note.placeholder = 'Optional note to the team'; note.setAttribute('aria-label', `Note for ${approval.title}`)
@@ -270,6 +284,47 @@ function renderApprovals(items: Run['approvals']) {
     card.append(copy, note, actions); tray.append(card)
   }
   return tray
+}
+
+function renderPlanReview(approval: Run['approvals'][number]) {
+  const card = h('article', 'team-plan-review')
+  card.append(h('span', 'approval-kind', 'plan'), h('h3', '', approval.title), h('p', '', approval.detail))
+  const rows = run!.tasks.map((task, index) => {
+    const row = h('div', 'plan-edit-row'), skipped = task.status === 'cancelled'
+    const title = input('text', task.title); title.setAttribute('aria-label', `Task ${index + 1} title`)
+    const agent = select([['claude', 'Claude'], ['codex', 'Codex']], task.agent); agent.setAttribute('aria-label', `Task ${index + 1} agent`)
+    const skip = input('checkbox'); skip.checked = skipped; skip.setAttribute('aria-label', `Skip task ${index + 1}`)
+    const skipLabel = h('label', 'plan-skip'); skipLabel.append(skip, document.createTextNode('Skip'))
+    const goal = h('p', 'plan-goal', task.goal)
+    row.append(h('span', 'task-number', String(index + 1).padStart(2, '0')), title, agent, skipLabel, goal)
+    if (task.deps.length) row.append(h('p', 'task-deps', `After ${task.deps.map(id => run!.tasks.find(t => t.id === id)?.title ?? id).join(', ')}`))
+    if (task.acceptance.length) { const checks = h('details', 'plan-checks'); checks.append(h('summary', '', `Checks · ${task.acceptance.length}`), ...task.acceptance.map(item => h('p', '', item))); row.append(checks) }
+    return { task, title, agent, skip, row }
+  })
+  const list = h('div', 'plan-edit-list'); for (const r of rows) list.append(r.row)
+  const result = h('div', 'team-config-error'); result.setAttribute('role', 'alert')
+  const actions = h('div', 'approval-actions')
+  const apply = async (start: boolean) => {
+    const edits = rows.flatMap(({ task, title, agent, skip }) => {
+      const edit: { id: string; title?: string; agent?: 'claude' | 'codex'; skip?: boolean } = { id: task.id }
+      if (title.value.trim() && title.value.trim() !== task.title) edit.title = title.value.trim()
+      if (agent.value !== task.agent) edit.agent = agent.value as 'claude' | 'codex'
+      if (skip.checked !== (task.status === 'cancelled')) edit.skip = skip.checked
+      return Object.keys(edit).length > 1 ? [edit] : []
+    })
+    if (replay) { toast('Replay mode: plan edits recorded'); if (start) { approval.status = 'allowed'; renderRun() } return }
+    if (edits.length) { const done = await window.forge.teamUpdatePlan(run!.id, edits); if (!done.ok) { result.textContent = done.message; return } }
+    if (!start) { await refreshRun(); toast('Plan updated'); return }
+    const accepted = await window.forge.teamAnswer(run!.id, approval.id, true)
+    if (!accepted) toast('The team is no longer waiting on this plan.')
+    await refreshRun()
+  }
+  actions.append(
+    actionButton('Start the team', 'check', () => void call(() => apply(true)), 'primary'),
+    actionButton('Save edits only', 'sliders', () => void call(() => apply(false))),
+    actionButton('Cancel run', 'x', () => void (replay ? toast('Replay mode: action recorded') : call(async () => { await window.forge.teamAnswer(run!.id, approval.id, false); await refreshRun() }))),
+  )
+  card.append(list, result, actions); return card
 }
 
 function renderBoard() {
@@ -508,9 +563,10 @@ function reduceEvent(event: RunEvent, t = Date.now()) {
 export function initTeam(options: { project: () => string | null }) {
   currentProject = options.project() ?? ''
   const enabled = apiReady(); $('mode-team').hidden = !enabled; $('team-nav').hidden = !enabled
-  $('mode-team').onclick = showTeam; $('team-nav').onclick = showTeam; $('team-back').onclick = showChat; $('mode-chat').onclick = showChat
+  $('mode-team').onclick = () => showTeam(); $('team-nav').onclick = () => showTeam(); $('team-back').onclick = showChat; $('mode-chat').onclick = showChat
   $('team-hist-toggle').onclick = () => $('app').classList.toggle('no-hist')
   if (typeof window.forge.onTeamEvent === 'function') window.forge.onTeamEvent(reduceEvent)
+  if (typeof window.forge.onTeamFocus === 'function') window.forge.onTeamFocus(id => { showTeam(false); void openRun(id).catch(e => toast(cleanErr(e), 5000)) })
   window.addEventListener('forge-project', (e) => { currentProject = (e as CustomEvent<string | null>).detail ?? '' })
   if (localStorage.getItem('forge.teamReplay') === 'open') { localStorage.setItem('forge.teamReplay', '1'); showTeam() }
 }
