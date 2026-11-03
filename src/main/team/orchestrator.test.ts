@@ -433,6 +433,30 @@ describe('team orchestrator', () => {
     expect(r.pausedReason).toMatch(/claude.*OAuth/)
   })
 
+  it('a plan usage limit blocks the run (waiting minutes would not help); resume tries again', async () => {
+    const x = h({
+      plan: { tasks: [T('a', { agent: 'claude' })] },
+      fail: (agent, kind, task, n) => (kind === 'work' && n <= 1 ? { ok: false, text: '', usage: { input: 0, output: 0, cached: 0, costUsd: 0 }, events: [], error: { kind: 'limit', message: 'Claude AI usage limit reached|1793747988' } } : null),
+    })
+    const run = await x.orch.start(x.proj, 'limit')
+    const r = await until(x.orch, run.id, (r) => r.status === 'paused')
+    expect(r.tasks[0].status).toBe('blocked')
+    expect(r.pausedReason).toMatch(/claude.*usage limit/i)
+    await x.orch.resume(run.id) // the allowance came back
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+  })
+
+  it('retries a busy agent shortly instead of failing', async () => {
+    const x = h({
+      plan: { tasks: [T('a', { agent: 'codex' })] },
+      fail: (agent, kind, task, n) => (kind === 'work' && n <= 2 ? { ok: false, text: '', usage: { input: 0, output: 0, cached: 0, costUsd: 0 }, events: [], error: { kind: 'busy', message: '529 overloaded' } } : null),
+    })
+    const run = await x.orch.start(x.proj, 'busy')
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect(r.tasks[0].attempts).toBe(2)
+    expect(r.messages.filter((m) => /busy right now/.test(m.body))).toHaveLength(2)
+  })
+
   it('retries a transient failure, then gives up with the task failed', async () => {
     const x = h({
       plan: { tasks: [T('a')] },

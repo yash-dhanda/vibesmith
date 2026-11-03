@@ -753,15 +753,15 @@ export class TeamOrchestrator {
       if (res.ok) break
       const kind: ErrorKind = res.error?.kind ?? 'other'
       const msg = res.error?.message ?? 'the agent failed'
-      if (kind === 'auth' || kind === 'missing' || kind === 'model') return this.blockTask(run, task, `${task.agent}: ${msg}`, true)
+      if (kind === 'auth' || kind === 'missing' || kind === 'model' || kind === 'limit') return this.blockTask(run, task, `${task.agent}: ${msg}`, true) // needs the user: sign in, or wait for the plan to reset
       task.attempts++
-      if (kind === 'limit' && task.attempts <= 3) {
-        this.post(run, { from: 'orchestrator', to: 'all', kind: 'note', taskId: task.id, body: `${task.agent} hit a usage limit; waiting before trying again.` })
-        await this.sleep(60_000 * task.attempts)
+      if (kind === 'busy' && task.attempts <= 3) {
+        this.post(run, { from: 'orchestrator', to: 'all', kind: 'note', taskId: task.id, body: `${task.agent} is busy right now; trying again shortly.` })
+        await this.sleep(30_000 * task.attempts)
         if (this.stopKind(run)) return this.interrupted(run, task)
         continue
       }
-      if (task.attempts > 2 || kind === 'limit') return this.failTask(run, task, `${task.agent}: ${msg}`)
+      if (task.attempts > 2 || kind === 'busy') return this.failTask(run, task, `${task.agent}: ${msg}`)
       this.touch(run, task)
     }
     task.summary = res!.text
