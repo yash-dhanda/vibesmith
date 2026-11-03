@@ -24,3 +24,13 @@ export async function mountTeamDiff(host: HTMLElement, diff: string) {
   editor = monaco.editor.createDiffEditor(host, { readOnly: true, automaticLayout: true, minimap: { enabled: false }, renderSideBySide: host.clientWidth > 720, fontSize: 12, scrollBeyondLastLine: false })
   editor.setModel({ original: models[0], modified: models[1] })
 }
+
+const languageFor = (path: string) => {
+  const ext = path.split('.').pop()?.toLowerCase()
+  return ({ ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript', css: 'css', scss: 'scss', html: 'html', json: 'json', md: 'markdown', py: 'python', rs: 'rust', go: 'go', sh: 'shell', yml: 'yaml', yaml: 'yaml' } as Record<string, string>)[ext ?? ''] ?? 'plaintext'
+}
+
+export async function colorizeTeamCode(text: string, path: string) {
+  const monaco = await import('monaco-editor')
+  return monaco.editor.colorize(text, languageFor(path), {})
+}

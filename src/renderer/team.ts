@@ -1,5 +1,5 @@
 import type { Run, RunEvent, Task, TeamConfig } from '../main/team/types'
-import type { RunSummary } from '../main/team/service'
+import type { RunSummary, TeamMemory } from '../main/team/service'
 import { md, folderName, formatTokens } from './format'
 import { icon } from './icons'
 import { $, cleanErr, h, toast } from './ui'
@@ -16,6 +16,11 @@ let elapsedTimer: ReturnType<typeof setInterval> | null = null
 let currentProject = ''
 let replay = false
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
+let memoryTimer: ReturnType<typeof setTimeout> | null = null
+let sharedMemory: TeamMemory | null = null
+let memoryLoading = false
+let liveFiles = new Map<string, Task['changed']>()
+let undoResult = ''
 
 const apiReady = () => typeof window.forge.teamStart === 'function'
 const fmtTime = (seconds: number) => seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`
@@ -51,7 +56,7 @@ const input = (type: string, value = '') => { const el = document.createElement(
 const select = (values: [string, string][], value = '') => { const el = document.createElement('select'); for (const [v, label] of values) el.append(new Option(label, v)); el.value = value; return el }
 
 async function showEntry() {
-  run = null; log = []; stopClock()
+  run = null; log = []; liveFiles.clear(); sharedMemory = null; undoResult = ''; stopClock()
   root.replaceChildren(h('div', 'team-entry-skeleton skel'))
   if (!apiReady()) {
     const unavailable = h('section', 'team-entry')
@@ -147,11 +152,43 @@ function renderRunList() {
   return section
 }
 
-async function openRun(id: string, fixture?: { run: Run; events: Logged[] }) {
+async function openRun(id: string, fixture?: { run: Run; events: Logged[]; memory?: TeamMemory }) {
   root.replaceChildren(h('div', 'team-run-loading skel'))
   const loaded = fixture ?? await (async () => { const [saved, events] = await Promise.all([window.forge.teamGet(id), window.forge.teamEvents(id)]); if (!saved) throw new Error('This team run no longer exists.'); return { run: saved, events } })()
-  run = structuredClone(loaded.run); log = [...loaded.events]
+  run = structuredClone(loaded.run); log = []; liveFiles.clear(); sharedMemory = fixture?.memory ?? null; undoResult = ''
+  for (const item of loaded.events) appendLogged(structuredClone(item))
+  if (!['planning', 'running', 'paused', 'interrupted'].includes(run.status)) liveFiles.clear()
   renderRun(); startClock()
+  if (!fixture) void refreshMemory()
+}
+
+function appendLogged(item: Logged) {
+  const event = item.ev
+  if (event.type === 'live') { liveFiles.set(event.taskId, event.files); return }
+  if (event.type !== 'agent') { log.push(item); return }
+  const next = event.ev
+  const sameAgentEvent = (entry: Logged) => entry.ev.type === 'agent' && entry.ev.taskId === event.taskId && entry.ev.phase === event.phase && entry.ev.ev.agent === next.agent
+  const lastIndex = (matches: (entry: Logged) => boolean) => { for (let i = log.length - 1; i >= 0; i--) if (matches(log[i])) return i; return -1 }
+  if (next.type === 'delta') {
+    const index = lastIndex(entry => sameAgentEvent(entry) && entry.ev.type === 'agent' && entry.ev.ev.type === 'delta' && entry.ev.ev.channel === next.channel && entry.ev.ev.id === next.id)
+    if (index >= 0) {
+      const previous = log[index].ev
+      if (previous.type === 'agent' && previous.ev.type === 'delta') previous.ev.text += next.text
+      log[index].t = item.t
+      return
+    }
+  } else if (next.type === 'code') {
+    const index = lastIndex(entry => entry.ev.type === 'agent' && entry.ev.ev.type === 'code' && entry.ev.ev.agent === next.agent && entry.ev.ev.id === next.id)
+    if (index >= 0) { log[index] = item; return }
+  } else if (next.type === 'prompt') {
+    const index = lastIndex(entry => sameAgentEvent(entry) && entry.ev.type === 'agent' && entry.ev.ev.type === 'prompt')
+    if (index >= 0) { log[index] = item; return }
+  } else if (next.type === 'text') {
+    log = log.filter(entry => !(sameAgentEvent(entry) && entry.ev.type === 'agent' && entry.ev.ev.type === 'delta' && entry.ev.ev.channel === 'text'))
+  } else if (next.type === 'tool_result') {
+    log = log.filter(entry => !(sameAgentEvent(entry) && entry.ev.type === 'agent' && entry.ev.ev.type === 'delta' && entry.ev.ev.channel === 'output' && entry.ev.ev.id === next.id))
+  }
+  log.push(item)
 }
 
 function startClock() { stopClock(); elapsedTimer = setInterval(() => { const el = document.getElementById('team-elapsed'); if (el && run) el.textContent = fmtTime(Math.floor((Date.now() - run.createdAt) / 1000)) }, 1000) }
@@ -165,6 +202,7 @@ function renderRun() {
   const pending = run.approvals.filter(a => a.status === 'pending')
   if (pending.length) page.append(renderApprovals(pending))
   if (run.status === 'awaiting_approval' && run.final) page.append(renderFinal())
+  if (run.status === 'done' && run.applied) page.append(renderApplied())
   page.append(renderBoard(), renderStory())
   root.replaceChildren(page)
 }
@@ -257,7 +295,7 @@ function renderTask(task: Task, index: number) {
 function renderStory() {
   const area = h('section', 'team-story')
   const lanes = h('div', 'team-lanes'); lanes.append(renderLane('claude'), renderLane('codex'))
-  const side = h('aside', 'team-side-story'); side.append(renderFeed(), renderVerify(), renderSteer(), renderDiffPanel())
+  const side = h('aside', 'team-side-story'); side.append(renderLiveFiles(), renderFeed(), renderMemory(), renderVerify(), renderSteer(), renderDiffPanel())
   area.append(lanes, side); return area
 }
 function renderLane(agent: 'claude' | 'codex') {
@@ -265,12 +303,28 @@ function renderLane(agent: 'claude' | 'codex') {
   const events = log.filter(x => x.ev.type === 'agent' && x.ev.ev.agent === agent)
   const body = h('div', 'lane-body')
   if (!events.length) body.append(h('p', 'team-empty', 'Waiting for a task…'))
-  for (const { t, ev } of events.slice(-30)) if (ev.type === 'agent') {
+  for (const { t, ev } of events.slice(-40)) if (ev.type === 'agent') {
     const row = h('article', `activity-row ${ev.ev.type}`); const task = run!.tasks.find(x => x.id === ev.taskId)
     const meta = h('div', 'activity-meta'); meta.append(h('span', '', task?.title ?? ev.taskId), h('span', '', ev.phase), h('time', '', new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })))
     row.append(meta)
     const event = ev.ev
     if (event.type === 'text') row.append(h('p', '', event.text))
+    else if (event.type === 'delta') {
+      if (event.channel === 'thinking') {
+        const thought = h('details', 'agent-thinking')
+        thought.append(h('summary', '', 'Thinking'), h('p', '', event.text)); row.append(thought)
+      } else if (event.channel === 'output') {
+        const output = h('details', 'agent-output') as HTMLDetailsElement; output.open = true
+        output.append(h('summary', '', 'Live command output'), h('pre', '', event.text.slice(-12000))); row.append(output)
+      } else {
+        const typing = h('p', 'agent-typing', event.text); typing.append(h('span', 'typing-cursor', '')); row.append(typing)
+      }
+    }
+    else if (event.type === 'code') row.append(renderLiveCode(event))
+    else if (event.type === 'prompt') {
+      const prompt = h('details', 'agent-prompt')
+      prompt.append(h('summary', '', 'What this agent was told'), h('pre', '', event.text)); row.append(prompt)
+    }
     else if (event.type === 'tool') row.append(h('div', `activity-tool ${event.kind}`, `${event.kind === 'command' ? 'Running' : event.kind === 'edit' ? 'Changing' : event.kind === 'read' ? 'Reading' : 'Working'} · ${event.summary}`))
     else if (event.type === 'tool_result') { const details = h('details', `activity-result ${event.ok ? 'ok' : 'bad'}`); details.append(h('summary', '', event.ok ? 'Step finished' : 'Step failed'), h('pre', '', event.text.slice(0, 5000))); row.append(details) }
     else if (event.type === 'note') row.append(h('p', 'activity-note', event.text))
@@ -282,11 +336,84 @@ function renderLane(agent: 'claude' | 'codex') {
   lane.append(body); return lane
 }
 
+function renderLiveCode(event: Extract<RunEvent, { type: 'agent' }>['ev'] & { type: 'code' }) {
+  const card = h('section', `live-code ${event.kind} ${event.done ? 'done' : 'writing'}`)
+  const head = h('div', 'live-code-head')
+  head.append(h('span', 'tool-path', event.path), h('span', 'live-code-state', event.done ? 'Saved' : 'Writing…'))
+  const pre = h('pre', `live-code-body ${event.kind}`)
+  if (event.kind === 'diff') {
+    for (const line of event.text.slice(-30000).split('\n')) {
+      const part = h('span', line.startsWith('+') && !line.startsWith('+++') ? 'diff-add' : line.startsWith('-') && !line.startsWith('---') ? 'diff-remove' : line.startsWith('@@') ? 'diff-hunk' : '', line + '\n')
+      pre.append(part)
+    }
+  } else {
+    const code = h('code', '', event.text.slice(-30000)); pre.append(code)
+    const marker = `${event.id}:${event.text.length}`; code.dataset.liveCode = marker
+    void import('./teamDiff').then(({ colorizeTeamCode }) => colorizeTeamCode(event.text.slice(-30000), event.path)).then(html => { if (code.isConnected && code.dataset.liveCode === marker) code.innerHTML = html }).catch(() => {})
+  }
+  card.append(head, pre); return card
+}
+
 function renderFeed() {
   const section = h('section', 'team-feed'); const head = h('div', 'team-section-head'); head.append(h('div', '', 'Team feed'), h('span', '', `${run!.messages.length}`)); section.append(head)
   if (!run!.messages.length) section.append(h('p', 'team-empty', 'Handoffs, reviews and decisions appear here.'))
   for (const msg of run!.messages.slice(-12)) { const item = h('article', `feed-item ${msg.kind}`); const top = h('div'); top.append(h('strong', '', msg.from === 'user' ? 'You' : msg.from === 'orchestrator' ? 'Forge' : msg.from === 'claude' ? 'Claude' : 'Codex'), h('span', '', msg.kind.replace('_', ' '))); item.append(top, h('p', '', msg.body)); section.append(item) }
   return section
+}
+
+function renderLiveFiles() {
+  const section = h('section', 'team-live-files')
+  const count = [...liveFiles.values()].reduce((total, files) => total + files.length, 0)
+  const head = h('div', 'team-section-head'); head.append(h('div', '', 'Files changing now'), h('span', '', count ? `${count} live` : 'Quiet')); section.append(head)
+  if (!count) { section.append(h('p', 'team-empty', 'Files appear here while an agent is writing them.')); return section }
+  for (const [taskId, files] of liveFiles) {
+    const group = h('div', 'live-file-group'); const task = run!.tasks.find(item => item.id === taskId)
+    group.append(h('div', 'live-file-task', task?.title ?? taskId))
+    for (const file of files) {
+      const button = h('button', 'live-file-row')
+      button.append(h('span', `file-status ${file.status}`, file.status), h('span', 'tool-path', file.path), h('span', 'team-diff-count', `+${file.added} −${file.removed}`))
+      button.onclick = () => void openDiff(taskId, file.path, true); group.append(button)
+    }
+    section.append(group)
+  }
+  return section
+}
+
+function renderMemory() {
+  const section = h('section', 'team-memory')
+  const head = h('div', 'team-section-head'); head.append(h('div', '', 'Shared memory'), h('span', '', memoryLoading ? 'Refreshing…' : sharedMemory ? 'Current' : 'Waiting')); section.append(head)
+  if (!sharedMemory) { section.append(h('p', 'team-empty', 'Decisions, handoffs, problems and useful project history appear here.')); return section }
+  const addGroup = (title: string, items: HTMLElement[], open = false) => {
+    if (!items.length) return
+    const details = h('details', 'memory-group') as HTMLDetailsElement; details.open = open
+    details.append(h('summary', '', `${title} · ${items.length}`), ...items); section.append(details)
+  }
+  addGroup('Decisions', sharedMemory.decisions.map(item => memoryItem(item.text, item.by)), true)
+  addGroup('Handoffs', sharedMemory.handoffs.map(item => memoryItem(item.handoff, `${item.agent} · ${item.title}`)), true)
+  addGroup('Messages', sharedMemory.messages.slice(-12).map(item => memoryItem(item.body, `${item.from} → ${item.to}`)))
+  addGroup('Problems met', sharedMemory.errors.map(item => memoryItem(item.fix ? `${item.text} Fix: ${item.fix}` : item.text, item.signature)))
+  const projectItems = [
+    ...sharedMemory.project.decisions.map(item => memoryItem(item.text, `Earlier decision · ${item.by}`)),
+    ...sharedMemory.project.errors.map(item => memoryItem(item.fix ? `${item.text} Fix: ${item.fix}` : item.text, 'Earlier problem')),
+    ...Object.entries(sharedMemory.project.stats).map(([role, stat]) => memoryItem(`${stat.ok} successful · ${stat.fail} failed`, role.replace(':', ' · '))),
+  ]
+  addGroup('From earlier runs', projectItems)
+  return section
+}
+
+function memoryItem(text: string, meta: string) { const item = h('div', 'memory-item'); item.append(h('span', '', meta), h('p', '', text)); return item }
+
+async function refreshMemory() {
+  if (!run || replay || typeof window.forge.teamMemory !== 'function') return
+  const id = run.id; memoryLoading = true
+  try { const next = await window.forge.teamMemory(id); if (run?.id === id) sharedMemory = next }
+  catch { /* The run remains usable when memory refresh fails. */ }
+  finally { if (run?.id === id) { memoryLoading = false; renderRun() } }
+}
+
+function scheduleMemoryRefresh() {
+  if (memoryTimer) clearTimeout(memoryTimer)
+  memoryTimer = setTimeout(() => void refreshMemory(), 180)
 }
 function renderVerify() {
   const events = log.filter(x => x.ev.type === 'verify')
@@ -319,10 +446,10 @@ function renderDiffPanel() {
   const button = h('button', 'btn', 'Review all changes'); button.onclick = () => void openDiff()
   section.append(button, h('div', 'team-diff-host')); return section
 }
-async function openDiff(taskId?: string) {
+async function openDiff(taskId?: string, path?: string, live = false) {
   const host = document.querySelector<HTMLElement>('.team-diff-host'); if (!host || !run) return
-  host.classList.add('open'); host.replaceChildren(h('div', 'team-diff-loading skel'))
-  try { const diff = replay ? `diff --git a/src/team.ts b/src/team.ts\n--- a/src/team.ts\n+++ b/src/team.ts\n@@ -1,2 +1,3 @@\n export const team = true\n+export const calm = true` : await window.forge.teamDiff(run.id, taskId); const { mountTeamDiff } = await import('./teamDiff'); host.replaceChildren(); await mountTeamDiff(host, diff || 'No changes are available yet.') }
+  host.classList.add('open'); host.replaceChildren(h('div', 'team-diff-loading skel')); host.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  try { const diff = replay ? `diff --git a/${path ?? 'src/team.ts'} b/${path ?? 'src/team.ts'}\n--- a/${path ?? 'src/team.ts'}\n+++ b/${path ?? 'src/team.ts'}\n@@ -1,2 +1,3 @@\n export const team = true\n+export const calm = true` : live && taskId && typeof window.forge.teamLiveDiff === 'function' ? await window.forge.teamLiveDiff(run.id, taskId, path) : await window.forge.teamDiff(run.id, taskId); const { mountTeamDiff } = await import('./teamDiff'); host.replaceChildren(); await mountTeamDiff(host, diff || 'No changes are available yet.') }
   catch (e) { host.replaceChildren(h('div', 'errcard', cleanErr(e))) }
 }
 
@@ -334,22 +461,44 @@ function renderFinal() {
   const verify = h('div', `final-verify ${run!.final!.verifyOk ? 'ok' : run!.final!.verifyOk === false ? 'bad' : ''}`); verify.append(icon(run!.final!.verifyOk ? 'check' : 'info'), h('span', '', run!.final!.verifyOk ? 'Project check passed' : run!.final!.verifyOk === false ? 'Project check failed' : 'No project check configured')); section.append(verify)
   const note = h('p', 'team-final-note', `Nothing has changed in your project yet. If you don’t apply this result, the work stays on ${run!.integrationBranch}.`); section.append(note)
   const actions = h('div', 'team-final-actions')
-  const apply = actionButton('Apply to my project', 'check', async () => { if (replay) { run!.status = 'done'; run!.applied = true; toast('Applied · recovery checkpoint replay-checkpoint'); renderRun(); return } await call(async () => { const result = await window.forge.teamApply(run!.id); toast(result.checkpoint ? `${result.message} · checkpoint ${result.checkpoint.slice(0, 12)}` : result.message, 5000); await refreshRun() }) }, 'primary')
+  const apply = actionButton('Apply to my project', 'check', async () => { if (replay) { run!.status = 'done'; run!.applied = true; run!.appliedCheckpoint = 'replay-checkpoint'; toast('Applied · Undo is ready'); renderRun(); return } await call(async () => { const result = await window.forge.teamApply(run!.id); toast(result.checkpoint ? `${result.message} · Undo is ready` : result.message, 5000); await refreshRun() }) }, 'primary')
   const reject = actionButton("Don't apply", 'x', () => { if (replay) { run!.status = 'done'; run!.applied = false; toast(`Not applied · work stays on ${run!.integrationBranch}`); renderRun(); return } void teamAction(() => window.forge.teamReject(run!.id)) })
   actions.append(apply, reject); section.append(actions); return section
 }
 
+function renderApplied() {
+  const section = h('section', `team-applied ${run!.undone ? 'undone' : ''}`)
+  section.append(h('div', 'eyebrow', run!.undone ? 'CHANGES UNDONE' : 'APPLIED TO YOUR PROJECT'), h('h2', '', run!.undone ? 'Your project is back where it was.' : 'The team’s work is now in your project.'))
+  const copy = run!.undone ? 'The applied files were restored to their pre-Team versions.' : 'You can keep working, or undo the entire apply. Undo also removes hand edits made after the apply.'
+  section.append(h('p', '', copy))
+  if (undoResult) section.append(h('div', 'team-undo-result', undoResult))
+  if (!run!.undone && run!.appliedCheckpoint && typeof window.forge.teamUndo === 'function') section.append(actionButton('Undo applied changes', 'arrowright', () => void undoApplied()))
+  return section
+}
+
+async function undoApplied() {
+  if (!run) return
+  const confirmed = window.confirm('Undo this Team apply? Every file the apply changed will go back to how it was before. Hand edits made to those files after the apply will also be undone.')
+  if (!confirmed) return
+  if (replay) { run.undone = true; undoResult = 'Restored 2 files. Later hand edits in those files were also removed.'; renderRun(); return }
+  await call(async () => {
+    const result = await window.forge.teamUndo(run!.id)
+    undoResult = result.ok ? `${result.message}${result.paths.length ? ` · ${result.paths.length} files restored` : ''}` : result.message
+    await refreshRun()
+  })
+}
+
 function reduceEvent(event: RunEvent, t = Date.now()) {
   if (!run || event.runId !== run.id) return
-  log.push({ t, ev: event })
+  appendLogged({ t, ev: structuredClone(event) })
   if (event.type === 'run') { run.status = event.status; run.pausedReason = event.reason }
   else if (event.type === 'plan') { run.plan.summary = event.summary; run.tasks = event.tasks }
-  else if (event.type === 'task') { const i = run.tasks.findIndex(x => x.id === event.task.id); if (i >= 0) run.tasks[i] = event.task; else run.tasks.push(event.task) }
-  else if (event.type === 'message') { if (!run.messages.some(x => x.id === event.message.id)) run.messages.push(event.message) }
+  else if (event.type === 'task') { const i = run.tasks.findIndex(x => x.id === event.task.id); if (i >= 0) run.tasks[i] = event.task; else run.tasks.push(event.task); if (event.task.status !== 'running') liveFiles.delete(event.task.id); scheduleMemoryRefresh() }
+  else if (event.type === 'message') { if (!run.messages.some(x => x.id === event.message.id)) run.messages.push(event.message); scheduleMemoryRefresh() }
   else if (event.type === 'approval') { const i = run.approvals.findIndex(x => x.id === event.approval.id); if (i >= 0) run.approvals[i] = event.approval; else run.approvals.push(event.approval) }
   else if (event.type === 'usage') run.usage = event.usage
-  else if (event.type === 'final') { run.final = event.final; run.status = 'awaiting_approval' }
-  if (refreshTimer) clearTimeout(refreshTimer); refreshTimer = setTimeout(renderRun, event.type === 'agent' ? 80 : 0)
+  else if (event.type === 'final') { run.final = event.final; run.status = 'awaiting_approval'; liveFiles.clear() }
+  if (refreshTimer) clearTimeout(refreshTimer); refreshTimer = setTimeout(renderRun, event.type === 'agent' || event.type === 'live' ? 80 : 0)
 }
 
 export function initTeam(options: { project: () => string | null }) {
