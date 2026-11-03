@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { blocked } from './agent/commands'
+import { blocked, killTree } from './agent/commands'
 
 // "Run it": start the project the agent built (a dev server, a script) as a managed process with live logs, so a
 // non-programmer never opens a terminal. The command is detected from the project; the user presses Run.
@@ -91,14 +91,7 @@ export class ProjectRunner {
   stop() {
     const c = this.child
     if (!c) return
-    try {
-      if (!win && c.pid) process.kill(-c.pid, 'SIGTERM') // the whole process group, not just the shell
-      else c.kill()
-    } catch {}
-    setTimeout(() => {
-      try {
-        if (!win && c.pid) process.kill(-c.pid, 'SIGKILL')
-      } catch {}
-    }, 3000).unref()
+    killTree(c, 'SIGTERM')
+    setTimeout(() => killTree(c), 3000).unref()
   }
 }

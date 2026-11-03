@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -14,8 +14,23 @@ const DENY: [RegExp, string][] = [
   [/\b(rd|rmdir)\s+(\/s\s+|\/q\s+)+[a-z]:\\?(\s|$)/i, 'recursive delete of a drive'],
   [/\bdel\s+(\/[fsq]\s+)+[a-z]:\\/i, 'recursive delete of a drive'],
   [/\bformat\s+[a-z]:/i, 'format a drive'],
+  [/\bremove-item\b[^|;]*-recurse[^|;]*\s[a-z]:\\?(\s|$)/i, 'recursive delete of a drive'],
   [/\b(iwr|irm|invoke-webrequest|invoke-restmethod)\b[^|;]*\|\s*(iex|invoke-expression)\b/i, 'pipe download to PowerShell'],
 ]
+
+// Stops a spawned shell and everything it started. POSIX: the child was spawned detached, so signal its process group.
+// Windows has no groups, and killing cmd.exe alone leaves the dev server it launched holding the port: taskkill walks the tree.
+export function killTree(child: ChildProcess, signal: NodeJS.Signals = 'SIGKILL', platform: NodeJS.Platform = process.platform, run: typeof execFile = execFile) {
+  if (!child.pid) return
+  try {
+    if (platform === 'win32') run('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true }, () => {})
+    else process.kill(-child.pid, signal)
+  } catch {
+    try {
+      child.kill(signal)
+    } catch {}
+  }
+}
 
 export function blocked(cmd: string): string | null {
   return DENY.find(([re]) => re.test(cmd))?.[1] ?? null
@@ -83,12 +98,7 @@ export async function runCommand(cmd: string, cwd: string, signal: AbortSignal, 
     const child = spawn(cmd, { shell: true, cwd, detached: posix, stdio: ['ignore', 'pipe', 'pipe'] })
     let out = ''
     let note = ''
-    const kill = () => {
-      try {
-        if (posix && child.pid) process.kill(-child.pid, 'SIGKILL') // whole process group, not just the shell
-        else child.kill('SIGKILL')
-      } catch {}
-    }
+    const kill = () => killTree(child)
     const timer = setTimeout(() => {
       note = `\n[timed out after ${timeoutMs / 1000}s and was killed]`
       kill()
