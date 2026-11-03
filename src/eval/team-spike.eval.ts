@@ -7,6 +7,8 @@ import { runClaude } from '../main/team/claude'
 import { runCodex } from '../main/team/codex'
 import type { TeamEvent } from '../main/team/events'
 import { checkTeamTools, codexModels } from '../main/team/health'
+import { TeamHub } from '../main/team/hub'
+import { resolve } from 'node:path'
 
 // Phase 0 of team mode: drive the real Claude Code and Codex CLIs through Forge's adapters and print one normalised timeline.
 // Uses your signed-in subscriptions (a few thousand tokens). Run: TEAM_SPIKE=1 npx vitest run --config vitest.eval.config.ts team-spike
@@ -63,5 +65,29 @@ describe.skipIf(!process.env.TEAM_SPIKE)('team spike', () => {
     const review = await runClaude({ cwd: dir, write: false, onEvent: show, prompt: 'Review greet.js and check.js in this folder. Reply with PASS or FAIL and one sentence why. Do not change anything.' })
     expect(review.ok, review.error?.message).toBe(true)
     line(`\nreview verdict: ${review.text.replace(/\s+/g, ' ').slice(0, 200)}`)
+  })
+
+  it('Codex reaches the team MCP server: inbox, post, handoff, approval', async () => {
+    const calls: { op: string; args: any; agent: string }[] = []
+    const hub = new TeamHub(async (op, args, ctx) => {
+      calls.push({ op, args, agent: ctx.agent })
+      if (op === 'inbox') return [{ from: 'claude', kind: 'finding', body: 'the secret word is TANGERINE' }]
+      if (op === 'request_approval') return 'allowed'
+      return 'ok'
+    })
+    const sock = await hub.start()
+    const models = await codexModels()
+    const model = process.env.TEAM_CODEX_MODEL ?? models.find((m) => /luna/.test(m)) ?? models[0]
+    const dir = mkdtempSync(join(tmpdir(), 'forge-team-mcp-'))
+    execFileSync('git', ['init', '-q'], { cwd: dir })
+    const link = { sock, token: hub.token, runId: 'r1', taskId: 't1', agent: 'codex' as const, script: resolve('out/main/team-mcp.js'), node: process.execPath }
+    line('\n== codex + team MCP server ==')
+    const r = await runCodex({ cwd: dir, model, write: true, team: link, onEvent: show, prompt: 'Use your forge_team tools: 1) call team_inbox and read it; 2) call team_post to "claude" with kind "finding" and a body that repeats the secret word from the inbox; 3) call team_request_approval with title "deploy test"; 4) call team_handoff with notes "done"; then reply with the secret word.' })
+    hub.stop()
+    line(`hub saw: ${calls.map((c) => c.op).join(', ')}`)
+    expect(r.ok, r.error?.message).toBe(true)
+    expect(calls.map((c) => c.op)).toEqual(expect.arrayContaining(['inbox', 'post', 'request_approval', 'handoff']))
+    expect(calls.every((c) => c.agent === 'codex')).toBe(true)
+    expect(r.text).toMatch(/TANGERINE/i)
   })
 })
