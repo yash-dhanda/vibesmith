@@ -18,3 +18,8 @@ export const codexMcpArgs = (l: TeamLink): string[] => {
   const env = '{' + Object.entries(linkEnv(l)).map(([k, v]) => `${k}=${t(v)}`).join(',') + '}'
   return ['-c', `mcp_servers.${SERVER}.command=${t(l.node)}`, '-c', `mcp_servers.${SERVER}.args=${t([l.script])}`, '-c', `mcp_servers.${SERVER}.env=${env}`, '-c', `mcp_servers.${SERVER}.tool_timeout_sec=${TOOL_TIMEOUT_SEC}`, '-c', `mcp_servers.${SERVER}.startup_timeout_sec=30`, '-c', `mcp_servers.${SERVER}.default_tools_approval_mode="approve"`] // approve: the team tools are Forge's own, and exec cannot ask
 }
+
+// Codex loads the user's apps, browser, computer-use and plugin tools into every conversation: thousands of tokens of tool
+// descriptions that a coding task never touches, paid out of the same plan allowance. Team runs start without them.
+const LEAN = ['apps', 'browser_use', 'browser_use_external', 'browser_use_full_cdp_access', 'computer_use', 'in_app_browser', 'image_generation', 'plugins', 'hooks']
+export const codexLeanArgs = (): string[] => LEAN.flatMap((f) => ['--disable', f])

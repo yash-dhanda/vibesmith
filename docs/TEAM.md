@@ -74,3 +74,10 @@ Everything an agent does is visible as it happens: its text and reasoning as it 
 ## Plan usage, not API usage
 
 Forge only uses the two subscriptions: Claude Code signed in with a Claude account and Codex signed in with ChatGPT. `teamHealth` marks an agent as not ready when its CLI is signed in with an API key (pay per token), with the exact command to fix it, and the agents are started without `ANTHROPIC_*` / `OPENAI_API_KEY` variables so a key in the environment cannot switch them to API billing. The dollar figures on Claude's usage (`costUsd`) are what the same work would cost at API rates, shown only as a measure of size: nothing is billed. What counts is the plan allowance: Codex reports it (`run.limits`, `teamHealth().limits`) and Forge stops at 80%; Claude's plan limit is only noticed when Claude Code reports it hit.
+
+## Keeping plan usage low
+
+- **Claude Code** runs with `--setting-sources project,local`: the user's personal hooks, plugins, global CLAUDE.md and extra MCP servers are not loaded (a project's own CLAUDE.md and settings still are). Measured on the same small task: 207k to 98k input tokens (about -53%), and the team agents no longer pick up personal styles from global hooks.
+- **Codex** starts without the apps, browser, computer-use, image and plugin tool sets (`--disable apps browser_use computer_use in_app_browser image_generation plugins hooks ...`): a coding task never uses them, and their descriptions are sent with every conversation.
+- Before a run Forge reads the ChatGPT plan allowance (free) and leaves Codex out when the 5-hour or weekly window is at 80%.
+- Reviews are the other agent's cost: turn them off per run (`review: 'off'`) for throwaway work.

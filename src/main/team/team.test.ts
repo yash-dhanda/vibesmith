@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { claudeArgs, CLAUDE_DENY } from './claude'
 import { makeClaudeParser } from './claudeStream'
 import { codexArgs } from './codex'
+import { codexLeanArgs } from './link'
 import { makeCodexParser, unwrapShell } from './codexStream'
 import { classifyError, partialField, type TeamEvent } from './events'
 import { cleanEnv, runCli } from './process'
@@ -95,8 +96,10 @@ describe('argument builders', () => {
   })
   it('codex: pins the model, reads the prompt from stdin, sandboxes by role', () => {
     const a = codexArgs({ cwd: '/p', prompt: 'x', write: true, model: 'gpt-5.6-luna' })
-    expect(a).toEqual(['exec', '--json', '-C', '/p', '-s', 'workspace-write', '-m', 'gpt-5.6-luna', '-c', 'approval_policy="never"', '-'])
-    expect(codexArgs({ cwd: '/p', prompt: 'x', write: false, model: 'm', resume: 't1' })).toEqual(['exec', 'resume', 't1', '--json', '-m', 'm', '-c', 'sandbox_mode="read-only"', '-c', 'approval_policy="never"', '-'])
+    const lean = codexLeanArgs()
+    expect(lean).toEqual(expect.arrayContaining(['--disable', 'apps', 'plugins', 'computer_use']))
+    expect(a).toEqual(['exec', '--json', '-C', '/p', '-s', 'workspace-write', '-m', 'gpt-5.6-luna', '-c', 'approval_policy="never"', ...lean, '-'])
+    expect(codexArgs({ cwd: '/p', prompt: 'x', write: false, model: 'm', resume: 't1' })).toEqual(['exec', 'resume', 't1', '--json', '-m', 'm', '-c', 'sandbox_mode="read-only"', '-c', 'approval_policy="never"', ...lean, '-'])
   })
 })
 

@@ -162,4 +162,14 @@ describe.skipIf(!process.env.TEAM_SPIKE)('team spike', () => {
     line(`codex limits: ${JSON.stringify(l)}`)
     expect(l?.primaryPct).toBeGreaterThanOrEqual(0)
   })
+
+  it('Codex app-server starts with the lean tool set (a model call is not needed: a plan-limit error also proves the start worked)', async () => {
+    const model = process.env.TEAM_CODEX_MODEL ?? (await codexModels()).find((m) => /luna/.test(m)) ?? ''
+    const dir = mkdtempSync(join(tmpdir(), 'forge-team-lean-'))
+    execFileSync('git', ['init', '-q'], { cwd: dir })
+    const r = await runCodexServer({ cwd: dir, model, write: false, onEvent: show, prompt: 'Reply with the single word ok.' })
+    line(`lean start: ok=${r.ok} error=${r.error?.kind ?? '-'} ${r.error?.message.slice(0, 100) ?? ''} tokens in=${r.usage.input}`)
+    expect(r.error?.kind).not.toBe('protocol')
+    expect(r.error?.kind).not.toBe('missing')
+  }, 60_000)
 })

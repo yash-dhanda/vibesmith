@@ -1,5 +1,5 @@
 import { makeCodexParser } from './codexStream'
-import { codexMcpArgs, type TeamLink } from './link'
+import { codexLeanArgs, codexMcpArgs, type TeamLink } from './link'
 import { runCli, type RunOpts, type RunResult } from './process'
 
 export type CodexOpts = RunOpts & {
@@ -13,8 +13,8 @@ export type CodexOpts = RunOpts & {
 export function codexArgs(o: CodexOpts): string[] {
   const sandbox = o.write ? 'workspace-write' : 'read-only'
   const mcp = o.team ? codexMcpArgs(o.team) : []
-  if (o.resume) return ['exec', 'resume', o.resume, '--json', '-m', o.model, '-c', `sandbox_mode="${sandbox}"`, '-c', 'approval_policy="never"', ...mcp, '-']
-  return ['exec', '--json', '-C', o.cwd, '-s', sandbox, '-m', o.model, '-c', 'approval_policy="never"', ...mcp, '-']
+  if (o.resume) return ['exec', 'resume', o.resume, '--json', '-m', o.model, '-c', `sandbox_mode="${sandbox}"`, '-c', 'approval_policy="never"', ...codexLeanArgs(), ...mcp, '-']
+  return ['exec', '--json', '-C', o.cwd, '-s', sandbox, '-m', o.model, '-c', 'approval_policy="never"', ...codexLeanArgs(), ...mcp, '-']
 }
 
 export const runCodex = (o: CodexOpts, bin = 'codex'): Promise<RunResult> => runCli('codex', bin, codexArgs(o), makeCodexParser(o.cwd), o)

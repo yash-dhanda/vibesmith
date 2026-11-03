@@ -23,7 +23,7 @@ export const CLAUDE_DENY = ['Bash(git push *)', 'Bash(sudo *)', 'Bash(rm -rf /*)
 export const CLAUDE_DENY_NO_GATE = [...CLAUDE_DENY, 'Bash(curl *)', 'Bash(wget *)', 'Bash(npm publish *)', 'Bash(docker push *)', 'Bash(vercel *)', 'Bash(terraform apply *)', 'Bash(kubectl *)', 'Read(./.env*)', 'Read(~/.ssh/**)', 'Read(~/.aws/**)']
 
 export function claudeArgs(o: ClaudeOpts): string[] {
-  const a = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-mode', o.write ? 'acceptEdits' : 'plan']
+  const a = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--setting-sources', 'project,local', '--permission-mode', o.write ? 'acceptEdits' : 'plan']
   if (o.model) a.push('--model', o.model)
   if (o.effort) a.push('--effort', o.effort)
   if (o.resume) a.push('--resume', o.resume)
