@@ -63,6 +63,7 @@ function pullBar(p: PullEvent): HTMLElement {
   const cancel = h('button', 'icon-btn sm')
   cancel.append(icon('x', 'sm'))
   cancel.title = 'Cancel download'
+  cancel.setAttribute('aria-label', `Cancel download of ${p.name}`)
   cancel.onclick = () => window.forge.modelsCancel(p.name)
   w.append(bar, txt, cancel)
   return w
@@ -371,7 +372,7 @@ export async function openLibrary(opts: { welcome?: boolean; tab?: Tab } = {}) {
   }
   dlg.replaceChildren(wrap)
   if (!dlg.open) dlg.showModal()
-  ;(document.activeElement as HTMLElement | null)?.blur()
+  close.focus()
   body.replaceChildren(...Array.from({ length: 3 }, () => h('div', 'skel skel-row')))
   await refresh()
 }

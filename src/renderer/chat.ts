@@ -7,6 +7,8 @@ import { initModels, noModels, selectedModel } from './models'
 import { openSettings } from './settings'
 import { $, agentLimits, cleanErr, copy, h, numCtxPref, showMenu, toast } from './ui'
 import { initUsage } from './usage'
+import { initBrief, resetBrief, projectBrief, briefGoal, briefEvent, briefUndone, withPriorities } from './brief'
+import { initPalette } from './palette'
 
 const thread = $('thread')
 const scroller = $('thread-scroll')
@@ -44,7 +46,7 @@ const cards = new Map<string, Card>()
 let onFileChanged: (path: string) => void = () => {}
 let onFilesRestored: (paths: string[]) => void = () => {}
 let onProject: (root: string | null) => Promise<void> | void = () => {}
-let openWorkspace: () => void = () => {}
+let openWorkspace: () => void | Promise<void> = () => {}
 
 const statusOf = (id: string) => chats.find((c) => c.id === id)?.status ?? 'idle'
 
@@ -124,7 +126,7 @@ const STARTERS: { title: string; hint: string }[] = [
 function showEmpty() {
   emptyEl = h('div', 'empty')
   emptySub = h('div', 'sub')
-  emptyEl.append(h('h2', '', 'What are we building?'), emptySub)
+  emptyEl.append(h('div', 'eyebrow', 'A LITTLE AMBITION. A REAL THING.'), h('h2', '', 'What are we building?'), emptySub)
   const list = h('div', 'suggest')
   for (const t of STARTERS) {
     const b = h('button')
@@ -153,11 +155,12 @@ function showEmpty() {
 
 function setProject(p: string | null) {
   project = p
+  projectBrief(p)
   projectBtn.replaceChildren(icon('folder', 'sm'), document.createTextNode(p ? folderName(p) : 'Choose folder'))
   projectBtn.title = hasMessages ? `This chat works in ${p}` : (p ?? 'Choose the folder the agent works in')
   projectBtn.classList.toggle('need', !p)
   projectBtn.disabled = hasMessages
-  if (emptySub) emptySub.textContent = p ? `Working in ${folderName(p)}` : 'Choose a folder below, then describe what you want.'
+  if (emptySub) emptySub.textContent = p ? `Your idea, built in ${folderName(p)}. Start with what it should do.` : 'A website, a helpful tool, something just for you. Start with an idea.'
 }
 
 function setRunning(on: boolean) {
@@ -165,6 +168,7 @@ function setRunning(on: boolean) {
   sendBtn.classList.toggle('stop', on)
   sendBtn.replaceChildren(icon(on ? 'stop' : 'arrowup'))
   sendBtn.title = on ? 'Stop (Esc)' : 'Send'
+  sendBtn.setAttribute('aria-label', on ? 'Stop building' : 'Send message')
   if (on) startLive()
   else {
     stopLive()
@@ -187,7 +191,7 @@ const PHRASE: Record<string, (n: number) => string> = {
 
 function summarize(g: Group, working: boolean) {
   const text = [...g.counts].map(([v, n]) => (PHRASE[v] ?? ((k: number) => `${v.toLowerCase()} ×${k}`))(n)).join(', ')
-  g.label.textContent = working ? `Working: ${text}…` : text.charAt(0).toUpperCase() + text.slice(1)
+  g.label.textContent = working ? `Building · ${text}…` : `${g.failed ? 'Needs attention' : 'Step complete'} · ${text}`
 }
 
 function ensureGroup(): Group {
@@ -195,14 +199,16 @@ function ensureGroup(): Group {
   const el = h('div', 'steps')
   const head = h('button', 'steps-head')
   const dot = h('span', 'dot run')
-  const label = h('span', 'steps-label', 'Working…')
+  const label = h('span', 'steps-label', 'Getting to know your project…')
   const chev = h('span', 'chev')
   chev.append(icon('chevron', 'sm'))
   head.append(dot, label, chev)
   const body = h('div', 'steps-body')
   body.hidden = true
+  head.setAttribute('aria-expanded', 'false')
   head.onclick = () => {
     body.hidden = !body.hidden
+    head.setAttribute('aria-expanded', String(!body.hidden))
     el.classList.toggle('open', !body.hidden)
   }
   el.append(head, body)
@@ -234,18 +240,20 @@ function toolCard(ev: Extract<AgentEvent, { type: 'tool' }>) {
   const a = (ev.args ?? {}) as Record<string, string>
   const path = toolTarget(ev.args)
   const verb = toolVerb(ev.name, ev.args)
+  const story = ({ read_file: 'Reading your project', list_dir: 'Exploring the folder', search: 'Finding the right place', edit_file: 'Updating your project', create_file: 'Creating something new', run_command: 'Running a project command' } as Record<string, string>)[ev.name] ?? 'Working on your project'
   const writes = ev.name === 'edit_file' || ev.name === 'create_file'
 
   const card = h('div', 'tool')
   const head = h('button', 'tool-head')
   const dot = h('span', 'dot run')
-  head.append(dot, h('span', 'tool-label', verb), h('span', 'tool-path', path))
+  head.append(dot, h('span', 'tool-label', story), h('span', 'tool-path', path))
   const body = h('div', 'tool-body')
   body.hidden = true
   if (ev.name === 'edit_file') body.append(diff(String(a.old_text ?? ''), String(a.new_text ?? '')))
   if (ev.name === 'create_file') body.append(diff('', String(a.content ?? '')))
   if (ev.name === 'run_command') body.append(h('pre', '', `$ ${path}`))
-  head.onclick = () => (body.hidden = !body.hidden)
+  head.setAttribute('aria-expanded', String(!body.hidden))
+  head.onclick = () => { body.hidden = !body.hidden; head.setAttribute('aria-expanded', String(!body.hidden)) }
   card.append(head, body)
 
   const g = ensureGroup()
@@ -254,16 +262,21 @@ function toolCard(ev: Extract<AgentEvent, { type: 'tool' }>) {
   const entry: Card = { dot, body, name: writes ? 'write' : ev.name, path, group: g }
   if (ev.needsApproval) {
     dot.className = 'dot wait'
-    body.hidden = false
+    card.classList.add('needs-approval')
+    const explanation = h('div', 'approval-summary')
+    explanation.append(h('strong', '', 'A quick check before I continue'), h('p', '', writes ? `${ev.name === 'create_file' ? 'Create' : 'Change'} ${path}. This updates files in your project folder.` : `Run this command in your project folder: ${path}`), h('span', '', 'Open the step above to inspect the exact details.'))
+    card.append(explanation)
     g.body.hidden = false // an action that needs a yes must be visible
     g.el.classList.add('open')
+    g.el.querySelector('button')?.setAttribute('aria-expanded', 'true')
     const actions = h('div', 'approve')
-    const yes = h('button', 'yes', 'Accept')
-    const no = h('button', '', 'Reject')
+    const yes = h('button', 'yes', writes ? 'Allow this change' : 'Allow this command')
+    const no = h('button', '', 'Skip this step')
     const answer = (ok: boolean) => {
       actions.remove()
       entry.actions = undefined
       dot.className = 'dot run'
+      explanation.textContent = ok ? 'Approved · continuing' : 'Skipped · files left unchanged by this step'
       window.forge.agentApprove(activeId, ev.id, ok)
     }
     yes.onclick = () => answer(true)
@@ -285,7 +298,7 @@ function changesCard(ev: Extract<AgentEvent, { type: 'changes' }>) {
   const title = h('span', '', `${ev.files.length} file${ev.files.length === 1 ? '' : 's'} changed`)
   const stat = h('span', 'stat')
   stat.append(h('span', 'plus', `+${sum('added')}`), document.createTextNode(' '), h('span', 'minus', `−${sum('removed')}`))
-  const undo = h('button', 'undo', 'Undo') as HTMLButtonElement
+  const undo = h('button', 'undo', 'Undo this run') as HTMLButtonElement
   const page = ev.files.find((f) => f.status !== 'deleted' && /\.html?$/i.test(f.path))
   if (page) {
     const open = h('button', 'undo')
@@ -297,14 +310,31 @@ function changesCard(ev: Extract<AgentEvent, { type: 'changes' }>) {
   card.append(head)
   for (const f of ev.files) {
     const row = h('button', 'file-row')
-    row.append(h('span', 'file-status ' + f.status, f.status === 'added' ? 'A' : f.status === 'deleted' ? 'D' : 'M'), h('span', 'tool-path', f.path))
-    if (f.status !== 'deleted') row.onclick = () => (openWorkspace(), onFileChanged(f.path))
-    card.append(row)
+    row.append(h('span', 'file-status ' + f.status, f.status === 'added' ? 'New' : f.status === 'deleted' ? 'Removed' : 'Updated'), h('span', 'tool-path', f.path))
+    if (f.status !== 'deleted') row.onclick = async () => { await openWorkspace(); onFileChanged(f.path) }
+    row.append(h('span', 'file-impact', `${f.added} lines added · ${f.removed} removed`))
+    row.setAttribute('aria-label', `${f.status}: ${f.path}. ${f.added} lines added, ${f.removed} removed. Open in workspace.`)
+    const line = h('div', 'change-line')
+    line.append(row)
+    const bridge = window.forge as typeof window.forge & { agentUndoFile?: (chatId: string, checkpoint: string, path: string) => Promise<string[]> }
+    if (typeof bridge.agentUndoFile === 'function') {
+      const one = h('button', 'undo', 'Undo file') as HTMLButtonElement
+      one.onclick = async () => {
+        one.disabled = true
+        try { const restored = await bridge.agentUndoFile!(activeId, ev.checkpoint, f.path); onFilesRestored(restored); briefUndone(restored); line.replaceChildren(h('div', 'changes-done', `${f.path} restored`)) }
+        catch (e) { one.disabled = false; toast(cleanErr(e), 4000) }
+      }
+      line.append(one)
+    }
+    card.append(line)
   }
+  card.append(h('p', 'change-explainer', 'Review a file in Workspace. Undo this run restores all files in this checkpoint.'))
   undo.onclick = async () => {
     undo.disabled = true
     try {
-      onFilesRestored(await window.forge.agentUndo(activeId, ev.checkpoint))
+      const restored = await window.forge.agentUndo(activeId, ev.checkpoint)
+      onFilesRestored(restored)
+      briefUndone(restored)
       card.replaceChildren(h('div', 'note changes-done', `Undone: ${ev.files.length} file${ev.files.length === 1 ? '' : 's'} restored.`))
     } catch (e) {
       undo.disabled = false
@@ -320,6 +350,7 @@ function addUser(text: string) {
   hasMessages = true
   runUsage = { input: 0, output: 0, genSec: 0, calls: 0 }
   log.push({ type: 'user', text })
+  briefGoal(text.split('\n\nMy build priorities, in order:')[0])
   add(h('div', 'user', text))
   setProject(project)
 }
@@ -327,6 +358,7 @@ function addUser(text: string) {
 // ---- events from the agent ----
 function handle(ev: AgentEvent) {
   log.push(ev)
+  briefEvent(ev)
   switch (ev.type) {
     case 'delta': {
       hideThinking()
@@ -388,7 +420,8 @@ function handle(ev: AgentEvent) {
       const body = h('div', 'tool-body')
       body.hidden = ev.ok
       body.append(h('pre', ev.ok ? '' : 'err', ev.output.length > 3000 ? '…' + ev.output.slice(-3000) : ev.output))
-      head.onclick = () => (body.hidden = !body.hidden)
+      head.setAttribute('aria-expanded', String(!body.hidden))
+  head.onclick = () => { body.hidden = !body.hidden; head.setAttribute('aria-expanded', String(!body.hidden)) }
       card.append(head, body)
       add(card)
       if (running) showThinking()
@@ -448,8 +481,9 @@ async function chooseFolder() {
 }
 
 async function send() {
-  const text = prompt.value.trim()
-  if (!text || running || sending) return
+  const draft = prompt.value.trim()
+  const text = withPriorities(draft)
+  if (!draft || running || sending) return
   if (!project) await chooseFolder() // like Codex: no folder, no run
   if (!project) return
   sending = true
@@ -474,6 +508,8 @@ async function send() {
 
 // ---- switching between chats ----
 function resetView() {
+  hideThinking()
+  resetBrief(activeId, project)
   thread.replaceChildren()
   cards.clear()
   reply = null
@@ -617,7 +653,7 @@ export async function initChat(opts: {
   onFileChanged: (path: string) => void
   onFilesRestored: (paths: string[]) => void
   onProject: (root: string | null) => Promise<void> | void
-  openWorkspace: () => void
+  openWorkspace: () => void | Promise<void>
 }) {
   onFileChanged = opts.onFileChanged
   onFilesRestored = opts.onFilesRestored
@@ -628,6 +664,22 @@ export async function initChat(opts: {
     if (localStorage.getItem('forge.hist') === '0') $('app').classList.add('no-hist')
   } catch {}
 
+  initBrief(async path => { await openWorkspace(); onFileChanged(path) })
+  resetBrief(activeId, project)
+  initPalette(() => [
+    { label: 'Start a new build', detail: 'Ctrl N', run: newChat },
+    { label: 'Model library', detail: 'Download models and check hardware fit', run: () => openLibrary() },
+    { label: 'Settings', detail: 'Appearance, models, agent and shortcuts', run: () => openSettings() },
+    { label: 'Usage and speed', run: () => openSettings('usage') },
+    { label: 'Toggle workspace', detail: 'Files, editor and terminal · Ctrl J', run: () => $('ws-toggle').click() },
+    { label: 'Toggle build brief', run: () => $('brief-toggle').click() },
+    { label: 'Focus message', detail: 'Ctrl L', run: () => prompt.focus() },
+    { label: 'Toggle chat history', detail: 'Ctrl B', run: () => $('hist-toggle').click() },
+    ...(['ask-all', 'auto-edit', 'full-auto'] as const).map((mode, i) => ({ label: `Autonomy: ${['Ask before edits', 'Auto-edit', 'Full auto'][i]}`, run: () => { modeSel.value = mode; localStorage.setItem('forge.mode', mode) } })),
+    ...(project ? [{ label: 'Open project folder', run: () => { window.forge.openFolder(activeId).catch(e => toast(cleanErr(e), 4000)) } }] : []),
+    ...chats.map(c => ({ label: c.title, detail: `Chat · ${folderName(c.project)}`, run: () => openChat(c.id) })),
+    ...Array.from($<HTMLSelectElement>('model').options).map(m => ({ label: `Use ${m.text}`, detail: 'Model', run: () => { const sel = $<HTMLSelectElement>('model'); sel.value = m.value; sel.dispatchEvent(new Event('change')) } })),
+  ])
   showEmpty()
   window.forge.chatsViewing(activeId)
   window.forge.onAgentEvent(({ chatId, ev }) => {
@@ -692,7 +744,6 @@ export async function initChat(opts: {
       const k = e.key.toLowerCase()
       const run = (fn: () => void) => (e.preventDefault(), fn())
       if (k === 'n') run(newChat)
-      else if (k === 'k') run(() => ($('app').classList.remove('no-hist'), searchEl.focus(), searchEl.select()))
       else if (k === 'l') run(() => prompt.focus())
       else if (k === 'b') run(() => $('hist-toggle').click())
       else if (k === 'j') run(() => $('ws-toggle').click())

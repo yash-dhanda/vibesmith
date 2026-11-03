@@ -32,6 +32,7 @@ function row(title: string, desc: string, ...controls: HTMLElement[]) {
   if (desc) t.append(h('div', 'st-d', desc))
   const c = h('div', 'ctl')
   c.append(...controls)
+  for (const control of c.querySelectorAll('input, select')) control.setAttribute('aria-label', title)
   r.append(t, c)
   return r
 }
@@ -236,7 +237,7 @@ function shortcuts(into: HTMLElement) {
   const g = group()
   for (const [k, v] of [
     ['Ctrl N', 'New chat'],
-    ['Ctrl K', 'Search chats'],
+    ['Ctrl K', 'Find actions, chats and models'],
     ['Ctrl L', 'Focus the message box'],
     ['Ctrl B', 'Show or hide chat history'],
     ['Ctrl J', 'Show or hide the workspace (files, editor, terminal)'],
@@ -328,7 +329,7 @@ export async function openSettings(page: Page = 'general') {
   wrap.append(nav, main)
   dlg.replaceChildren(wrap)
   if (!dlg.open) dlg.showModal()
-  ;(document.activeElement as HTMLElement | null)?.blur() // no stray focus ring on the first button
+  close.focus()
   await show(page)
 }
 
