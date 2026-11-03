@@ -17,3 +17,8 @@ The redesign is based on the additive contract in `src/preload/index.ts`. No mai
 - `agentUndoFile(chatId, checkpoint, path)` restores individual files; its returned remaining changes refresh the card.
 - `previewStart(chatId)` powers browser-based live preview.
 - Remote engine address, test connection, save and GPU-memory controls are in Settings > Models; remote-down never offers a local engine install.
+- Team Mode consumes the complete team bridge, including event replay, approvals, lifecycle controls, diff/final decisions, saved settings, run deletion, report export, and `claudeEffort`. The core Team UI is wired; the recovery follow-up below would make the apply checkpoint actionable.
+
+## Team follow-up
+
+- **Offer Undo after applying a team run.** `teamApply` returns a checkpoint, but the existing `agentUndo(chatId, checkpoint)` only resolves checkpoints registered to a chat session. Add `teamUndo(id, checkpoint): Promise<string[]>` (or register the team checkpoint with a compatible owner) so the final Team surface can render a working Undo button. Today the UI shows the returned recovery checkpoint without claiming that it can invoke Undo.

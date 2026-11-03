@@ -1,0 +1,17 @@
+{
+  "taskBoard": true,
+  "claudeLane": true,
+  "codexLane": true,
+  "teamFeed": true,
+  "verifyOutput": true,
+  "steering": true,
+  "diffPanel": true,
+  "runControls": true,
+  "diffOpened": true,
+  "steerMessageRendered": true,
+  "finalApplyGuard": true,
+  "applyStatus": "Applied",
+  "restartReplayStatus": "Interrupted",
+  "composerEntry": true,
+  "rendererExceptions": 0
+}

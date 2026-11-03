@@ -49,3 +49,20 @@ Electron was launched with `FORGE_PROJECT=/tmp/p npx electron . --remote-debuggi
 Functional review uses the real bridge and temporary checkpoint files; synthetic live approval events are delivered from the main-process inspector without changing main/preload sources.
 
 The checked-in screenshots are a visual review record, not startup assets. See [the screenshot directory](screenshots/).
+
+## Team Mode
+
+Team Mode is a control room, not a second chat screen. It opens from the composer or the persistent “Team runs” entry and keeps the user’s goal, the shared plan, both agents, approvals, checks, and final decision in one continuous surface.
+
+- **Start with confidence.** Readiness cards show Claude Code and Codex separately, including the backend’s exact recovery command when one is unavailable. A run can start with either available agent. Advanced setup exposes planner, concurrency, cross-review, verification, agent models, Claude effort, budgets, and the usage threshold without crowding the default path. Team defaults round-trip through `teamSettingsGet/Set`.
+- **Follow the work as a story.** Task cards lead with plain-language outcomes and dependencies. Claude and Codex have distinct live lanes, while the team feed is reserved for handoffs, reviews, decisions, and user steering. Raw tool output remains inside disclosures. Usage is factual: tokens, backend cost when non-zero, and reported ChatGPT plan-window usage.
+- **Intervene without losing context.** Soft pause waits for the current step; holding Pause performs the hard stop. Resume, cancel, retry, skip, budget extension, targeted steering, and blocking approval answers remain on the run. Interrupted runs explain that saved sessions can be resumed.
+- **Review before touching the project.** Unified diffs open on demand in a read-only Monaco diff editor and load its worker locally. The final report names changed files and verification status, then makes “Apply to my project” and “Don’t apply” explicit. Export uses `teamExportReport`; applying retains the backend checkpoint for Undo.
+- **Return after a restart.** `teamList`, `teamGet`, and `teamEvents` rebuild the board and activity lanes. `onTeamEvent` applies live updates through the same renderer reducer, so replayed and live runs do not have separate visual semantics. Completed runs can be removed through `teamDelete`.
+- **Capability gating.** Team entry points stay hidden unless `window.forge.teamStart` exists. Optional settings, deletion, event subscription, and export controls are individually gated by hook presence.
+
+### Team replay harness and verification
+
+The renderer includes a deterministic, quota-free replay fixture for planning, running, approval, paused, interrupted, unavailable-agent, and final states. Setting `forge.teamReplay` to `open` and `forge.teamReplayState` to a state before reload opens the fixture; the harness never calls `teamStart` or an agent CLI. It also exercises restart replay through the previous-runs list.
+
+On 2026-11-03 the built Electron app was run with `FORGE_PROJECT=/tmp/forge-team-ui npx electron . --remote-debugging-port=9331 --user-data-dir=/tmp/forge-team-ui-profile --ozone-platform=x11`. CDP verified the task board, both agent lanes, feed, verification output, steering, controls, lazy diff, final apply decision, composer entry, and interrupted-run replay with zero renderer exceptions. Light, dark, 1440px, and 760px captures are checked in; every PNG is below 500 KB. `npm run typecheck`, all 283 tests, and `npm run build` pass.
