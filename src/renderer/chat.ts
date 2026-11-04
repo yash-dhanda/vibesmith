@@ -108,6 +108,11 @@ const statusOf = (id: string) => chats.find((c) => c.id === id)?.status ?? 'idle
 // ---- scrolling ----
 const nearBottom = (slack = 80) => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < slack
 const toEnd = () => (scroller.scrollTop = scroller.scrollHeight)
+// Rows drawn for the first time (content-visibility) take their real height a frame later: keep landing on the end until it holds.
+function settleEnd(frames = 8) {
+  const step = () => { if (!frames--) return; if (!nearBottom(2)) toEnd(); requestAnimationFrame(step) }
+  requestAnimationFrame(step)
+}
 const add = (el: HTMLElement) => {
   const stick = nearBottom()
   thread.insertBefore(el, thinkingEl) // the "thinking" dots always stay last
@@ -249,7 +254,7 @@ const PHRASE: Record<string, (n: number) => string> = {
 function summarize(g: Group, working: boolean) {
   const text = [...g.counts].map(([v, n]) => (PHRASE[v] ?? ((k: number) => `${v.toLowerCase()} ×${k}`))(n)).join(', ')
   g.el.classList.toggle('working', working)
-  g.label.replaceChildren(emo(working ? STEP_GLYPH.working : g.failed ? STEP_GLYPH.failed : STEP_GLYPH.done), working ? ` Building · ${text}…` : ` ${g.failed ? 'Needs attention' : 'Done'} · ${text}`)
+  g.label.replaceChildren(emo(working ? STEP_GLYPH.working : g.failed ? STEP_GLYPH.failed : STEP_GLYPH.done), h('span', 'steps-text', working ? ` Building · ${text}…` : ` ${g.failed ? 'Needs attention' : 'Done'} · ${text}`))
 }
 
 function ensureGroup(): Group {
@@ -258,7 +263,7 @@ function ensureGroup(): Group {
   const head = h('button', 'steps-head')
   const dot = h('span', 'dot run')
   const label = h('span', 'steps-label')
-  label.append(emo(TOOL_GLYPH.search), ' Getting to know your project…')
+  label.append(emo(TOOL_GLYPH.search), h('span', 'steps-text', ' Getting to know your project…'))
   const chev = h('span', 'chev')
   chev.append(icon('chevron', 'sm'))
   head.append(dot, label, chev)
@@ -578,11 +583,10 @@ function handle(ev: AgentEvent) {
 // ---- composer ----
 function grow() {
   prompt.style.height = 'auto'
-  prompt.style.height = Math.min(prompt.scrollHeight, phone.matches ? sixLines() : 200) + 'px'
+  prompt.style.height = Math.min(prompt.scrollHeight, linesTall(phone.matches ? 6 : 10)) + 'px'
 }
-// A phone's composer grows to six lines, then scrolls.
-let sixLinesPx = 0
-const sixLines = () => sixLinesPx ||= (() => { const cs = getComputedStyle(prompt); return Math.round(parseFloat(cs.fontSize) * 1.55 * 6 + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)) })()
+// The composer grows to ten lines (six on a phone), then scrolls.
+const linesTall = (n: number) => { const cs = getComputedStyle(prompt); return Math.round((parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.6) * n + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)) }
 
 async function chooseFolder() {
   if (isRemote()) { toast('Pick the folder in Crew with Find folder, or choose it on the computer.', 5000); return }
@@ -712,7 +716,7 @@ async function openChat(id: string) {
     window.forge.chatsViewing(id)
     project = c.missing ? null : c.project
     resetView()
-    if (c.transcript.length) replay(c.transcript, c.status !== 'idle')
+    if (c.transcript.length) { replay(c.transcript, c.status !== 'idle'); settleEnd() }
     else showEmpty()
     if (c.missing) add(h('div', 'note', `The folder for this chat (${c.project}) no longer exists.`))
     await onProject(project)

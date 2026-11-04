@@ -10,16 +10,10 @@
 #term { border-top: 1px solid var(--hair); padding: 6px 0 0 10px; min-height: 0; overflow: hidden; background: var(--term-bg); }
 
 /* ---- responsive ---- */
-#app.ws-open #build-brief { display: none; }
-#app.ws-open #chat { grid-template-columns: minmax(0, 1fr); }
-#app.ws-open #thread { padding: 24px; }
-@media (min-width: 1201px) { #brief-toggle { display: none; } }
+#app.ws-open #chat { --gut: 24px; grid-template-columns: minmax(0, 1fr); }
+/* a narrow chat column (workspace open, or a small window) gets the brief as a floating panel over its right side */
+#app.ws-open.brief-open #build-brief { position: absolute; grid-column: 1 / -1; top: 0; right: 0; bottom: 0; width: min(300px, 100%); z-index: 12; background: var(--panel); box-shadow: var(--float); }
 @media (max-width: 1200px) {
-  #chat { grid-template-columns: minmax(0, 1fr); }
-  #build-brief { display: none; }
-  #app.brief-open #chat { grid-template-columns: minmax(0, 1fr) 280px; }
-  #app.brief-open #build-brief { display: flex; animation: slide-right var(--t2) var(--ease); }
-  #brief-close { display: grid; }
   #app.ws-open { grid-template-columns: minmax(0, 1fr) minmax(340px, 46%); }
   #app.ws-open #history { display: none; }
 }
@@ -27,18 +21,18 @@
   #app, #app.no-hist { grid-template-columns: minmax(0, 1fr); }
   #history { display: none; }
   #app:not(.no-hist) #history { display: flex; position: absolute; width: 224px; inset: 52px auto 0 0; z-index: 10; box-shadow: 18px 0 50px -24px rgba(0, 0, 0, .55); }
+  #app:not(.no-hist, .ws-open, .team-mode) #history { top: 0; box-shadow: none; } /* beside Solo the chat moves over, so the sidebar is a full-height column */
   #app:not(.no-hist) #chat { margin-left: 224px; }
   #app.ws-open #chat { margin-left: 0; }
-  #thread { padding-inline: 22px; }
-  #composer-wrap { padding-inline: 18px; }
-  #app.brief-open #build-brief { position: absolute; right: 0; top: 52px; bottom: 0; width: 300px; z-index: 12; background: var(--panel); box-shadow: -18px 0 50px -24px rgba(0, 0, 0, .55); }
+  #chat { --gut: 24px; }
   #app.brief-open #chat { grid-template-columns: minmax(0, 1fr); }
+  #app.brief-open #build-brief { position: absolute; grid-column: 1 / -1; top: 0; right: 0; bottom: 0; width: min(300px, 100%); z-index: 12; background: var(--panel); box-shadow: var(--float); }
   #ctx { display: none; }
 }
 @media (max-width: 650px) {
   #app:not(.no-hist) #chat { margin-left: 0; }
   #rate { display: none; }
-  #thread { padding-inline: 16px; }
+  #chat { --gut: 16px; }
   #app.ws-open, #app.no-hist.ws-open { grid-template-columns: minmax(0, 1fr); }
   #app.ws-open #chat { display: none; }
   #workspace { position: relative; }

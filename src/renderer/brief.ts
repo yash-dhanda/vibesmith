@@ -15,15 +15,21 @@ let plan: { text: string; status: 'todo' | 'doing' | 'done' }[] = []
 let openFile: (path: string) => void = () => {}
 const save = () => { try { localStorage.setItem(`forge.brief.${chatId}`, JSON.stringify(priorities)) } catch {} }
 
+// The brief is closed until asked for (header button, Ctrl . or the palette); open or closed is kept for this window's session.
+function setBriefOpen(on: boolean) {
+  $('app').classList.toggle('brief-open', on)
+  $('brief-toggle').setAttribute('aria-expanded', String(on))
+  try { sessionStorage.setItem('forge.brief', on ? '1' : '0') } catch {}
+}
+
 export function initBrief(onFile: (path: string) => void) {
   openFile = onFile
-  $('brief-toggle').onclick = () => {
-    const on = $('app').classList.toggle('brief-open')
-    $('brief-toggle').setAttribute('aria-expanded', String(on))
-  }
+  let open = false
+  try { open = sessionStorage.getItem('forge.brief') === '1' } catch {}
+  setBriefOpen(open)
+  $('brief-toggle').onclick = () => setBriefOpen(!$('app').classList.contains('brief-open'))
   $('brief-close').onclick = () => {
-    $('app').classList.remove('brief-open')
-    $('brief-toggle').setAttribute('aria-expanded', 'false')
+    setBriefOpen(false)
     $('brief-toggle').focus()
   }
   $('priority-form').onsubmit = (e) => {
