@@ -498,6 +498,18 @@ dialog[open]::backdrop { background: var(--scrim); }
 .sselect select option { background: var(--panel); color: var(--text); }
 .sselect .ic { position: absolute; right: 10px; color: var(--faint); pointer-events: none; }
 .btn.sact { height: 32px; padding: 0 14px; background: transparent; font-size: 13px; gap: 7px; }
+/* remote access */
+.remote-state { font-size: 13px; color: var(--muted); }
+.remote-state.ok { color: var(--text); } .remote-state.ok::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 8px; border-radius: 50%; background: var(--ok); vertical-align: 2px; }
+.remote-state.bad { color: var(--err); }
+.remote-hint { margin-top: 6px; color: var(--warn); font-size: 12.5px; line-height: 1.55; }
+.pair-card { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin-top: 14px; }
+.pair-card img { width: 280px; height: 280px; max-width: 100%; height: auto; aspect-ratio: 1; padding: 12px; background: #fff; border-radius: var(--r-lg); image-rendering: pixelated; }
+.pair-link { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; max-width: 100%; }
+.pair-link code { overflow-wrap: anywhere; }
+.pair-left { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.pair-steps { margin: 14px 0 0; padding-left: 20px; color: var(--muted); font-size: 13px; line-height: 1.7; }
+#settings .srow.stack > .btn { justify-self: start; }
 /* skills */
 .skill-add { display: flex; gap: 8px; margin-top: 10px; }
 .skill-add input { flex: 1; min-width: 0; height: 36px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: transparent; outline: 0; }

@@ -1,18 +1,21 @@
 import type { TeamConfig } from '../main/team/types'
 import { getCustomIds, loadModels, setCustomIds } from './models'
-import { $, MINUTE_CHOICES, STEP_CHOICES, agentLimits, cleanErr, h, numCtxPref, onOff, setThemePref, themePref, toast, type ThemePref } from './ui'
+import { $, MINUTE_CHOICES, STEP_CHOICES, agentLimits, cleanErr, copy, h, numCtxPref, onOff, setThemePref, themePref, toast, type ThemePref } from './ui'
 import { renderSkillsPanel } from './skillsPanel'
 import { openProjectHistory } from './projectHistory'
 import { icon, type IconName } from './icons'
 import { openLibrary } from './library'
 import { renderUsage } from './usage'
+import { timeAgo } from './format'
 import { AGENT_NAME, N } from './names'
 
 // Settings is a full page: grouped pages in a nav column on the left, one column of sections on the right.
-export type Page = 'general' | 'appearance' | 'shortcuts' | 'models' | 'agent' | 'team' | 'skills' | 'usage' | 'privacy' | 'about'
+export type Page = 'general' | 'appearance' | 'shortcuts' | 'models' | 'agent' | 'team' | 'skills' | 'remote' | 'usage' | 'privacy' | 'about'
+// Inside the phone's browser some pages make no sense (and the server refuses their calls): they are left out.
+export const isRemote = () => (window as { __forgeRemote?: boolean }).__forgeRemote === true
 const NAV: [string, [Page, IconName, string][]][] = [
   ['Personal', [['general', 'sliders', 'General'], ['appearance', 'contrast', 'Appearance'], ['shortcuts', 'keyboard', 'Keyboard']]],
-  ['Forge', [['models', 'cube', 'Models & engine'], ['agent', 'bot', 'Agent'], ['team', 'users', N.crew], ['skills', 'spark', 'Skills'], ['usage', 'chart', 'Usage & spend'], ['privacy', 'shield', 'Privacy'], ['about', 'help', 'Help & about']]],
+  ['Forge', [['models', 'cube', 'Models & engine'], ['agent', 'bot', 'Agent'], ['team', 'users', N.crew], ['skills', 'spark', 'Skills'], ...(isRemote() ? [] : [['remote', 'phone', 'Remote access'] as [Page, IconName, string]]), ['usage', 'chart', 'Usage & spend'], ['privacy', 'shield', 'Privacy'], ['about', 'help', 'Help & about']]],
 ]
 const PAGES = NAV.flatMap(([, items]) => items)
 const TITLE = Object.fromEntries(PAGES.map(([id, , label]) => [id, label])) as Record<Page, string>
@@ -80,7 +83,8 @@ async function general(into: HTMLElement) {
   const card = h('div', 'set-card')
   const t = h('div', 'srl')
   t.append(h('div', 'st-t', `Forge ${info.version}`), h('div', 'st-d', 'Builds software on your computer with local or cloud AI. Chats, usage and settings stay on this machine.'))
-  card.append(t, action('Open data folder', 'folder', () => window.forge.openDataDir()))
+  card.append(t)
+  if (!isRemote()) card.append(action('Open data folder', 'folder', () => window.forge.openDataDir()))
   into.append(card)
 
   const b = group('Behavior')
@@ -390,7 +394,7 @@ async function privacy(into: HTMLElement) {
   const info = await window.forge.appInfo()
   const g = group('Your data')
   g.box.append(
-    row('Stored on this computer', `Chats, usage and settings are stored on this computer only: ${info.dataDir}`, action('Open folder', 'folder', () => window.forge.openDataDir())),
+    row('Stored on this computer', `Chats, usage and settings are stored on this computer only: ${info.dataDir}`, ...(isRemote() ? [] : [action('Open folder', 'folder', () => window.forge.openDataDir())])),
     row('API keys', 'Stored encrypted by your OS keychain and only sent to the provider they belong to.', h('span', 'badge ok', 'Encrypted')),
     row('Local models', 'Ollama models run on this computer or on the engine you chose under Models & engine.', h('span', 'badge', 'Private')),
   )
@@ -408,13 +412,76 @@ async function about(into: HTMLElement) {
   into.append(g.g)
 }
 
+// Remote access: the same window, served to a paired phone over Tailscale.
+let pairTimer: ReturnType<typeof setInterval> | null = null
+async function remote(into: HTMLElement) {
+  if (isRemote() || typeof window.forge.remoteStatus !== 'function') return
+  const st = await window.forge.remoteStatus()
+  const set = async (o: { enabled?: boolean; lan?: boolean }) => { try { await window.forge.remoteSet(o) } catch (e) { toast(cleanErr(e), 4000) } void rerender() }
+  const g = group('Phone')
+  const state = h('div', `remote-state ${st.error ? 'bad' : st.listening ? 'ok' : ''}`)
+  state.setAttribute('role', 'status')
+  state.textContent = st.error ? st.error : st.listening ? `Listening on ${st.url}` : st.enabled ? 'Starting…' : 'Off. Nothing is reachable from other devices.'
+  g.box.append(row('Use Forge from your phone', 'Open this Forge window in the phone’s browser. The agents keep running on this computer.', onOff(st.enabled, (v) => void set({ enabled: v }))))
+  const info = h('div', 'srow stack')
+  info.append(state)
+  if (!st.tailscale) info.append(h('div', 'remote-hint', 'Tailscale isn’t running on this computer, so the phone link only works on this computer. Install Tailscale on both devices (free) and turn it on.'))
+  g.box.append(info)
+  const lan = row('Also allow this Wi-Fi', 'Anyone on the same Wi-Fi can reach the pairing page (they still need a one-time link). Prefer Tailscale.', onOff(st.lan, (v) => void set({ lan: v })))
+  g.box.append(lan)
+  into.append(g.g)
+
+  const p = group('Pair a phone', 'Each code works once, for one phone, for 10 minutes.')
+  const show = action('Show pairing code', 'phone', async () => {
+    show.disabled = true
+    try {
+      const { url, qr } = await window.forge.remotePair()
+      const card = h('div', 'pair-card')
+      if (qr) { const img = document.createElement('img'); img.src = qr; img.alt = 'QR code for the pairing link'; img.width = 280; img.height = 280; card.append(img) }
+      const link = h('div', 'pair-link')
+      link.append(h('code', 'k', url), action('Copy', 'copy', () => void copy(url, 'Link copied')))
+      const left = h('div', 'pair-left')
+      const until = Date.now() + 10 * 60_000
+      const tick = () => { const s = Math.max(0, Math.round((until - Date.now()) / 1000)); left.textContent = s ? `Valid for ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}, one use` : 'This code has expired. Show a new one.'; if ((!s || !left.isConnected) && pairTimer) { clearInterval(pairTimer); pairTimer = null } }
+      if (pairTimer) clearInterval(pairTimer)
+      pairTimer = setInterval(tick, 1000); tick()
+      card.append(link, left)
+      slot.replaceChildren(card)
+      show.replaceChildren(icon('phone', 'sm'), document.createTextNode('Show a new code'))
+    } catch (e) { slot.replaceChildren(h('div', 'errtext', cleanErr(e))) }
+    finally { show.disabled = !st.listening }
+  })
+  show.disabled = !st.listening
+  show.title = st.listening ? 'Show a QR code and link for your phone' : 'Turn on “Use Forge from your phone” first'
+  const slot = h('div', 'pair-slot')
+  const steps = h('ol', 'pair-steps')
+  for (const t of ['Install Tailscale on the phone and sign in to the same account.', 'Scan this code with the phone camera.', 'In Safari tap Share, then “Add to Home Screen” to get a Forge app icon.']) steps.append(h('li', '', t))
+  const pr = h('div', 'srow stack')
+  pr.append(show, slot, steps)
+  p.box.append(pr)
+  into.append(p.g)
+
+  const d = group('Paired devices')
+  if (!st.devices.length) { const e = h('div', 'srow stack'); e.append(h('div', 'st-d', 'No phones paired yet. Show a pairing code and scan it.')); d.box.append(e) }
+  for (const dev of st.devices) {
+    const revoke = action('Revoke', 'x', () => {
+      const yes = action('Revoke access', null, async () => { try { await window.forge.remoteRevoke(dev.id); toast(`${dev.name} can no longer open Forge`) } catch (e) { toast(cleanErr(e), 4000) } void rerender() }, 'danger')
+      const no = action('Keep', null, () => void rerender())
+      revoke.replaceWith(yes, no); yes.focus()
+    }, 'danger-quiet')
+    revoke.setAttribute('aria-label', `Revoke ${dev.name}`)
+    d.box.append(row(dev.name, `Paired ${new Date(dev.createdAt).toLocaleDateString()} · last seen ${timeAgo(dev.lastSeen)}`, revoke))
+  }
+  into.append(d.g)
+}
+
 async function usage(into: HTMLElement) {
   await renderUsage(into)
 }
 
 // ---- the page ----
 const skills = (into: HTMLElement) => { into.append(renderSkillsPanel()) }
-const BUILD: Record<Page, (into: HTMLElement) => void | Promise<void>> = { general, appearance, shortcuts, models, agent, team, skills, usage, privacy, about }
+const BUILD: Record<Page, (into: HTMLElement) => void | Promise<void>> = { general, appearance, shortcuts, models, agent, team, skills, remote, usage, privacy, about }
 let current: Page = 'general'
 let body: HTMLElement | null = null
 let headTitle: HTMLElement | null = null
