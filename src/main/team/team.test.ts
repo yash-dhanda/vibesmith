@@ -99,7 +99,7 @@ describe('argument builders', () => {
     expect(flag(claudeArgs({ cwd: '/p', prompt: 'x', write: true, web: true }), '--allowedTools')).toContain('WebSearch,WebFetch')
     expect(flag(claudeArgs({ cwd: '/p', prompt: 'x', write: true, web: false }), '--disallowedTools')).toContain('WebSearch,WebFetch')
     expect(codexArgs({ cwd: '/p', prompt: 'x', write: true, model: 'm', web: true })).toContain('web_search="live"')
-    expect(codexArgs({ cwd: '/p', prompt: 'x', write: true, model: 'm', web: false }).join(' ')).not.toContain('web_search')
+    expect(codexArgs({ cwd: '/p', prompt: 'x', write: true, model: 'm', web: false })).toContain('web_search="disabled"')
   })
   it('claude: may read the skill libraries through --add-dir, and gets no extra folders otherwise', () => {
     const a = claudeArgs({ cwd: '/p', prompt: 'x', write: true, addDirs: ['/skills/a__b'] })
@@ -234,7 +234,7 @@ describe('plan-only sign-in', () => {
 })
 
 import { execFileSync } from 'node:child_process'
-import { writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { ensureRepo } from './service'
 describe('parsers survive hostile output', () => {
   const claude = makeClaudeParser('/p')
@@ -261,5 +261,14 @@ describe('safeParse and ensureRepo', () => {
     writeFileSync(join(full, 'a.txt'), 'x')
     await expect(ensureRepo(full)).rejects.toThrow(/git init/)
     void execFileSync
+  })
+  it('refuses a folder inside a larger repository and names the top folder', async () => {
+    const top = mkdtempSync(join(tmpdir(), 'forge-er-'))
+    execFileSync('git', ['init', '-q'], { cwd: top })
+    const sub = join(top, 'app')
+    mkdirSync(sub)
+    writeFileSync(join(sub, 'a.txt'), 'x')
+    await expect(ensureRepo(sub)).rejects.toThrow(/top folder of its git repository/)
+    await ensureRepo(top)
   })
 })

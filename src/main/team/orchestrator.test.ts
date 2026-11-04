@@ -1,10 +1,11 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentName } from './events'
-import { TeamOrchestrator, type AgentCall, type AgentRunner } from './orchestrator'
+import { ProjectMemoryStore } from './memory'
+import { TeamOrchestrator, type AgentCall, type AgentRunner, type Deps } from './orchestrator'
 import type { RunResult } from './process'
 import { TeamStore } from './store'
 import type { Run, RunEvent } from './types'
@@ -24,25 +25,26 @@ const ok = (text: string, agent: string, taskId: string, usage = { input: 10, ou
 type Plan = { summary?: string; tasks: object[] }
 type Script = {
   plan: Plan
-  work?: (agent: AgentName, task: string, cwd: string) => void
+  work?: (agent: AgentName, task: string, cwd: string) => void | Promise<void>
   reviews?: Record<string, string[]> // task -> verdicts in order; default PASS
-  conflict?: (cwd: string) => void
+  conflict?: (cwd: string) => void | Promise<void>
   verifyFix?: (cwd: string) => void
   delayMs?: number
   limitsPct?: number // emitted by the work step, like Codex app-server's plan readout
   steerable?: boolean
   stream?: boolean // emit typing events and leave a file in the folder for a while
-  fail?: (agent: AgentName, kind: 'plan' | 'work' | 'review' | 'fix', task: string, n: number, resume?: string) => RunResult | null
+  fail?: (agent: AgentName, kind: 'plan' | 'work' | 'review' | 'fix' | 'verifyfix', task: string, n: number, resume?: string) => RunResult | null
 }
 
-function harness(script: Script, over: { available?: AgentName[]; cfg?: object } = {}) {
+function harness(script: Script, over: { available?: AgentName[]; cfg?: object; sleep?: (ms: number) => Promise<void>; deps?: Partial<Deps> } = {}) {
   const proj = project()
   const teamDir = mkdtempSync(join(tmpdir(), 'forge-orch-t-'))
   const events: RunEvent[] = []
-  const calls: { agent: AgentName; kind: string; task: string; cwd: string; resume?: string; model?: string }[] = []
+  const calls: { agent: AgentName; kind: string; task: string; cwd: string; resume?: string; model?: string; prompt: string }[] = []
   const counts = new Map<string, number>()
   const steers: string[] = []
   let active = 0, maxActive = 0
+  let approve: AgentCall['onApproval']
   const runner: AgentRunner = async (agent, o: AgentCall) => {
     const p = o.prompt
     const find = (re: RegExp) => p.match(re)?.[1] ?? ''
@@ -53,7 +55,8 @@ function harness(script: Script, over: { available?: AgentName[]; cfg?: object }
     else if (/produced conflicts/.test(p)) (kind = 'conflict'), (task = find(/Merging task (t\d+)/))
     else if (/project's check failed/.test(p)) kind = 'verifyfix'
     else if (/The team finished this goal/.test(p)) kind = 'final'
-    calls.push({ agent, kind, task, cwd: o.cwd, resume: o.resume, model: o.model })
+    calls.push({ agent, kind, task, cwd: o.cwd, resume: o.resume, model: o.model, prompt: p })
+    if (kind === 'work') approve = o.onApproval
     const n = (counts.set(`${kind}:${task}`, (counts.get(`${kind}:${task}`) ?? 0) + 1), counts.get(`${kind}:${task}`)!)
     const failure = script.fail?.(agent, kind as never, task, n, o.resume)
     if (failure) return failure
@@ -73,7 +76,7 @@ function harness(script: Script, over: { available?: AgentName[]; cfg?: object }
       if (kind === 'plan') return ok('```json\n' + JSON.stringify(script.plan) + '\n```', agent, task)
       if (kind === 'work') {
         if (script.limitsPct) o.onEvent({ type: 'limits', agent, primaryPct: script.limitsPct, secondaryPct: 3 })
-        if (script.work) script.work(agent, task, o.cwd)
+        if (script.work) await script.work(agent, task, o.cwd)
         else writeFileSync(join(o.cwd, `${task}.txt`), `${task} by ${agent}\n`)
         return ok(`did ${task}`, agent, task)
       }
@@ -86,7 +89,7 @@ function harness(script: Script, over: { available?: AgentName[]; cfg?: object }
         return ok('fixed it', agent, task)
       }
       if (kind === 'conflict') {
-        script.conflict?.(o.cwd)
+        await script.conflict?.(o.cwd)
         return ok('merged both', agent, task)
       }
       if (kind === 'verifyfix') {
@@ -99,8 +102,8 @@ function harness(script: Script, over: { available?: AgentName[]; cfg?: object }
     }
   }
   const store = new TeamStore(join(teamDir, 'runs'))
-  const orch = new TeamOrchestrator({ store, teamDir, runner, available: async () => over.available ?? ['claude', 'codex'], codexModels: async () => ['gpt-x-luna'], localModels: async () => ['qwen-x'], emit: (e) => events.push(e), sleep: async () => {} })
-  return { proj, orch, events, calls, store, teamDir, steers, maxActive: () => maxActive }
+  const orch = new TeamOrchestrator({ store, teamDir, runner, available: async () => over.available ?? ['claude', 'codex'], codexModels: async () => ['gpt-x-luna'], localModels: async () => ['qwen-x'], emit: (e) => events.push(e), sleep: over.sleep ?? (async () => {}), ...over.deps })
+  return { proj, orch, events, calls, store, teamDir, steers, maxActive: () => maxActive, ready: () => !!approve, approve: (a: Parameters<NonNullable<AgentCall['onApproval']>>[0]) => approve!(a) }
 }
 
 async function until(orch: TeamOrchestrator, id: string, pred: (r: Run) => boolean, ms = 15000): Promise<Run> {
@@ -286,6 +289,36 @@ describe('team orchestrator', () => {
     expect(JSON.parse(await ask('Read', { file_path: '/etc/hosts' })).behavior).toBe('allow')
     expect(await (x.orch as any).onHub('request_approval', { title: 'deploy', detail: 'x' }, { runId: run.id, taskId: 't1', agent: 'claude' })).toMatch(/^allowed/)
     expect(x.orch.get(run.id)!.approvals.filter((a) => a.status === 'pending')).toHaveLength(0)
+    await x.orch.cancel(run.id)
+  })
+
+  it('an agent that asks to leave its sandbox: commands are judged by the policy, file changes always ask the user, and its open cards expire when it ends', async () => {
+    let late: Promise<boolean> | undefined
+    const x = h({ delayMs: 400, plan: { tasks: [T('a')] }, work: async () => { late = x.approve({ kind: 'files', title: 'change files', detail: 'x' }) } })
+    const run = await x.orch.start(x.proj, 'approvals')
+    await until(x.orch, run.id, (r) => r.tasks.length === 1)
+    while (!x.ready()) await sleep(5)
+    const cmd = (command: string) => x.approve({ kind: 'command', title: command, detail: '', command })
+    expect(await cmd('git -C . push origin HEAD')).toBe(false)
+    expect(await cmd('cp a /home/nobody/else')).toBe(false)
+    expect(await cmd('npm test')).toBe(true)
+    expect(await cmd('rm -rf build')).toBe(true) // 'ask' is waved through only while bypass mode is on
+    expect(x.orch.get(run.id)!.approvals.filter((a) => a.status === 'pending')).toHaveLength(0)
+    await until(x.orch, run.id, () => !!late)
+    expect(await late).toBe(false) // asked the user (a card exists) instead of being auto-accepted in bypass mode; nobody answered before the agent ended
+    expect(x.orch.get(run.id)!.approvals.find((a) => a.title === 'change files')!.status).toBe('expired')
+    await x.orch.cancel(run.id)
+  })
+
+  it('with bypass off, a risky command from a sandboxed agent goes to the user', async () => {
+    const x = h({ delayMs: 600, plan: { tasks: [T('a')] } })
+    const run = await x.orch.start(x.proj, 'approvals', { bypassPermissions: false })
+    await until(x.orch, run.id, (r) => r.tasks.length === 1)
+    while (!x.ready()) await sleep(5)
+    const p = x.approve({ kind: 'command', title: 'rm', detail: '', command: 'rm -rf build' })
+    const r = await until(x.orch, run.id, (r) => r.approvals.some((a) => a.kind === 'permission' && a.status === 'pending'))
+    x.orch.answerApproval(run.id, r.approvals.find((a) => a.kind === 'permission')!.id, true)
+    expect(await p).toBe(true)
     await x.orch.cancel(run.id)
   })
 
@@ -707,4 +740,563 @@ describe('mailbox operations agents call', () => {
     expect(r.tasks.map((t) => [t.id, t.proposedBy, t.status])).toEqual([['t1', undefined, 'done'], ['t2', 't1', 'done']])
     expect(await call(x, r, 'propose_subtask', { title: 'x', goal: 'y' }, 'codex', 't2')).toMatch(/cannot propose/)
   })
+})
+
+describe('orchestrator audit fixes', () => {
+  it('a deleted run stays deleted after the pending save timer fires', async () => {
+    const x = h({ plan: { tasks: [T('a')] } })
+    const run = await x.orch.start(x.proj, 'delete me for good')
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    await x.orch.rejectFinal(run.id)
+    expect(await x.orch.deleteRun(run.id)).toBe(true)
+    await sleep(450)
+    expect(x.orch.get(run.id)).toBeNull()
+    expect(x.store.list().map((r) => r.id)).not.toContain(run.id)
+    expect(x.orch.list().map((r) => r.id)).not.toContain(run.id)
+  })
+
+  it('a later round of the same run can be undone after an earlier one was', async () => {
+    const x = h({ plan: { tasks: [T('a')] } })
+    const run = await x.orch.start(x.proj, 'round one')
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    await x.orch.approveFinal(run.id)
+    expect((await x.orch.undoApply(run.id)).ok).toBe(true)
+    await x.orch.followUp(run.id, 'round two')
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect((await x.orch.approveFinal(run.id)).ok).toBe(true)
+    expect(existsSync(join(x.proj, 't2.txt'))).toBe(true)
+    const u = await x.orch.undoApply(run.id)
+    expect(u.ok).toBe(true)
+    expect(existsSync(join(x.proj, 't2.txt'))).toBe(false)
+  })
+
+  it('work whose reviewer cannot run is not merged: the run pauses naming the reviewer, and resume reviews without redoing the work', async () => {
+    let failReview = true
+    const x = h({
+      plan: { tasks: [T('a', { agent: 'local' })] },
+      fail: (agent, kind) => (kind === 'review' && failReview ? { ok: false, text: '', usage: { input: 0, output: 0, cached: 0, costUsd: 0 }, events: [], error: { kind: 'limit', message: 'usage limit reached' } } as RunResult : null),
+    }, { available: ['claude', 'local'] })
+    const run = await x.orch.start(x.proj, 'local work', { finalReview: false })
+    const r = await until(x.orch, run.id, (r) => r.status === 'paused')
+    expect(r.pausedReason).toMatch(/claude could not review/)
+    expect(r.tasks[0].status).toBe('blocked')
+    expect(r.tasks[0].reviews).toHaveLength(0)
+    expect(existsSync(join(r.integrationWorktree, 't1.txt'))).toBe(false)
+    failReview = false
+    await x.orch.resume(run.id)
+    const done = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect(done.tasks[0].reviews.map((v) => v.verdict)).toEqual(['pass'])
+    expect(x.calls.filter((c) => c.kind === 'work')).toHaveLength(1)
+  })
+
+  it('a final review that cannot run because of the plan limit pauses the run instead of passing it', async () => {
+    const x = h({
+      plan: { tasks: [T('a'), T('b'), T('c')] },
+      fail: (agent, kind) => ((kind as string) === 'final' ? { ok: false, text: '', usage: { input: 0, output: 0, cached: 0, costUsd: 0 }, events: [], error: { kind: 'limit', message: 'usage limit reached' } } as RunResult : null),
+    })
+    const run = await x.orch.start(x.proj, 'big')
+    const r = await until(x.orch, run.id, (r) => r.status === 'paused')
+    expect(r.pausedReason).toMatch(/could not do the final review/)
+    expect(r.final).toBeUndefined()
+  })
+
+  it('a failed Apply leaves the folder exactly as it was, with the approval still open', async () => {
+    const x = h({ plan: { tasks: [T('a')] }, work: (_a, _t, cwd) => writeFileSync(join(cwd, 'base.txt'), 'team version\n') })
+    const run = await x.orch.start(x.proj, 'conflict')
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    writeFileSync(join(x.proj, 'base.txt'), 'my own edit\n')
+    sh(x.proj, 'commit', '-q', '-am', 'mine')
+    const r = await x.orch.approveFinal(run.id)
+    expect(r.ok).toBe(false)
+    expect(readFileSync(join(x.proj, 'base.txt'), 'utf8')).toBe('my own edit\n')
+    expect(sh(x.proj, 'status', '--porcelain').trim()).toBe('')
+    const after = x.orch.get(run.id)!
+    expect(after.status).toBe('awaiting_approval')
+    expect(after.approvals.filter((a) => a.kind === 'final' && a.status === 'pending')).toHaveLength(1)
+  })
+
+  it('refuses to apply without a recovery point unless the user agrees to that', async () => {
+    const x = h({ plan: { tasks: [T('a')] } })
+    const run = await x.orch.start(x.proj, 'no way back')
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    const locked = join(x.proj, 'locked.txt')
+    writeFileSync(locked, 'x')
+    chmodSync(locked, 0o000)
+    try {
+      const refused = await x.orch.approveFinal(run.id)
+      expect(refused.ok).toBe(false)
+      expect(existsSync(join(x.proj, 't1.txt'))).toBe(false)
+      expect((await x.orch.approveFinal(run.id, true)).ok).toBe(true)
+      expect(existsSync(join(x.proj, 't1.txt'))).toBe(true)
+    } finally {
+      chmodSync(locked, 0o600)
+    }
+  })
+
+  it('after a quit during review, the new process resumes at the review instead of redoing the work', async () => {
+    const x = h({ delayMs: 250, plan: { tasks: [T('a', { agent: 'codex' })] } })
+    const run = await x.orch.start(x.proj, 'quit in review')
+    await until(x.orch, run.id, (r) => r.tasks[0]?.phase === 'review')
+    x.orch.flush() // what shutdown() writes: the task is still running
+    const runs = join(x.teamDir, 'runs')
+    const copy = mkdtempSync(join(tmpdir(), 'forge-orch-copy-'))
+    cpSync(runs, copy, { recursive: true })
+    x.orch.pause(run.id, true)
+    await until(x.orch, run.id, (r) => r.tasks[0].status === 'interrupted')
+    let work = 0
+    const again = new TeamOrchestrator({ store: new TeamStore(copy), teamDir: x.teamDir, runner: async (a, o) => ((/You are reviewing/.test(o.prompt) ? 0 : work++), ok('VERDICT: PASS', a, 'a')), available: async () => ['claude', 'codex'], codexModels: async () => [], emit: () => {}, sleep: async () => {} })
+    orchs.push(again)
+    again.recoverAll()
+    expect(again.get(run.id)!.tasks[0]).toMatchObject({ status: 'interrupted', resumeFrom: 'review' })
+    await again.resume(run.id)
+    await until(again, run.id, (r) => r.status === 'awaiting_approval' || r.status === 'failed')
+    expect(work).toBe(0)
+  })
+
+  it('resume waits for a stopped planner, so the old planner does not carry on beside the new one', async () => {
+    const x = h({ delayMs: 300, plan: { tasks: [T('a')] } })
+    const run = await x.orch.start(x.proj, 'plan twice')
+    await sleep(60)
+    x.orch.pause(run.id, true)
+    await x.orch.resume(run.id)
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect(x.calls.filter((c) => c.kind === 'plan')).toHaveLength(2)
+    expect(x.calls.filter((c) => c.kind === 'work')).toHaveLength(1)
+  })
+
+  it('a typed "go" does not approve a plan that is waiting, and the plan card still starts it', async () => {
+    const x = h({ plan: { tasks: [T('a')] } })
+    const run = await x.orch.start(x.proj, 'review first', { reviewPlan: true })
+    const waiting = await until(x.orch, run.id, (r) => r.approvals.some((a) => a.kind === 'plan' && a.status === 'pending'))
+    await x.orch.followUp(run.id, 'go')
+    await sleep(100)
+    expect(x.calls.filter((c) => c.kind === 'work')).toHaveLength(0)
+    expect(x.orch.get(run.id)!.status).toBe('paused')
+    const plan = waiting.approvals.find((a) => a.kind === 'plan')!
+    expect(x.orch.answerApproval(run.id, plan.id, true)).toBe(true)
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+  })
+
+  it('a plan waiting for approval is still waiting after a restart, and answering it works without the old process', async () => {
+    const x = h({ plan: { tasks: [T('a')] } })
+    const run = await x.orch.start(x.proj, 'review across restart', { reviewPlan: true })
+    await until(x.orch, run.id, (r) => r.approvals.some((a) => a.kind === 'plan' && a.status === 'pending'))
+    x.orch.flush()
+    const copy = mkdtempSync(join(tmpdir(), 'forge-orch-copy-'))
+    cpSync(join(x.teamDir, 'runs'), copy, { recursive: true })
+    let work = 0
+    const again = new TeamOrchestrator({ store: new TeamStore(copy), teamDir: x.teamDir, runner: async (a, o) => ((/You are reviewing/.test(o.prompt) || /lead planner/.test(o.prompt) ? 0 : work++), ok('VERDICT: PASS', a, 'a')), available: async () => ['claude', 'codex'], codexModels: async () => [], emit: () => {}, sleep: async () => {} })
+    orchs.push(again)
+    again.recoverAll()
+    const plan = again.get(run.id)!.approvals.find((a) => a.kind === 'plan')!
+    expect(plan.status).toBe('pending')
+    await again.resume(run.id)
+    await sleep(80)
+    expect(work).toBe(0)
+    expect(again.answerApproval(run.id, plan.id, true)).toBe(true)
+    await until(again, run.id, (r) => r.status === 'awaiting_approval' || r.status === 'failed')
+    expect(work).toBeGreaterThan(0)
+  })
+
+  it('answering the final approval card applies or rejects, it does not expire', async () => {
+    const x = h({ plan: { tasks: [T('a')] } })
+    const run = await x.orch.start(x.proj, 'answer the card')
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    const card = r.approvals.find((a) => a.kind === 'final' && a.status === 'pending')!
+    expect(x.orch.answerApproval(run.id, card.id, true)).toBe(true)
+    await until(x.orch, run.id, (r) => r.status === 'done')
+    expect(x.orch.get(run.id)!.applied).toBe(true)
+    expect(x.orch.get(run.id)!.approvals.find((a) => a.id === card.id)!.status).toBe('allowed')
+    expect(existsSync(join(x.proj, 't1.txt'))).toBe(true)
+  })
+
+  it('a hard stop still ends the turns in flight after a sign-in problem paused the run', async () => {
+    const x = h({
+      delayMs: 400,
+      plan: { tasks: [T('a'), T('b')] },
+      fail: (agent, kind, task) => (kind === 'work' && task === 't1' ? { ok: false, text: '', usage: { input: 0, output: 0, cached: 0, costUsd: 0 }, events: [], error: { kind: 'auth', message: 'not signed in' } } as RunResult : null),
+    })
+    const run = await x.orch.start(x.proj, 'sign-in problem')
+    await until(x.orch, run.id, (r) => r.status === 'paused' && r.tasks[1]?.status === 'running')
+    x.orch.pause(run.id, true)
+    const r = await until(x.orch, run.id, (r) => r.tasks[1].status === 'interrupted', 5000)
+    expect(r.tasks[1].status).toBe('interrupted')
+  })
+
+  it('"Allow 50% more" works when the plan window is at 100%', async () => {
+    const x = h({ limitsPct: 100, plan: { tasks: [T('a'), T('b', { deps: ['a'] })] } })
+    const run = await x.orch.start(x.proj, 'full window', { maxLimitPercent: 80 })
+    await until(x.orch, run.id, (r) => r.approvals.some((a) => a.kind === 'budget' && a.status === 'pending'))
+    for (let i = 0; i < 6 && x.orch.get(run.id)!.status !== 'awaiting_approval'; i++) {
+      const p = x.orch.get(run.id)!.approvals.find((a) => a.kind === 'budget' && a.status === 'pending')
+      if (p) x.orch.answerApproval(run.id, p.id, true)
+      await sleep(60)
+    }
+    expect(x.orch.get(run.id)!.status).toBe('awaiting_approval')
+  })
+
+  it('stops at the agent-run budget inside a task, and counts the local model', async () => {
+    const x = h({ plan: { tasks: [T('a')] }, reviews: { t1: ['FAIL', 'FAIL', 'FAIL'] } })
+    const run = await x.orch.start(x.proj, 'tight budget', { budget: { maxAgentRuns: 2 } })
+    const r = await until(x.orch, run.id, (r) => r.status === 'paused')
+    expect(r.pausedReason).toMatch(/agent-run budget reached \(2 of 2\)/)
+    expect(x.calls.filter((c) => c.kind === 'review')).toHaveLength(0)
+    expect(r.tasks[0].status).toBe('interrupted')
+    expect(r.tasks[0].resumeFrom).toBe('review')
+
+    const y = h({ plan: { tasks: [T('a', { agent: 'local' })] } }, { available: ['local'] })
+    const run2 = await y.orch.start(y.proj, 'local only', { budget: { maxAgentRuns: 1 } })
+    const r2 = await until(y.orch, run2.id, (r) => r.status === 'paused')
+    expect(r2.pausedReason).toMatch(/agent-run budget/)
+    expect(y.calls.filter((c) => c.kind === 'work')).toHaveLength(0)
+  })
+
+  it('a steering message reaches every later task, not only the next turn', async () => {
+    const x = h({ delayMs: 150, plan: { tasks: [T('a', { agent: 'claude' }), T('b', { agent: 'claude', deps: ['a'] }), T('c', { agent: 'claude', deps: ['b'] })] } })
+    const run = await x.orch.start(x.proj, 'steer for good')
+    await until(x.orch, run.id, (r) => r.tasks[0]?.status === 'running')
+    x.orch.steer(run.id, 'use tabs not spaces')
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    for (const t of ['t2', 't3']) expect(x.calls.find((c) => c.kind === 'work' && c.task === t)!.prompt).toMatch(/Instructions from the user during this run\n- use tabs not spaces/)
+  })
+
+  it('a stopped check-fix leaves nothing behind in the team folder, and the re-queued fix merges', async () => {
+    let slow = true
+    const x = h({ plan: { tasks: [T('a')] }, verifyFix: (cwd) => writeFileSync(join(cwd, 'ok.txt'), 'ok') })
+    const verify = `node -e "process.exit(require('fs').existsSync('ok.txt')?0:1)"`
+    const orig = x.orch as unknown as { agentRun: (...a: unknown[]) => Promise<unknown> }
+    const real = orig.agentRun.bind(x.orch)
+    orig.agentRun = async (...a: unknown[]) => {
+      const res = (await real(...a)) as RunResult
+      if (slow && a[3] === 'fix') await sleep(300)
+      return res
+    }
+    const run = await x.orch.start(x.proj, 'stopped fixer', { verify })
+    await until(x.orch, run.id, (r) => r.tasks.some((t) => /Fix failing checks/.test(t.title) && t.phase === 'fix'))
+    x.orch.pause(run.id)
+    await sleep(500)
+    expect(sh(x.orch.get(run.id)!.integrationWorktree, 'status', '--porcelain').trim()).toBe('')
+    slow = false
+    await x.orch.resume(run.id)
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect(r.final?.verifyOk).toBe(true)
+    expect(sh(r.integrationWorktree, 'status', '--porcelain').trim()).toBe('')
+  })
+})
+
+describe('orchestrator audit fixes, round 2', () => {
+  const call = (x: ReturnType<typeof h>, run: Run, op: string, args: object, agent: AgentName = 'codex', taskId = 't1') => (x.orch as any).onHub(op, args, { runId: run.id, taskId, agent })
+  const failed = (kind: string, message: string): RunResult => ({ ok: false, text: '', usage: { input: 0, output: 0, cached: 0, costUsd: 0 }, events: [], error: { kind: kind as never, message } })
+  const settle = (p: Promise<unknown>, ms: number) => Promise.race([p.then(() => 'settled'), sleep(ms).then(() => 'hung')])
+
+  it('7: a soft pause during planning keeps the run paused when the plan lands, and Resume does not start a second planner', async () => {
+    const x = h({ delayMs: 200, plan: { tasks: [T('a'), T('b')] } })
+    const run = await x.orch.start(x.proj, 'soft pause while planning')
+    x.orch.pause(run.id)
+    await until(x.orch, run.id, (r) => r.tasks.length === 2)
+    expect(x.orch.get(run.id)!.status).toBe('paused')
+    expect(x.calls.filter((c) => c.kind === 'work')).toHaveLength(0)
+    await x.orch.resume(run.id)
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect(x.calls.filter((c) => c.kind === 'plan')).toHaveLength(1)
+    expect(x.calls.filter((c) => c.kind === 'work')).toHaveLength(2)
+
+    const y = h({ delayMs: 200, plan: { tasks: [T('a'), T('b')] } })
+    const run2 = await y.orch.start(y.proj, 'pause and resume at once')
+    y.orch.pause(run2.id)
+    await y.orch.resume(run2.id)
+    await until(y.orch, run2.id, (r) => r.status === 'awaiting_approval')
+    expect(y.calls.filter((c) => c.kind === 'plan')).toHaveLength(1)
+    expect(y.calls.filter((c) => c.kind === 'work')).toHaveLength(2)
+  })
+
+  it('11: control words are recognised in every state and never become a task', async () => {
+    const x = h({ plan: { tasks: [T('a')] } })
+    const run = await x.orch.start(x.proj, 'words')
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    await x.orch.followUp(run.id, 'stop')
+    await x.orch.followUp(run.id, 'continue')
+    const r = x.orch.get(run.id)!
+    expect(r.status).toBe('awaiting_approval')
+    expect(r.tasks).toHaveLength(1)
+    expect(r.approvals.filter((a) => a.kind === 'final' && a.status === 'pending')).toHaveLength(1)
+    expect(r.messages.some((m) => m.from === 'user')).toBe(false)
+  })
+
+  it('13: a hard pause answers an open "merge anyway?" question, so Resume does not hang on it', async () => {
+    const x = h({ plan: { tasks: [T('a')] }, reviews: { t1: ['FAIL', 'FAIL', 'FAIL'] } })
+    const run = await x.orch.start(x.proj, 'override', { maxFixRounds: 0 })
+    await until(x.orch, run.id, (r) => r.approvals.some((a) => a.kind === 'review_override' && a.status === 'pending'))
+    x.orch.pause(run.id, true)
+    expect(await settle(x.orch.resume(run.id), 700)).toBe('settled')
+    expect(x.orch.get(run.id)!.approvals[0]).toMatchObject({ kind: 'review_override', status: 'expired' })
+  })
+
+  it('16: the time budget counts working time, not the age of the run', async () => {
+    const x = h({ plan: { tasks: [T('a')] } })
+    const run = await x.orch.start(x.proj, 'old run', { budget: { maxMinutes: 30 } })
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    await x.orch.approveFinal(run.id)
+    x.orch.get(run.id)!.createdAt -= 2 * 24 * 3600_000
+    await x.orch.followUp(run.id, 'one more thing')
+    const r = await until(x.orch, run.id, (r) => r.tasks.length === 2 && ['awaiting_approval', 'paused'].includes(r.status))
+    expect(r.status).toBe('awaiting_approval')
+  })
+
+  it('18: a message sent while the checks run becomes a task instead of being dropped', async () => {
+    const x = h({ plan: { tasks: [T('a')] } })
+    const run = await x.orch.start(x.proj, 'verify then talk', { verify: 'sleep 1' })
+    await until(x.orch, run.id, (r) => r.status === 'verifying', 20000)
+    await x.orch.followUp(run.id, 'also make the button blue')
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval' && r.tasks.length === 2, 20000)
+    expect(r.tasks[1]).toMatchObject({ goal: 'also make the button blue', status: 'done' })
+  }, 30000)
+
+  it('20: a failed check-fix from the last round does not pause the next round', async () => {
+    const x = h({ plan: { tasks: [T('a')] }, fail: (agent, kind) => (kind === 'verifyfix' ? failed('other', 'the fixer crashed') : null) })
+    const run = await x.orch.start(x.proj, 'fixer fails', { verify: 'exit 1', maxVerifyRounds: 1 })
+    const first = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect(first.tasks.some((t) => t.status === 'failed')).toBe(true)
+    await x.orch.followUp(run.id, 'more')
+    const r = await until(x.orch, run.id, (r) => r.tasks.some((t) => t.goal === 'more' && t.status === 'done') && ['paused', 'awaiting_approval'].includes(r.status))
+    expect(r.status).toBe('awaiting_approval')
+  })
+
+  it('20b: a failed check-fix does not pause the run when a message sent during the checks becomes a task', async () => {
+    const x = h({ plan: { tasks: [T('a')] }, fail: (agent, kind) => (kind === 'verifyfix' ? failed('other', 'the fixer crashed') : null) })
+    const run = await x.orch.start(x.proj, 'late and failed', { verify: 'sleep 1; test -f t2.txt', maxVerifyRounds: 1 })
+    await until(x.orch, run.id, (r) => r.status === 'verifying', 20000)
+    await x.orch.followUp(run.id, 'also add a file')
+    const r = await until(x.orch, run.id, (r) => r.tasks.some((t) => t.goal === 'also add a file' && t.status === 'done') && ['paused', 'awaiting_approval'].includes(r.status), 30000)
+    expect(r.pausedReason ?? '').not.toMatch(/needs attention/)
+    expect(r.tasks.find((t) => t.lastStep)?.status).toBe('cancelled')
+  }, 40000)
+
+  it('the apply is scoped to the files of the run, so Undo leaves a file made by hand afterwards', async () => {
+    const x = h({ plan: { tasks: [T('a')] } })
+    const run = await x.orch.start(x.proj, 'scoped undo')
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    await x.orch.approveFinal(run.id)
+    writeFileSync(join(x.proj, 'mine.txt'), 'mine')
+    const u = await x.orch.undoApply(run.id)
+    expect(u.paths).not.toContain('mine.txt')
+    expect(existsSync(join(x.proj, 'mine.txt'))).toBe(true)
+    expect(existsSync(join(x.proj, 't1.txt'))).toBe(false)
+  })
+
+  it('a refused apply posts a note, so answering the approval card does not look like nothing happened', async () => {
+    const x = h({ plan: { tasks: [T('a')] } })
+    const run = await x.orch.start(x.proj, 'no way back, note')
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    const locked = join(x.proj, 'locked.txt')
+    writeFileSync(locked, 'x')
+    chmodSync(locked, 0o000)
+    try {
+      await x.orch.approveFinal(run.id)
+      expect(x.orch.get(run.id)!.messages.some((m) => m.kind === 'note' && /Nothing was applied/.test(m.body))).toBe(true)
+    } finally {
+      chmodSync(locked, 0o600)
+    }
+  })
+
+  it('21: a hard pause answers the questions agents had open, they do not stay pending', async () => {
+    const x = h({ delayMs: 400, plan: { tasks: [T('a', { agent: 'claude' })] } })
+    const run = await x.orch.start(x.proj, 'ask then pause')
+    await until(x.orch, run.id, (r) => r.tasks[0]?.status === 'running')
+    const asked = call(x, run, 'ask', { question: 'Which database?' }, 'claude', 't1')
+    await until(x.orch, run.id, (r) => r.approvals.some((a) => a.kind === 'question'))
+    x.orch.pause(run.id, true)
+    expect(await settle(asked, 500)).toBe('settled')
+    expect(x.orch.get(run.id)!.approvals.find((a) => a.kind === 'question')!.status).toBe('expired')
+  })
+
+  it('22: cancel does not wait out the busy-retry backoff', async () => {
+    const x = h({ plan: { tasks: [T('a')] }, fail: (agent, kind) => (kind === 'work' ? failed('busy', '529 overloaded') : null) }, { sleep: (ms) => new Promise((r) => setTimeout(r, ms).unref()) })
+    const run = await x.orch.start(x.proj, 'busy then cancel')
+    await until(x.orch, run.id, (r) => r.messages.some((m) => /busy right now/.test(m.body)))
+    const t = Date.now()
+    await x.orch.cancel(run.id)
+    expect(Date.now() - t).toBeLessThan(2000)
+    expect(x.orch.get(run.id)!.status).toBe('cancelled')
+  })
+
+  it('23: a task waiting for the merge lock is not merged by a hard pause', async () => {
+    let X: ReturnType<typeof h>
+    let runId = ''
+    const x = (X = h({
+      plan: { tasks: [T('a', { agent: 'claude' }), T('b', { agent: 'codex' }), T('c', { agent: 'claude' })] },
+      work: async (agent, task, cwd) => {
+        if (task === 't3') (await sleep(150), writeFileSync(join(cwd, 'c.txt'), 'c\n'))
+        else writeFileSync(join(cwd, 'shared.txt'), `from ${task}\n`)
+      },
+      conflict: async (cwd) => {
+        writeFileSync(join(cwd, 'shared.txt'), 'both\n')
+        await sleep(600)
+        X.orch.pause(runId, true)
+      },
+    }))
+    const run = await x.orch.start(x.proj, 'merge lock')
+    runId = run.id
+    const r = await until(x.orch, run.id, (r) => r.status === 'paused' && r.tasks.every((t) => t.status !== 'running'))
+    const c = r.tasks[2]
+    expect(c.status).toBe('interrupted')
+    expect(c.resumeFrom).toBe('merge')
+    expect(existsSync(join(r.integrationWorktree, 'c.txt'))).toBe(false)
+    expect(r.tasks.filter((t) => t.status === 'done')).toHaveLength(2)
+    await x.orch.resume(run.id)
+    const end = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect(existsSync(join(end.integrationWorktree, 'c.txt'))).toBe(true)
+  })
+
+  it('24: after a restart, a follow-up on a run waiting for approval goes to an agent that is signed in', async () => {
+    const x = h({ plan: { tasks: [T('a', { agent: 'codex' })] } }, { available: ['codex'] })
+    const run = await x.orch.start(x.proj, 'codex only')
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    x.orch.flush()
+    const agents: string[] = []
+    const again = new TeamOrchestrator({ store: x.store, teamDir: x.teamDir, runner: async (a, o) => (agents.push(a), ok('VERDICT: PASS', a, 'a')), available: async () => ['codex'], codexModels: async () => [], emit: () => {}, sleep: async () => {} })
+    orchs.push(again)
+    again.recoverAll()
+    await again.followUp(run.id, 'one more thing')
+    const r = await until(again, run.id, (r) => r.tasks.length === 2 && ['awaiting_approval', 'paused'].includes(r.status))
+    expect(r.status).toBe('awaiting_approval')
+    expect(agents.length).toBeGreaterThan(0)
+    expect(agents.every((a) => a === 'codex')).toBe(true)
+  })
+
+  it('25: a plan-limit error while planning pauses the run, and Resume plans again', async () => {
+    let limited = true
+    const x = h({ plan: { tasks: [T('a')] }, fail: (agent, kind) => (kind === 'plan' && limited ? failed('limit', 'Claude AI usage limit reached') : null) }, { available: ['claude'] })
+    const run = await x.orch.start(x.proj, 'limit while planning')
+    const r = await until(x.orch, run.id, (r) => r.status === 'paused' || r.status === 'failed')
+    expect(r.status).toBe('paused')
+    expect(r.pausedReason).toMatch(/claude.*usage limit/i)
+    expect(r.tasks).toHaveLength(0)
+    limited = false
+    await x.orch.resume(run.id)
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+  })
+
+  it('26: a subtask proposed while the checks run is refused instead of being left queued', async () => {
+    const x = h({ plan: { tasks: [T('a')] } })
+    const run = await x.orch.start(x.proj, 'late subtask', { verify: 'sleep 1' })
+    await until(x.orch, run.id, (r) => r.status === 'verifying', 20000)
+    const answer = await call(x, run, 'propose_subtask', { title: 'late', goal: 'too late' }, 'codex', 't1')
+    expect(answer).not.toMatch(/added as/)
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval', 20000)
+    expect(r.tasks.some((t) => t.status === 'queued')).toBe(false)
+  }, 30000)
+
+  it('27: cancelling while the last steps run leaves the run cancelled, with no result to approve', async () => {
+    const x = h({ plan: { tasks: [T('a')] } })
+    const orig = (x.orch as any).clean.bind(x.orch)
+    let cancelling: Promise<void> | null = null
+    ;(x.orch as any).clean = async (wt: string) => {
+      const run = x.orch.list()[0]
+      if (run.status === 'verifying' && !cancelling) cancelling = x.orch.cancel(run.id)
+      return orig(wt)
+    }
+    const run = await x.orch.start(x.proj, 'cancel at the end')
+    await until(x.orch, run.id, () => !!cancelling)
+    await cancelling
+    await sleep(200)
+    const r = x.orch.get(run.id)!
+    expect(r.status).toBe('cancelled')
+    expect(r.approvals.some((a) => a.kind === 'final' && a.status === 'pending')).toBe(false)
+  })
+
+  it('28: one torn line in the event log does not empty the replay', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'forge-store-'))
+    const store = new TeamStore(dir)
+    const run = { id: 'rtorn', status: 'done' } as unknown as Run
+    store.save(run)
+    store.appendEvent('rtorn', { type: 'run', runId: 'rtorn', status: 'planning' })
+    store.appendEvent('rtorn', { type: 'run', runId: 'rtorn', status: 'running' })
+    writeFileSync(join(dir, 'rtorn', 'events.jsonl'), readFileSync(join(dir, 'rtorn', 'events.jsonl'), 'utf8') + '{"t":1,"ev":{')
+    expect(store.events('rtorn')).toHaveLength(2)
+  })
+
+  it('30: the report of a later round lists only that round\'s files, and counts the local model', async () => {
+    const x = h({ plan: { tasks: [T('a')] } })
+    const run = await x.orch.start(x.proj, 'two rounds')
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    await x.orch.approveFinal(run.id)
+    await x.orch.followUp(run.id, 'more')
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval' && r.tasks.length === 2)
+    expect(r.final!.files.map((f) => f.path)).toEqual(['t2.txt'])
+    expect(r.final!.report).toMatch(/Files changed \(1\)/)
+    expect(r.final!.report).not.toContain('`t1.txt`')
+
+    const y = h({ plan: { tasks: [T('a', { agent: 'local' })] } }, { available: ['local'] })
+    const run2 = await y.orch.start(y.proj, 'local only')
+    const r2 = await until(y.orch, run2.id, (r) => r.status === 'awaiting_approval')
+    expect(r2.final!.report).toMatch(/- Local: [1-9]\d* runs/)
+  })
+
+  it('31: work the local model reviewed alone says so', async () => {
+    const x = h({ plan: { tasks: [T('a', { agent: 'local' })] } }, { available: ['local'] })
+    const run = await x.orch.start(x.proj, 'local self review')
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect(r.final!.report).toMatch(/local said pass.*own work/)
+    expect(r.messages.some((m) => m.kind === 'note' && /reviewed its own work|no other agent/i.test(m.body))).toBe(true)
+  })
+
+  it('32: the startup sweep leaves finished runs alone, and Apply leaves no empty folder behind', async () => {
+    const x = h({ plan: { tasks: [T('a')] } })
+    const run = await x.orch.start(x.proj, 'sweep me')
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    await x.orch.approveFinal(run.id)
+    expect(existsSync(join(x.teamDir, 'wt', run.id))).toBe(false)
+    x.orch.flush()
+    mkdirSync(join(x.teamDir, 'wt', run.id, 'leftover'), { recursive: true }) // what a crash leaves
+    const saved = x.store.load(run.id)!.updatedAt
+    await sleep(30)
+    const again = new TeamOrchestrator({ store: x.store, teamDir: x.teamDir, runner: async (a) => ok('', a, 'a'), available: async () => ['claude'], codexModels: async () => [], emit: () => {}, sleep: async () => {} })
+    orchs.push(again)
+    await again.sweep()
+    again.flush()
+    expect(existsSync(join(x.teamDir, 'wt', run.id))).toBe(false)
+    expect(x.store.load(run.id)!.updatedAt).toBe(saved)
+  })
+
+  it('33: a check-fix is remembered only after the check passes', async () => {
+    const x = h({ plan: { tasks: [T('a')] } })
+    const run = await x.orch.start(x.proj, 'never passes', { verify: 'exit 1' })
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect(new ProjectMemoryStore(x.teamDir, x.proj).load().errors.filter((e) => e.fix)).toHaveLength(0)
+
+    const y = h({ plan: { tasks: [T('a')] }, verifyFix: (cwd) => writeFileSync(join(cwd, 'ok.txt'), 'ok') })
+    const run2 = await y.orch.start(y.proj, 'passes', { verify: `node -e "process.exit(require('fs').existsSync('ok.txt')?0:1)"` })
+    await until(y.orch, run2.id, (r) => r.status === 'awaiting_approval')
+    expect(new ProjectMemoryStore(y.teamDir, y.proj).load().errors.filter((e) => e.fix)).toHaveLength(1)
+  })
+
+  it('34: a hub that failed to start is tried again, and a turn that throws stops its folder poller', async () => {
+    let starts = 0
+    const x = h({ plan: { tasks: [T('a')] } }, { deps: { mcpScript: '/x/team-mcp.js' } })
+    ;(x.orch as any).hub.start = async () => {
+      if (++starts === 1) throw new Error('listen EPERM')
+      return '/x/hub.sock'
+    }
+    const run = await x.orch.start(x.proj, 'hub down')
+    expect((await until(x.orch, run.id, (r) => r.status === 'failed')).pausedReason).toMatch(/EPERM/)
+    const run2 = await x.orch.start(x.proj, 'hub back')
+    await until(x.orch, run2.id, (r) => r.status === 'awaiting_approval')
+    expect(starts).toBe(2)
+
+    const opened = new Set<unknown>()
+    const realSet = globalThis.setInterval
+    const realClear = globalThis.clearInterval
+    const set = vi.spyOn(globalThis, 'setInterval').mockImplementation(((fn: () => void, ms: number) => { const t = realSet(fn, ms); if (ms === 1500) opened.add(t); return t }) as never)
+    const clear = vi.spyOn(globalThis, 'clearInterval').mockImplementation(((t: never) => (opened.delete(t), realClear(t))) as never)
+    try {
+      const y = h({ plan: { tasks: [T('a')] }, work: () => { throw new Error('runner blew up') } })
+      const run3 = await y.orch.start(y.proj, 'throws')
+      await until(y.orch, run3.id, (r) => r.tasks[0]?.status === 'failed')
+      expect(opened.size).toBe(0)
+    } finally {
+      set.mockRestore()
+      clear.mockRestore()
+    }
+  }, 30000)
 })

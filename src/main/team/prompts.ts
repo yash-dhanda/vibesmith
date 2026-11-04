@@ -177,12 +177,12 @@ export function parseVerdict(text: string): { verdict: Review['verdict']; issues
   return { verdict, issues }
 }
 
-export function fixPrompt(task: Task, issues: string, round: number): string {
+export function fixPrompt(task: Task, issues: string, round: number, steer: string[] = []): string {
   return `A reviewer checked your work on task ${task.id} "${task.title}" (round ${round}) and found problems:
 
 ${issues}
 
-Fix every issue that is real, run the checks again, and then give a short summary of what you changed. If you disagree with an item, say why in the summary instead of ignoring it. Do not commit.`
+Fix every issue that is real, run the checks again, and then give a short summary of what you changed. If you disagree with an item, say why in the summary instead of ignoring it. Do not commit.${steer.length ? `\n\nInstructions from the user during this run:\n${steer.map((b) => `- ${b}`).join('\n')}` : ''}`
 }
 
 export function conflictPrompt(task: Task, files: string[]): string {
@@ -215,7 +215,8 @@ Reply with a short review, the must-fix problems first as bullets, then one fina
 
 // ---------------------------------------------------------------- the final report the user reads
 
-export function buildReport(run: Run, verify: { ok: boolean | null; command?: string; output?: string }, reviewNotes: string[]): string {
+// `changed`: this round's files (the diff Apply will carry); without it the files of every finished task are listed.
+export function buildReport(run: Run, verify: { ok: boolean | null; command?: string; output?: string }, reviewNotes: string[], changed?: Task['changed']): string {
   const lines: string[] = [`# ${run.goal.split('\n')[0].slice(0, 120)}`, '', run.plan.summary ? `${run.plan.summary}\n` : '']
   const done = run.tasks.filter((t) => t.status === 'done')
   const bad = run.tasks.filter((t) => t.status !== 'done' && t.status !== 'cancelled')
@@ -226,17 +227,17 @@ export function buildReport(run: Run, verify: { ok: boolean | null; command?: st
     for (const t of bad) lines.push(`- **${t.title}** (${t.status}): ${(t.error ?? '').slice(0, 200)}`)
   }
   const files = new Map<string, Task['changed'][number]>()
-  for (const t of done) for (const f of t.changed) files.set(f.path, f)
+  for (const f of changed ?? done.flatMap((t) => t.changed)) files.set(f.path, f)
   lines.push('', `## Files changed (${files.size})`)
   for (const f of [...files.values()].slice(0, 60)) lines.push(`- ${f.status} \`${f.path}\` (+${f.added} -${f.removed})`)
   lines.push('', '## Checks')
   lines.push(verify.ok === null ? '- No test or build command was found, so nothing was run automatically.' : verify.ok ? `- \`${verify.command}\` passed.` : `- \`${verify.command}\` FAILED:\n\n\`\`\`\n${(verify.output ?? '').slice(-1500)}\n\`\`\``)
-  const reviews = run.tasks.flatMap((t) => t.reviews.map((r) => `- ${t.title}: ${r.by} said ${r.verdict}${r.round > 1 ? ` (round ${r.round})` : ''}`))
+  const reviews = run.tasks.flatMap((t) => t.reviews.map((r) => `- ${t.title}: ${r.by} said ${r.verdict}${r.round > 1 ? ` (round ${r.round})` : ''}${r.by === t.agent ? ' (reviewed its own work)' : ''}`))
   if (reviews.length) lines.push('', '## Reviews', ...reviews.slice(0, 30))
   if (reviewNotes.length) lines.push('', '## Final review notes', ...reviewNotes.map((n) => `- ${n.replace(/\s+/g, ' ').slice(0, 400)}`))
   if (run.decisions.length) lines.push('', '## Decisions made', ...run.decisions.slice(-10).map((d) => `- ${d.text}`))
   const u = run.usage
-  lines.push('', '## Usage', `- Claude: ${u.claude.runs} runs, ${u.claude.input + u.claude.output} tokens${u.claude.costUsd ? ` (about $${u.claude.costUsd.toFixed(2)} at API rates)` : ''}`, `- Codex: ${u.codex.runs} runs, ${u.codex.input + u.codex.output} tokens`)
+  lines.push('', '## Usage', `- Claude: ${u.claude.runs} runs, ${u.claude.input + u.claude.output} tokens${u.claude.costUsd ? ` (about $${u.claude.costUsd.toFixed(2)} at API rates)` : ''}`, `- Codex: ${u.codex.runs} runs, ${u.codex.input + u.codex.output} tokens`, ...(u.local?.runs ? [`- Local: ${u.local.runs} runs, ${u.local.input + u.local.output} tokens`] : []))
   return lines.join('\n')
 }
 

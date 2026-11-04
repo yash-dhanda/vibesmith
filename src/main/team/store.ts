@@ -52,7 +52,13 @@ export class TeamStore {
     try {
       const lines = readFileSync(join(this.runDir(id), 'events.jsonl'), 'utf8').split('\n').filter(Boolean)
       if (lines.length > MAX_EVENT_LINES) writeFileSync(join(this.runDir(id), 'events.jsonl'), lines.slice(-MAX_EVENT_LINES / 2).join('\n') + '\n')
-      return lines.slice(-limit).map((l) => JSON.parse(l))
+      return lines.slice(-limit).flatMap((l) => {
+        try {
+          return [JSON.parse(l)] // a line cut short by a crash is skipped, the rest of the log still replays
+        } catch {
+          return []
+        }
+      })
     } catch {
       return []
     }

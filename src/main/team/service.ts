@@ -1,8 +1,8 @@
 import { join } from 'node:path'
-import { initRepo, isRepo } from '../checkpoint'
+import { git, initRepo, isRepo } from '../checkpoint'
 import { readdirSync } from 'node:fs'
 import { isAgent, type AgentName } from './events'
-import { cleanAttachments, saveAttachments } from './attach'
+import { cleanAttachments, saveAttachments, sweepAttachments } from './attach'
 import { checkTeamTools, codexLimits, codexModels, localModels, type Health, type LimitInfo } from './health'
 import { TeamOrchestrator } from './orchestrator'
 import { realRunner } from './runner'
@@ -62,7 +62,14 @@ export type TeamMemory = NonNullable<ReturnType<TeamOrchestrator['memorySnapshot
 
 // Team mode puts each agent on its own git branch. An empty folder gets a repository silently; a folder with files must already have one.
 export async function ensureRepo(project: string) {
-  if (await isRepo(project)) return
+  if (await isRepo(project)) {
+    // Agents work on a copy of the repository's top folder and the result is applied from the folder opened here; the two only line up at the top.
+    if ((await git(project, ['rev-parse', '--show-prefix'])).trim()) {
+      const top = (await git(project, ['rev-parse', '--show-toplevel'])).trim()
+      throw new Error(`Team mode needs the folder you opened to be the top folder of its git repository, and this one is inside ${top}. Open ${top} instead.`)
+    }
+    return
+  }
   if (readdirSync(project).length) throw new Error('Team mode needs a git repository so each agent can work on its own branch. Run "git init" in this folder first.')
   await initRepo(project)
 }
@@ -99,6 +106,7 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
   })
   orch.recoverAll()
   void orch.sweep()
+  sweepAttachments(join(teamDir, 'attachments'), orch.list().flatMap((r) => r.config.attachments ?? []))
   const settings = new TeamSettingsStore(teamDir)
 
   return {

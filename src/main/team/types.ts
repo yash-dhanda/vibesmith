@@ -35,6 +35,7 @@ export type Task = {
   usage: Usage
   diff?: string // the task's change as the reviewer saw it (capped), kept for the diff view after the worktree is gone
   proposedBy?: string
+  lastStep?: boolean // a fix made during the last checks or the final review, not part of the plan
   resumeFrom?: TaskPhase // where an interrupted task stopped, so resuming does not redo finished work
   error?: string
   startedAt?: number
@@ -103,6 +104,8 @@ export type Run = {
   pausedReason?: string
   createdAt: number
   updatedAt: number
+  activeMs?: number // working time so far (the time budget counts this, not the age of the run)
+  activeSince?: number // set while the team is at work
   baseCommit: string // a snapshot of the project (uncommitted work included) the team started from
   integrationBranch: string
   integrationWorktree: string

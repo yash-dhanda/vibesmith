@@ -69,11 +69,16 @@ type Live = {
   available: AgentName[]
   finishing: boolean
   handles: Map<string, { agent: AgentName; h: ServerHandle }> // running agents that can be steered mid-turn
+  planning: boolean // a planner is running: a second one must not start beside it
+  late: { body: string; to: AgentName | 'all' }[] // messages sent while the last checks ran, which no task would read
+  bg: Set<Promise<unknown>> // the planner and the last steps: turns that are not tasks, but must have stopped before a resume replaces the controller
 }
 
 // Who does a job: the strongest agent that is ready (Claude, then Codex, then the local model), optionally not the one that wrote the work.
 const PREFER: AgentName[] = ['claude', 'codex', 'local']
 const strongest = (avail: AgentName[], not?: AgentName): AgentName => PREFER.find((a) => a !== not && avail.includes(a)) ?? PREFER.find((a) => avail.includes(a)) ?? avail[0]
+// A cap of 100 is the highest the user can allow: reaching it must not stop the run for good, and an agent that is really out answers with a limit error.
+const over = (pct: number, cap: number) => (cap >= 100 ? pct > cap : pct >= cap)
 const id = (p: string) => `${p}${randomUUID().slice(0, 8)}`
 const MAX_PROPOSALS = 6
 const MAX_MESSAGES = 1500 // the oldest fall off; decisions and handoffs are kept on the run and the project memory
@@ -116,6 +121,7 @@ export class TeamOrchestrator {
       l.ctl.abort()
     }
     this.hub.stop()
+    this.hubReady = null // a run resumed after a cancelled quit starts a new hub
   }
 
   // A run found half-done at startup is not resumed by itself (that would spend quota without being asked): it is marked interrupted.
@@ -123,8 +129,14 @@ export class TeamOrchestrator {
     for (const r of this.list()) {
       if (!this.runs.has(r.id)) this.runs.set(r.id, r)
       if (!['planning', 'running', 'verifying', 'paused'].includes(r.status)) continue
-      for (const t of r.tasks) if (t.status === 'running') t.status = 'interrupted'
-      for (const a of r.approvals) if (a.status === 'pending' && a.kind !== 'final') (a.status = 'expired'), (a.answeredAt = Date.now())
+      for (const t of r.tasks) {
+        if (t.status !== 'running') continue
+        t.status = 'interrupted'
+        if (t.phase && t.phase !== 'work') t.resumeFrom = t.phase // the quit may have beaten the save of the interrupted state, so the phase is read here
+      }
+      // a plan waiting for the user's yes stays open: Resume must not start work nobody approved
+      for (const a of r.approvals) if (a.status === 'pending' && a.kind !== 'final' && a.kind !== 'plan') (a.status = 'expired'), (a.answeredAt = Date.now())
+      if (r.activeSince) (r.activeMs = (r.activeMs ?? 0) + Math.max(0, r.updatedAt - r.activeSince)), (r.activeSince = undefined) // the time Forge was closed is not working time
       r.status = 'interrupted'
       r.pausedReason = 'Forge was closed while this was running.'
       this.d.store.save(r)
@@ -147,7 +159,7 @@ export class TeamOrchestrator {
     const integrationBranch = `forge/${runId}`
     const integrationWorktree = join(this.d.teamDir, 'wt', runId, 'integration')
     await createRunBranch(project, integrationBranch, baseCommit, integrationWorktree)
-    const run: Run = { id: runId, project, goal: goal.trim(), status: 'planning', createdAt: Date.now(), updatedAt: Date.now(), baseCommit, integrationBranch, integrationWorktree, plan: { summary: '', plannedBy: null }, tasks: [], messages: [], decisions: [], errors: [], approvals: [], usage: { claude: emptyUsage(), codex: emptyUsage(), local: emptyUsage() }, config }
+    const run: Run = { id: runId, project, goal: goal.trim(), status: 'planning', createdAt: Date.now(), updatedAt: Date.now(), activeMs: 0, activeSince: Date.now(), baseCommit, integrationBranch, integrationWorktree, plan: { summary: '', plannedBy: null }, tasks: [], messages: [], decisions: [], errors: [], approvals: [], usage: { claude: emptyUsage(), codex: emptyUsage(), local: emptyUsage() }, config }
     this.runs.set(runId, run)
     this.saveNow(run)
     writeHistory(project, `Run ${runId} started. Goal: ${run.goal.replace(/\s+/g, ' ').slice(0, 800)} (${config.attachments?.length ? `attachments: ${config.attachments.map((a) => a.name).join(', ')}; ` : ''}crew: ${available.join(', ')}; review ${config.review}; web ${config.webResearch === false ? 'off' : 'on'})`)
@@ -155,26 +167,48 @@ export class TeamOrchestrator {
     const live = this.newLive(available)
     this.live.set(runId, live)
     this.out(run, { type: 'run', runId, status: 'planning' })
-    void this.plan(run).then(() => this.afterPlan(run)).catch((e) => this.fail(run, (e as Error).message))
+    this.startPlan(run, live)
     return run
+  }
+
+  private track(live: Live, p: Promise<unknown>) {
+    live.bg.add(p)
+    void p.finally(() => live.bg.delete(p)).catch(() => {})
+  }
+  private startPlan(run: Run, live: Live) {
+    if (live.planning) return // a soft pause left the planner running: Resume waits for its plan
+    live.planning = true
+    this.track(live, this.plan(run).then(() => this.afterPlan(run)).catch((e) => this.fail(run, (e as Error).message)).finally(() => (live.planning = false)))
   }
 
   pause(runId: string, hard = false) {
     const run = this.runOf(runId)
     const live = this.live.get(runId)
-    if (!run || !live || !['running', 'planning', 'verifying'].includes(run.status)) return
+    if (!run || !live) return
+    // a run paused by a budget or a sign-in problem may still have turns going: a hard stop must be able to end them
+    const winding = run.status === 'paused' && hard && !live.stop && (live.running.size > 0 || live.bg.size > 0)
+    if (!['running', 'planning', 'verifying'].includes(run.status) && !winding) return
     if (run.status === 'verifying') hard = true // the last checks and fixes cannot wait for a turn to end: stop them, resume runs them again
     live.paused = true
     this.setStatus(run, 'paused', hard ? 'Stopped by you. Resume continues where the agents left off.' : 'Paused by you.')
     if (hard) {
       live.stop = 'pause'
       live.ctl.abort()
+      // the agents that asked are being stopped: their questions would stay open and nothing could answer them
+      for (const [aid, res] of live.pending) {
+        const kind = run.approvals.find((x) => x.id === aid)?.kind
+        if (kind === 'plan' || kind === 'budget') continue
+        this.markApproval(run, aid, 'expired', 'Stopped by you.')
+        live.pending.delete(aid)
+        res({ allow: false, note: 'Stopped by you.' })
+      }
     }
   }
 
   async resume(runId: string) {
     const run = this.runOf(runId)
     if (!run || !['paused', 'interrupted'].includes(run.status)) return
+    if (run.approvals.some((a) => a.kind === 'plan' && a.status === 'pending')) return void this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: 'Approve or edit the plan first; nothing starts before that.' })
     const { agents: available, skipped } = await this.usable(run.config.maxLimitPercent) // the user may have just signed an agent in
     for (const note of skipped) this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: note })
     if (!available.length) return void this.setStatus(run, run.status, 'Neither Claude Code nor Codex is signed in yet.')
@@ -185,7 +219,7 @@ export class TeamOrchestrator {
     }
     live.available = available
     // a stop that is still unwinding: let the stopped turns mark their tasks interrupted before a fresh controller replaces the aborted one
-    if (live.stop && live.running.size) await Promise.allSettled([...live.running.values()])
+    if (live.stop && (live.running.size || live.bg.size)) await Promise.allSettled([...live.running.values(), ...live.bg])
     if (live.stop) (live.ctl = new AbortController()), (live.stop = null)
     live.paused = false
     for (const t of run.tasks) {
@@ -193,7 +227,7 @@ export class TeamOrchestrator {
       else if (t.status === 'blocked' && !/depends on failed/.test(t.error ?? '')) (t.status = 'queued'), (t.error = undefined) // blocked by a missing sign-in, which may be fixed now
     }
     this.setStatus(run, run.tasks.length ? 'running' : 'planning')
-    if (!run.tasks.length) void this.plan(run).then(() => this.afterPlan(run)).catch((e) => this.fail(run, (e as Error).message))
+    if (!run.tasks.length) this.startPlan(run, live)
     else this.pump(run)
   }
 
@@ -207,7 +241,7 @@ export class TeamOrchestrator {
       live.ctl.abort()
       for (const [aid, res] of live.pending) (this.markApproval(run, aid, 'denied', 'Run cancelled.'), res({ allow: false, note: 'Run cancelled.' }))
       live.pending.clear()
-      await Promise.allSettled([...live.running.values()])
+      await Promise.allSettled([...live.running.values(), ...live.bg]) // the last steps too: they must not set a status over 'cancelled' or work in a folder that is about to go
     }
     for (const t of run.tasks) if (!['done', 'failed'].includes(t.status)) t.status = 'cancelled'
     this.setStatus(run, 'cancelled', 'Cancelled by you.')
@@ -221,6 +255,7 @@ export class TeamOrchestrator {
     if (!['done', 'failed', 'cancelled', 'awaiting_approval'].includes(run.status)) return false
     if (run.status === 'awaiting_approval') await this.cleanup(run, true)
     else await this.cleanup(run, !run.applied).catch(() => {})
+    this.dirty.delete(runId) // cleanup() queued a save: left alone, the timer would write the run back
     this.runs.delete(runId)
     this.live.delete(runId)
     this.d.store.delete(runId)
@@ -239,7 +274,7 @@ export class TeamOrchestrator {
     for (const id of dirs) {
       const r = known.get(id)
       if (r && !['done', 'failed', 'cancelled'].includes(r.status)) continue
-      if (r) await this.cleanup(r, false).catch(() => {})
+      if (r) await this.cleanup(r, false, false).catch(() => {}) // not saved: a restart must not reorder the finished runs
       await rm(join(this.d.teamDir, 'wt', id), { recursive: true, force: true }).catch(() => {})
     }
     for (const project of new Set(this.list().map((r) => r.project))) await pruneWorktrees(project)
@@ -252,6 +287,17 @@ export class TeamOrchestrator {
     const a = run.approvals.find((x) => x.id === approvalId)
     if (!a || a.status !== 'pending') return false
     const resolve = live?.pending.get(approvalId)
+    // the final approval and a plan that outlived a restart have no waiting agent: the answer is acted on directly
+    if (a.kind === 'final') {
+      if (allow) void this.approveFinal(runId).catch(() => {})
+      else void this.rejectFinal(runId).catch(() => {})
+      return true
+    }
+    if (!resolve && a.kind === 'plan' && ['paused', 'interrupted'].includes(run.status)) {
+      this.markApproval(run, approvalId, allow ? 'allowed' : 'denied', note)
+      void (allow ? this.resume(runId) : this.cancel(runId)).catch(() => {})
+      return true
+    }
     if (!resolve) {
       this.markApproval(run, approvalId, 'expired', 'The agent that asked is no longer waiting.')
       return false
@@ -281,17 +327,24 @@ export class TeamOrchestrator {
     const run = this.runOf(runId)
     const body = text.trim().slice(0, 2000)
     if (!run || !body) return
-    // "pause" / "stop" typed in the box stops the agents now; "resume" / "continue" starts them again
+    // "pause" / "stop" typed in the box stops the agents now; "resume" / "continue" starts them again. In any other state they do nothing.
     const word = body.toLowerCase().replace(/[\s.!]+$/, '')
-    if (/^(pause|stop|wait|hold on|stop it|pause it)$/.test(word) && ['planning', 'running', 'verifying'].includes(run.status)) return this.pause(runId, true)
-    if (/^(resume|continue|go on|keep going|go|start again|unpause)$/.test(word) && ['paused', 'interrupted'].includes(run.status)) return this.resume(runId)
-    if (['planning', 'running', 'paused', 'verifying', 'interrupted'].includes(run.status)) return this.steer(runId, body, to)
+    if (/^(pause|stop|wait|hold on|stop it|pause it)$/.test(word)) return ['planning', 'running', 'verifying', 'paused'].includes(run.status) ? this.pause(runId, true) : void this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: 'Nothing is running right now.' })
+    if (/^(resume|continue|go on|keep going|go|start again|unpause)$/.test(word)) return ['paused', 'interrupted'].includes(run.status) ? this.resume(runId) : void this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: 'Nothing is paused right now.' })
+    if (['planning', 'running', 'paused', 'verifying', 'interrupted'].includes(run.status)) {
+      // after the last task nobody is left to read a message: the final steps turn it into a task
+      const finishing = run.status === 'verifying' || (['paused', 'interrupted'].includes(run.status) && run.tasks.length > 0 && run.tasks.every((t) => ['done', 'cancelled'].includes(t.status)))
+      if (finishing) this.liveOf(run).late.push({ body, to })
+      return this.steer(runId, body, to)
+    }
+    const { agents: available, skipped } = await this.usable(run.config.maxLimitPercent) // also after a restart, when nothing yet says who is signed in
+    if (!available.length) throw new Error(`${skipped.join(' ') || 'No agent is signed in.'} Sign in or wait, then send this again.`)
     if (run.status === 'awaiting_approval') {
       const a = run.approvals.find((x) => x.kind === 'final' && x.status === 'pending')
       if (a) this.markApproval(run, a.id, 'denied', 'You asked for more work first.')
+      this.dropFailedLastSteps(run)
+      this.liveOf(run).available = available
     } else {
-      const { agents: available, skipped } = await this.usable(run.config.maxLimitPercent)
-      if (!available.length) throw new Error(`${skipped.join(' ') || 'No agent is signed in.'} Sign in or wait, then send this again.`)
       this.live.set(runId, this.newLive(available))
       for (const t of run.tasks) if (!['done', 'cancelled'].includes(t.status)) (t.status = 'cancelled'), (t.error = 'Replaced by your next message.')
       const wt = run.integrationWorktree
@@ -303,17 +356,22 @@ export class TeamOrchestrator {
       } else await addTaskWorktree(run.project, wt, run.integrationBranch, run.baseCommit) // unapplied work is still on its branch
       run.applied = false
       run.appliedCheckpoint = undefined
+      run.undone = undefined
       run.final = undefined
       run.pausedReason = undefined
       writeHistory(run.project, `Run ${run.id} continued with a new message: ${body.replace(/\s+/g, ' ').slice(0, 300)}`)
     }
     const live = this.liveOf(run)
     this.post(run, { from: 'user', to, kind: 'steer', body })
-    const agent = to !== 'all' && live.available.includes(to) ? to : strongest(live.available)
-    this.addTask(run, { title: body.replace(/\s+/g, ' ').slice(0, 70), goal: body, agent, kind: 'build', proposedBy: 'user' })
+    this.messageTask(run, live, body, to)
     live.paused = false
     this.setStatus(run, 'running')
     this.pump(run)
+  }
+
+  private messageTask(run: Run, live: Live, body: string, to: AgentName | 'all') {
+    const agent = to !== 'all' && live.available.includes(to) ? to : strongest(live.available)
+    return this.addTask(run, { title: body.replace(/\s+/g, ' ').slice(0, 70), goal: body, agent, kind: 'build', proposedBy: 'user' })
   }
 
   retryTask(runId: string, taskId: string) {
@@ -347,7 +405,8 @@ export class TeamOrchestrator {
 
   // With `reviewPlan` the run waits here: the user can edit the plan (updatePlan) and then approves it or cancels the run.
   private afterPlan(run: Run) {
-    if (!run.config.reviewPlan || run.status !== 'running' || run.tasks.some((t) => t.status !== 'queued')) return this.pump(run)
+    const waiting = run.status === 'running' || (run.status === 'paused' && this.liveOf(run).paused) // a soft pause during planning still gets the plan check
+    if (!run.config.reviewPlan || !run.tasks.length || !waiting || run.tasks.some((t) => t.status !== 'queued')) return this.pump(run)
     const live = this.liveOf(run)
     live.paused = true
     this.setStatus(run, 'paused', 'Review the plan, change what you want, then approve it to start.')
@@ -420,23 +479,38 @@ export class TeamOrchestrator {
     this.save(run)
   }
 
-  async approveFinal(runId: string): Promise<{ ok: boolean; message: string; checkpoint?: string }> {
+  // `withoutUndo`: the user agreed to apply even though no recovery point could be taken.
+  async approveFinal(runId: string, withoutUndo = false): Promise<{ ok: boolean; message: string; checkpoint?: string }> {
     const run = this.runOf(runId)
     if (!run || run.status !== 'awaiting_approval') return { ok: false, message: 'This run is not waiting for approval.' }
-    let checkpoint: string | undefined
+    let checkpoint: Awaited<ReturnType<typeof createCheckpoint>> | undefined
     try {
-      checkpoint = (await createCheckpoint(run.project)).id // so the normal Undo can take the whole result back out
-    } catch {}
-    const r = await applyResult(run.project, run.baseCommit, run.integrationBranch)
+      checkpoint = await createCheckpoint(run.project) // so the normal Undo can take the whole result back out
+    } catch (e) {
+      if (!withoutUndo) {
+        const message = `Nothing was applied, because a way back could not be saved first: ${(e as Error).message.slice(0, 200)}. Fix that, or apply without Undo.`
+        this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: message })
+        return { ok: false, message }
+      }
+    }
+    // a three-way apply can stop halfway, with conflict markers in the files and an unmerged index
+    const index = await git(run.project, ['write-tree']).then((t) => t.trim(), () => null)
+    const r = await applyResult(run.project, run.baseCommit, run.integrationBranch, checkpoint?.id)
+    if (!r.ok) {
+      if (checkpoint) await undoTo(run.project, checkpoint).catch(() => [])
+      if (index) await git(run.project, ['read-tree', index]).catch(() => '')
+      this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: `Not applied, your folder is as it was: ${r.message}` })
+      return { ok: false, message: r.message } // the approval stays open, so the user can fix the conflict and apply again
+    }
     const a = run.approvals.find((x) => x.kind === 'final' && x.status === 'pending')
-    if (a) this.markApproval(run, a.id, r.ok ? 'allowed' : 'denied', r.message)
-    if (!r.ok) return { ok: false, message: r.message }
+    if (a) this.markApproval(run, a.id, 'allowed', r.message)
     run.applied = true
-    run.appliedCheckpoint = checkpoint
+    run.appliedCheckpoint = checkpoint?.id
+    run.undone = undefined
     writeHistory(run.project, `Run ${run.id} was applied to the project: ${r.message.replace(/\s+/g, ' ').slice(0, 300)}`)
     this.setStatus(run, 'done')
     await this.cleanup(run, true)
-    return { ok: true, message: r.message, checkpoint }
+    return { ok: true, message: r.message, checkpoint: checkpoint?.id }
   }
 
   // Takes an applied result back out of the project: every file the apply changed goes back to how it was just before.
@@ -476,7 +550,7 @@ export class TeamOrchestrator {
     const skipped: string[] = []
     const agents = all.filter((a) => {
       const l = lim[a]
-      const hit = l && (l.primaryPct >= cap ? ['this window', l.primaryPct, l.primaryResetsAt] : l.secondaryPct !== undefined && l.secondaryPct >= cap ? ['this week', l.secondaryPct, l.secondaryResetsAt] : null)
+      const hit = l && (over(l.primaryPct, cap) ? ['this window', l.primaryPct, l.primaryResetsAt] : l.secondaryPct !== undefined && over(l.secondaryPct, cap) ? ['this week', l.secondaryPct, l.secondaryResetsAt] : null)
       if (!hit) return true
       const when = hit[2] ? ` It resets around ${new Date(Number(hit[2]) * 1000).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}.` : ''
       skipped.push(`${a === 'codex' ? 'Codex' : 'Claude'} was left out: ${a === 'codex' ? 'your ChatGPT plan' : 'your Claude plan'} allowance for ${hit[0]} is ${Math.round(Number(hit[1]))}% used.${when}`)
@@ -488,7 +562,7 @@ export class TeamOrchestrator {
   // ------------------------------------------------------------------ plumbing
 
   private newLive(available: AgentName[]): Live {
-    return { ctl: new AbortController(), stop: null, paused: false, running: new Map(), pending: new Map(), budgetAsk: false, git: new Mutex(), merge: new Mutex(), available, finishing: false, handles: new Map() }
+    return { ctl: new AbortController(), stop: null, paused: false, running: new Map(), pending: new Map(), budgetAsk: false, git: new Mutex(), merge: new Mutex(), available, finishing: false, handles: new Map(), planning: false, late: [], bg: new Set() }
   }
   private liveOf(run: Run): Live {
     let l = this.live.get(run.id)
@@ -513,7 +587,7 @@ export class TeamOrchestrator {
   flush() {
     if (this.saveTimer) clearTimeout(this.saveTimer)
     this.saveTimer = null
-    for (const r of this.dirty.values()) this.d.store.save(r)
+    for (const r of this.dirty.values()) if (this.runs.get(r.id) === r) this.d.store.save(r) // a deleted run stays deleted
     this.dirty.clear()
   }
 
@@ -604,6 +678,10 @@ export class TeamOrchestrator {
     if (task) this.out(run, { type: 'task', runId: run.id, task })
   }
   private setStatus(run: Run, status: RunStatus, reason?: string) {
+    // working time for the time budget: the clock runs only while the team is at work, so a run reopened days later starts from its own total
+    const now = Date.now()
+    if (run.activeSince) run.activeMs = (run.activeMs ?? 0) + now - run.activeSince
+    run.activeSince = ['planning', 'running', 'verifying'].includes(status) ? now : undefined
     run.status = status
     run.pausedReason = reason
     this.saveNow(run)
@@ -617,6 +695,13 @@ export class TeamOrchestrator {
     return new ProjectMemoryStore(this.d.teamDir, run.project)
   }
   private sleep = (ms: number) => (this.d.sleep ? this.d.sleep(ms) : new Promise<void>((r) => setTimeout(r, ms)))
+  // A wait that a stop ends at once.
+  private nap = (ms: number, signal: AbortSignal) =>
+    new Promise<void>((resolve) => {
+      if (signal.aborted) return resolve()
+      signal.addEventListener('abort', () => resolve(), { once: true })
+      void this.sleep(ms).then(resolve)
+    })
 
   private post(run: Run, m: { from: Message['from']; to: Message['to']; kind: MessageKind; body: string; taskId?: string }) {
     const msg: Message = { id: id('m'), at: Date.now(), readBy: [], ...m, body: redact(m.body) }
@@ -627,11 +712,15 @@ export class TeamOrchestrator {
     return msg
   }
 
-  // Messages for this agent it has not seen, marked as seen. Steering from the user is returned separately.
-  private drainInbox(run: Run, agent: AgentName): { inbox: Message[]; steer: string[] } {
+  // Messages for this agent it has not seen, marked as seen. Steering from the user is returned separately: for a prompt (`standing`) it is
+  // every instruction given so far, since each task is a fresh agent turn; through the mailbox only the ones not yet read.
+  private drainInbox(run: Run, agent: AgentName, standing = false): { inbox: Message[]; steer: string[] } {
     const mine = run.messages.filter((m) => !m.readBy.includes(agent) && m.from !== agent && (m.to === agent || m.to === 'all'))
     for (const m of mine) m.readBy.push(agent)
-    return { inbox: mine.filter((m) => m.kind !== 'steer'), steer: mine.filter((m) => m.kind === 'steer').map((m) => m.body) }
+    return { inbox: mine.filter((m) => m.kind !== 'steer'), steer: standing ? this.instructions(run, agent) : mine.filter((m) => m.kind === 'steer').map((m) => m.body) }
+  }
+  private instructions(run: Run, agent: AgentName): string[] {
+    return run.messages.filter((m) => m.kind === 'steer' && (m.to === agent || m.to === 'all')).slice(-20).map((m) => m.body)
   }
 
   private markApproval(run: Run, approvalId: string, status: Approval['status'], answer?: string) {
@@ -654,7 +743,8 @@ export class TeamOrchestrator {
   }
 
   private async ensureHub(): Promise<string> {
-    return (this.hubReady ??= this.hub.start())
+    // a failed start is not kept: the next run tries again (and the half-open server is dropped so the retry starts clean)
+    return (this.hubReady ??= this.hub.start().catch((e) => ((this.hubReady = null), this.hub.stop(), Promise.reject(e))))
   }
 
   private async linkFor(run: Run, task: Task, agent: AgentName): Promise<TeamLink | null> {
@@ -690,20 +780,33 @@ export class TeamOrchestrator {
         this.out(run, { type: 'agent', runId: run.id, taskId: task.id, phase, ev })
       },
       onApproval: async (a) => {
-        const v = a.command ? decideCommand(a.command) : { verdict: 'ask' as const, reason: '' }
+        // file changes outside the agent's folder are never waved through, whatever the permission mode
+        const v = a.kind !== 'files' && a.command ? decideTool('Bash', { command: a.command }, cwd) : { verdict: 'ask' as const, reason: '' }
         if (v.verdict === 'deny') return false
-        if (run.config.bypassPermissions !== false) return true
+        if (v.verdict === 'allow' || (a.kind !== 'files' && a.command && run.config.bypassPermissions !== false)) return true
         return (await this.ask(run, { kind: 'permission', taskId: task.id, agent, title: a.title, detail: a.detail || v.reason })).allow
       },
       onHandle: (h) => (h ? live.handles.set(task.id, { agent, h }) : live.handles.delete(task.id)),
     })
-    let res = await call(resume)
-    // A saved session can be gone (cleaned up by the CLI, or from another machine): carry on without its memory rather than failing the task.
-    if (resume && !res.ok && !live.ctl.signal.aborted && /no conversation found|session.{0,40}not found|thread.{0,40}not found|could not find.{0,40}(session|thread)|no rollout found/i.test(res.error?.message ?? '')) {
-      this.out(run, { type: 'agent', runId: run.id, taskId: task.id, phase, ev: { type: 'note', agent, text: `${agent} could not resume its earlier session; starting fresh.` } })
-      res = await call(undefined)
+    let res: RunResult
+    try {
+      res = await call(resume)
+      // A saved session can be gone (cleaned up by the CLI, or from another machine): carry on without its memory rather than failing the task.
+      if (resume && !res.ok && !live.ctl.signal.aborted && /no conversation found|session.{0,40}not found|thread.{0,40}not found|could not find.{0,40}(session|thread)|no rollout found/i.test(res.error?.message ?? '')) {
+        this.out(run, { type: 'agent', runId: run.id, taskId: task.id, phase, ev: { type: 'note', agent, text: `${agent} could not resume its earlier session; starting fresh.` } })
+        res = await call(undefined)
+      }
+    } finally {
+      stopWatching?.()
+      // the agent is gone: its open questions have no one waiting, so a late answer must not go to a dead socket
+      for (const a of run.approvals) {
+        const res = a.status === 'pending' && a.taskId === task.id && (a.kind === 'permission' || a.kind === 'question' || a.kind === 'action') ? live.pending.get(a.id) : undefined
+        if (!res) continue
+        this.markApproval(run, a.id, 'expired', 'The agent that asked has finished.')
+        live.pending.delete(a.id)
+        res({ allow: false, note: 'The agent that asked has finished.' })
+      }
     }
-    stopWatching?.()
     for (const u of [(run.usage[agent] ??= emptyUsage()), task.usage]) {
       u.input += res.usage.input
       u.output += res.usage.output
@@ -720,19 +823,20 @@ export class TeamOrchestrator {
   private overBudget(run: Run): string | null {
     const b = run.config.budget
     const u = run.usage
-    const tokens = u.claude.input + u.claude.output + u.codex.input + u.codex.output
-    const runs = u.claude.runs + u.codex.runs
-    const cost = u.claude.costUsd + u.codex.costUsd
+    const all = [u.claude, u.codex, u.local ?? emptyUsage()]
+    const tokens = all.reduce((n, x) => n + x.input + x.output, 0)
+    const runs = all.reduce((n, x) => n + x.runs, 0)
+    const cost = all.reduce((n, x) => n + x.costUsd, 0)
     if (b.maxTokens && tokens >= b.maxTokens) return `token budget reached (${tokens.toLocaleString()} of ${b.maxTokens.toLocaleString()})`
     if (b.maxAgentRuns && runs >= b.maxAgentRuns) return `agent-run budget reached (${runs} of ${b.maxAgentRuns})`
     if (b.maxCostUsd && cost >= b.maxCostUsd) return `cost budget reached (about $${cost.toFixed(2)} of $${b.maxCostUsd})`
-    if (b.maxMinutes && (Date.now() - run.createdAt) / 60_000 >= b.maxMinutes) return `time budget reached (${b.maxMinutes} minutes)`
+    if (b.maxMinutes && ((run.activeMs ?? 0) + (run.activeSince ? Date.now() - run.activeSince : 0)) / 60_000 >= b.maxMinutes) return `time budget reached (${b.maxMinutes} minutes)`
     const cap = run.config.maxLimitPercent
     if (cap)
       for (const [a, l] of Object.entries(run.limits ?? {})) {
         const who = a === 'codex' ? 'your ChatGPT plan' : 'your Claude plan'
-        if (l && l.primaryPct >= cap) return `${who} allowance for this window is ${Math.round(l.primaryPct)}% used`
-        if (l?.secondaryPct !== undefined && l.secondaryPct >= cap) return `${who} weekly allowance is ${Math.round(l.secondaryPct)}% used`
+        if (l && over(l.primaryPct, cap)) return `${who} allowance for this window is ${Math.round(l.primaryPct)}% used`
+        if (l?.secondaryPct !== undefined && over(l.secondaryPct, cap)) return `${who} weekly allowance is ${Math.round(l.secondaryPct)}% used`
       }
     return null
   }
@@ -746,6 +850,7 @@ export class TeamOrchestrator {
     const planners = order.filter((a) => live.available.includes(a))
     const virtual = (): Task => ({ id: 'plan', title: 'Planning', goal: run.goal, acceptance: [], deps: [], agent: planners[0], kind: 'research', files: [], status: 'running', phase: null, attempts: 0, fixRounds: 0, reviews: [], sessions: {}, branch: null, worktree: null, summary: '', handoff: '', changed: [], usage: emptyUsage() })
     let lastErr = 'no planner'
+    const blocked: string[] = [] // planners that cannot work until the user signs in or the allowance resets
     for (const agent of planners) {
       const t = virtual()
       let prompt = planPrompt(run.goal + (notes.rules ? `\n\nUser's rules for this project:\n${notes.rules}` : ''), notes.brief, live.available)
@@ -754,7 +859,9 @@ export class TeamOrchestrator {
         if (live.ctl.signal.aborted) return
         if (!res.ok) {
           lastErr = res.error?.message ?? 'the planner failed'
-          if (['auth', 'missing', 'model'].includes(res.error?.kind ?? '')) break // try the other agent
+          const kind = res.error?.kind ?? ''
+          if (['limit', 'auth', 'missing'].includes(kind)) blocked.push(`${agent}: ${lastErr}`)
+          if (['auth', 'missing', 'model', 'limit'].includes(kind)) break // try the other agent
           continue
         }
         try {
@@ -762,7 +869,7 @@ export class TeamOrchestrator {
           const mem = this.memory(run).load()
           run.plan = { summary: plan.summary, plannedBy: agent }
           run.tasks = plan.tasks.map((p) => ({ id: p.id, title: p.title, goal: p.goal, acceptance: p.acceptance, deps: p.deps, agent: p.agent ?? routeAgent(p.kind, live.available, mem.stats), kind: p.kind, files: p.files, status: 'queued', phase: null, attempts: 0, fixRounds: 0, reviews: [], sessions: {}, branch: null, worktree: null, summary: '', handoff: '', changed: [], usage: emptyUsage() }))
-          this.setStatus(run, 'running')
+          if (!live.paused) this.setStatus(run, 'running') // a soft pause during planning stays a pause
           this.out(run, { type: 'plan', runId: run.id, summary: plan.summary, tasks: run.tasks })
           return
         } catch (e) {
@@ -770,6 +877,11 @@ export class TeamOrchestrator {
           prompt = `${prompt}\n\nYour previous reply was rejected: ${lastErr}. Reply again with ONLY the JSON object.`
         }
       }
+    }
+    if (planners.length && blocked.length >= planners.length) {
+      // every planner is waiting for the user (a sign-in, or the plan's allowance to reset): pause, and Resume plans again
+      live.paused = true
+      return void this.setStatus(run, 'paused', `${blocked.join(' ')} Resume to plan again.`)
     }
     throw new Error(`Could not make a plan: ${lastErr}`)
   }
@@ -802,7 +914,7 @@ export class TeamOrchestrator {
 
     if (live.running.size) return
     const open = run.tasks.filter((t) => !settled(t))
-    if (!open.length && run.tasks.some((t) => t.status === 'done')) return void this.finish(run).catch(() => {})
+    if (!open.length && run.tasks.some((t) => t.status === 'done')) return this.track(live, this.finish(run).catch(() => {}))
     if (!open.length) return void this.setStatus(run, 'done', 'Nothing was done.')
     if (open.some((t) => t.status === 'queued' && t.deps.every((d) => settled(run.tasks.find((x) => x.id === d)!)))) return // ready, about to start
     // nothing can move: failures or blocked tasks need the user
@@ -879,7 +991,7 @@ export class TeamOrchestrator {
     const workDone = build && !!resumeFrom && !!task.base && !!task.summary
     let res: RunResult | null = workDone ? ({ ok: true, text: task.summary, usage: { input: 0, output: 0, cached: 0, costUsd: 0 }, events: [] } as RunResult) : null
     for (; !workDone;) {
-      const { inbox, steer } = this.drainInbox(run, task.agent)
+      const { inbox, steer } = this.drainInbox(run, task.agent, true)
       const prompt = workPrompt(run, task, contextFor(run, task, { inbox, steer, brief: notes.brief, rules: notes.rules, past }))
       res = await this.agentRun(run, task, task.agent, 'work', prompt, build, cwd, task.sessions[task.agent])
       if (res.sessionId) task.sessions[task.agent] = res.sessionId
@@ -891,7 +1003,7 @@ export class TeamOrchestrator {
       task.attempts++
       if (kind === 'busy' && task.attempts <= 3) {
         this.post(run, { from: 'orchestrator', to: 'all', kind: 'note', taskId: task.id, body: `${task.agent} is busy right now; trying again shortly.` })
-        await this.sleep(30_000 * task.attempts)
+        await this.nap(30_000 * task.attempts, live.ctl.signal)
         if (this.stopKind(run)) return this.interrupted(run, task)
         continue
       }
@@ -913,15 +1025,32 @@ export class TeamOrchestrator {
     // A local model is often wrong, so its work is always reviewed by another agent, whatever the review setting says.
     if (run.config.review === 'cross' || task.agent === 'local') {
       const reviewer = strongest(live.available, task.agent)
+      if (reviewer === task.agent) this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', taskId: task.id, body: `Only ${task.agent} is ready, so it reviewed its own work on "${task.title}".` })
+      let busyTries = 0
       for (let round = 1; ; round++) {
+        if (this.stopForBudget(run, task, 'review')) return
         task.phase = 'review'
         this.touch(run, task)
         const diff = await diffText(cwd, task.base!)
-        const { inbox, steer } = this.drainInbox(run, reviewer)
+        const { inbox, steer } = this.drainInbox(run, reviewer, true)
         const rr = await this.agentRun(run, task, reviewer, 'review', reviewPrompt(run, task, diff, round, contextFor(run, task, { inbox, steer, brief: notes.brief, rules: notes.rules, past: [] })), false, cwd, round > 1 ? task.reviewSession : undefined)
         if (rr.sessionId) task.reviewSession = rr.sessionId
         if (this.stopKind(run)) return this.interrupted(run, task)
-        const v = rr.ok ? parseVerdict(rr.text) : { verdict: 'unclear' as const, issues: `Review could not run: ${rr.error?.message ?? 'unknown error'}` }
+        if (!rr.ok) {
+          // work nobody could check does not count as checked: wait for the user, retry, or fail the task
+          const kind: ErrorKind = rr.error?.kind ?? 'other'
+          const msg = `${reviewer} could not review: ${rr.error?.message ?? 'unknown error'}`
+          if (kind === 'auth' || kind === 'missing' || kind === 'model' || kind === 'limit') return (task.resumeFrom = 'review'), this.blockTask(run, task, msg, true)
+          if (kind === 'busy' && ++busyTries <= 3) {
+            this.post(run, { from: 'orchestrator', to: 'all', kind: 'note', taskId: task.id, body: `${reviewer} is busy right now; the review will be tried again shortly.` })
+            await this.nap(30_000 * busyTries, live.ctl.signal)
+            if (this.stopKind(run)) return this.interrupted(run, task)
+            round--
+            continue
+          }
+          return this.failTask(run, task, msg)
+        }
+        const v = parseVerdict(rr.text)
         task.reviews.push({ by: reviewer, verdict: v.verdict, issues: v.issues, round, at: Date.now() })
         this.post(run, { from: reviewer, to: task.agent, kind: 'review', taskId: task.id, body: `${v.verdict.toUpperCase()} (round ${round}): ${v.issues.slice(0, 600) || 'no issues listed'}` })
         this.touch(run, task)
@@ -932,10 +1061,11 @@ export class TeamOrchestrator {
           if (a.allow) break
           return this.failTask(run, task, `Review kept failing after ${task.fixRounds} fix rounds.`)
         }
+        if (this.stopForBudget(run, task, 'fix')) return
         task.fixRounds++
         task.phase = 'fix'
         this.touch(run, task)
-        const fx = await this.agentRun(run, task, task.agent, 'fix', fixPrompt(task, v.issues, round), true, cwd, task.sessions[task.agent])
+        const fx = await this.agentRun(run, task, task.agent, 'fix', fixPrompt(task, v.issues, round, this.instructions(run, task.agent)), true, cwd, task.sessions[task.agent])
         if (fx.sessionId) task.sessions[task.agent] = fx.sessionId
         if (this.stopKind(run)) return this.interrupted(run, task)
         if (!fx.ok) return this.failTask(run, task, `fix round failed: ${fx.error?.message ?? 'unknown'}`)
@@ -948,12 +1078,15 @@ export class TeamOrchestrator {
     task.diff = await diffText(cwd, task.base!, 'HEAD', 60_000).catch(() => '')
 
     // ---- merge into the team branch, one at a time; a conflict is handed to an agent
+    let merged = false
     await live.merge.run(async () => {
       task.phase = 'merge'
       this.touch(run, task)
+      if (this.stopKind(run)) return // stopped while waiting for the lock: nothing of this task goes in now
       await abortMerge(run.integrationWorktree) // a merge left half-done by an interruption starts over
+      await this.clean(run.integrationWorktree) // so does a stopped fixer's half-written files
       const m = await mergeBranch(run.integrationWorktree, task.branch!, `${task.id}: ${task.title}`)
-      if (m.ok) return
+      if (m.ok) return void (merged = true)
       task.phase = 'conflict'
       this.touch(run, task)
       const resolver = strongest(live.available)
@@ -964,9 +1097,25 @@ export class TeamOrchestrator {
         await abortMerge(run.integrationWorktree)
         throw new Error(`Could not resolve the merge conflict in ${fin.left.join(', ')}.`)
       }
+      merged = true
     })
-    if (this.stopKind(run)) return this.interrupted(run, task)
+    if (!merged) return this.interrupted(run, task) // a merge that went in is done even if a stop came a moment later
     await this.complete(run, task, `${task.title} is merged.`)
+  }
+
+  // The budget is also checked inside a task's review and fix loop and before the last steps, not only between tasks. The task is left
+  // interrupted at `phase`, so the resume after "allow more" does not redo its work.
+  private stopForBudget(run: Run, task: Task | null, phase?: TaskPhase): boolean {
+    const why = this.overBudget(run)
+    if (!why) return false
+    if (task) {
+      task.status = 'interrupted'
+      task.resumeFrom = phase
+      task.phase = null
+      this.touch(run, task)
+    }
+    void this.hitBudget(run, why).catch(() => {})
+    return true
   }
 
   private async blockTask(run: Run, task: Task, message: string, pauseRun: boolean) {
@@ -1009,23 +1158,26 @@ export class TeamOrchestrator {
     try {
       this.setStatus(run, 'verifying')
       const wt = run.integrationWorktree
+      await this.clean(wt) // the checks must run on exactly what Apply will carry: committed work
       const cmd = run.config.verify === undefined ? detectVerify(wt) : run.config.verify
       let verify: { ok: boolean | null; command?: string; output?: string } = { ok: null }
       if (cmd) {
+        let fixed: { fix: string; sig: string } | null = null // the last check-fix, remembered once the check passes after it
         for (let round = 0; ; round++) {
           const v = await runVerify(cmd, wt, live.ctl.signal)
           if (live.ctl.signal.aborted) return
           verify = { ok: v.ok, command: cmd, output: v.output }
           this.out(run, { type: 'verify', runId: run.id, command: cmd, ok: v.ok, output: v.output.slice(-4000) })
           if (v.ok) {
-            this.learnFix(run, undefined)
+            if (fixed) this.learnFix(run, fixed.fix, fixed.sig)
             break
           }
           const sig = errorSignature(v.output)
           run.errors.push({ id: id('e'), signature: sig, text: v.output.slice(-400), at: Date.now() })
           if (round >= run.config.maxVerifyRounds) break
+          if (this.stopForBudget(run, null)) return
           const fixer = strongest(live.available)
-          const t = this.addTask(run, { title: `Fix failing checks (attempt ${round + 1})`, goal: `Make \`${cmd}\` pass.`, agent: fixer, kind: 'build' })
+          const t = this.addTask(run, { title: `Fix failing checks (attempt ${round + 1})`, goal: `Make \`${cmd}\` pass.`, agent: fixer, kind: 'build', lastStep: true })
           t.status = 'running'
           t.phase = 'fix'
           t.startedAt = Date.now()
@@ -1033,7 +1185,7 @@ export class TeamOrchestrator {
           const past = this.pastProblems(run, t)
           const res = await this.agentRun(run, t, fixer, 'fix', verifyFixPrompt(cmd, v.output, round + 1) + (past.length ? `\n\nSimilar problems met before:\n${past.map((p) => `- ${p}`).join('\n')}` : ''), true, wt)
           if (res.sessionId) t.sessions[fixer] = res.sessionId
-          if (live.ctl.signal.aborted) return
+          if (live.ctl.signal.aborted) return void (await this.clean(wt))
           t.summary = res.text
           await commitAll(wt, `fix: failing checks (attempt ${round + 1})`)
           t.changed = await changedSince(wt, run.baseCommit)
@@ -1041,31 +1193,41 @@ export class TeamOrchestrator {
           t.error = res.ok ? undefined : res.error?.message
           t.endedAt = Date.now()
           this.touch(run, t)
-          this.learnFix(run, res.ok ? res.text : undefined, sig)
+          fixed = res.ok ? { fix: res.text, sig } : null
         }
       }
+      if (this.reopen(run, live)) return
 
       const notes: string[] = []
       const total = await changedSince(wt, run.baseCommit).catch(() => [])
       const parts = run.tasks.filter((t) => t.status === 'done' && t.kind === 'build').length
       const localWork = run.tasks.some((t) => t.agent === 'local' && t.status === 'done' && t.changed?.length) // always checked as a whole, too
       if (((run.config.finalReview && (run.config.finalReview === true || parts >= 3) && run.config.review === 'cross') || localWork) && total.length) {
+        if (this.stopForBudget(run, null)) return
         const reviewer = strongest(live.available)
         const t = this.virtualTask(run, 'final', 'Final review', reviewer)
         const rr = await this.agentRun(run, t, reviewer, 'final-review', finalReviewPrompt(run, await diffText(wt, run.baseCommit)), false, wt)
         if (live.ctl.signal.aborted) return
-        if (rr.ok) {
+        if (!rr.ok) {
+          const kind: ErrorKind = rr.error?.kind ?? 'other'
+          const msg = `${reviewer} could not do the final review: ${rr.error?.message ?? 'unknown error'}`
+          if (kind === 'auth' || kind === 'missing' || kind === 'model' || kind === 'limit') {
+            live.paused = true
+            return this.setStatus(run, 'paused', `${msg}. Resume to try again.`)
+          }
+          notes.push(`The final review could not run: ${rr.error?.message ?? 'unknown error'}`) // the user sees on the approval card that this result was not looked at as a whole
+        } else {
           const v = parseVerdict(rr.text)
           notes.push(`${reviewer}: ${v.verdict.toUpperCase()} — ${v.issues.replace(/\s+/g, ' ').slice(0, 500)}`)
           this.post(run, { from: reviewer, to: 'user', kind: 'review', body: `Final review: ${v.verdict.toUpperCase()}. ${v.issues.slice(0, 600)}` })
           if (v.verdict === 'fail') {
             const author = strongest(live.available, reviewer)
-            const ft = this.addTask(run, { title: 'Fix problems from the final review', goal: v.issues, agent: author, kind: 'build' })
+            const ft = this.addTask(run, { title: 'Fix problems from the final review', goal: v.issues, agent: author, kind: 'build', lastStep: true })
             ft.status = 'running'
             ft.phase = 'fix'
             this.touch(run, ft)
-            const fx = await this.agentRun(run, ft, author, 'fix', fixPrompt(ft, v.issues, 1), true, wt)
-            if (live.ctl.signal.aborted) return
+            const fx = await this.agentRun(run, ft, author, 'fix', fixPrompt(ft, v.issues, 1, this.instructions(run, author)), true, wt)
+            if (live.ctl.signal.aborted) return void (await this.clean(wt))
             await commitAll(wt, 'fix: final review')
             ft.changed = await changedSince(wt, run.baseCommit)
             ft.status = fx.ok ? 'done' : 'failed'
@@ -1082,8 +1244,10 @@ export class TeamOrchestrator {
         }
       }
 
+      if (live.ctl.signal.aborted) return // a stop during the final steps: no result to approve
       const files = await changedSince(wt, run.baseCommit).catch(() => [])
-      const report = buildReport(run, verify, notes)
+      if (this.reopen(run, live)) return // checked after the last await, so a message sent during it is not stranded
+      const report = buildReport(run, verify, notes, files)
       run.final = { report, files, verifyOk: verify.ok, verifyOutput: (verify.output ?? '').slice(-2000), reviewNotes: notes }
       this.out(run, { type: 'final', runId: run.id, final: run.final })
       this.setStatus(run, 'awaiting_approval')
@@ -1092,6 +1256,7 @@ export class TeamOrchestrator {
       this.save(run)
       this.out(run, { type: 'approval', runId: run.id, approval: a })
     } catch (e) {
+      if (live.ctl.signal.aborted) return // stopped (or cancelled, and the folders are gone): the stop already set the status
       // the work is all on the team branch: keep it, and let the user try the last steps again
       live.paused = true
       this.setStatus(run, 'paused', `The last steps failed: ${(e as Error).message.slice(0, 200)}. Resume to try again.`)
@@ -1099,6 +1264,25 @@ export class TeamOrchestrator {
       live.finishing = false
       if (run.status === 'running' && !live.paused) this.pump(run) // resumed while the stopped checks were still unwinding
     }
+  }
+
+  // Puts a team folder back to its last commit: nothing that was not committed is checked, merged over or reported as done.
+  private async clean(wt: string) {
+    await git(wt, ['reset', '--hard', '-q']).catch(() => '')
+    await git(wt, ['clean', '-fdq']).catch(() => '')
+  }
+
+  // Messages sent while the last checks ran become tasks, and the run goes back to work; the checks run again on the result.
+  private dropFailedLastSteps(run: Run) {
+    for (const t of run.tasks) if (t.lastStep && t.status === 'failed') (t.status = 'cancelled'), (t.error = 'Replaced by your next message.')
+  }
+
+  private reopen(run: Run, live: Live): boolean {
+    if (!live.late.length) return false
+    this.dropFailedLastSteps(run) // a failed check-fix would otherwise count as an open task and pause the run
+    for (const m of live.late.splice(0)) this.messageTask(run, live, m.body, m.to)
+    this.setStatus(run, 'running')
+    return true
   }
 
   private learnFix(run: Run, fix: string | undefined, sig?: string) {
@@ -1112,21 +1296,22 @@ export class TeamOrchestrator {
   private virtualTask(run: Run, tid: string, title: string, agent: AgentName): Task {
     return { id: tid, title, goal: run.goal, acceptance: [], deps: [], agent, kind: 'research', files: [], status: 'running', phase: null, attempts: 0, fixRounds: 0, reviews: [], sessions: {}, branch: null, worktree: null, summary: '', handoff: '', changed: [], usage: emptyUsage() }
   }
-  private addTask(run: Run, p: { title: string; goal: string; agent: AgentName; kind: Task['kind']; deps?: string[]; acceptance?: string[]; proposedBy?: string }): Task {
+  private addTask(run: Run, p: { title: string; goal: string; agent: AgentName; kind: Task['kind']; deps?: string[]; acceptance?: string[]; proposedBy?: string; lastStep?: boolean }): Task {
     const n = run.tasks.reduce((m, t) => Math.max(m, Number(t.id.replace(/\D/g, '')) || 0), 0) + 1
-    const t: Task = { ...this.virtualTask(run, `t${n}`, p.title, p.agent), goal: p.goal, kind: p.kind, deps: p.deps ?? [], acceptance: p.acceptance ?? [], status: 'queued', proposedBy: p.proposedBy }
+    const t: Task = { ...this.virtualTask(run, `t${n}`, p.title, p.agent), goal: p.goal, kind: p.kind, deps: p.deps ?? [], acceptance: p.acceptance ?? [], status: 'queued', proposedBy: p.proposedBy, lastStep: p.lastStep }
     run.tasks.push(t)
     this.touch(run, t)
     return t
   }
 
-  private async cleanup(run: Run, deleteBranch: boolean) {
+  private async cleanup(run: Run, deleteBranch: boolean, save = true) {
     const live = this.liveOf(run)
     await live.git.run(async () => {
       for (const t of run.tasks) if (t.worktree) (await removeWorktree(run.project, t.worktree, t.branch ?? undefined), (t.worktree = null))
       await removeWorktree(run.project, run.integrationWorktree, deleteBranch ? run.integrationBranch : undefined)
+      await rm(join(this.d.teamDir, 'wt', run.id), { recursive: true, force: true }) // the empty run folder too
     })
-    this.save(run)
+    if (save) this.save(run)
   }
 
   // ------------------------------------------------------------------ what agents ask for through the mailbox
@@ -1194,6 +1379,7 @@ export class TeamOrchestrator {
         return run.tasks.map((t) => ({ id: t.id, title: t.title, agent: t.agent, status: t.status }))
       case 'propose_subtask': {
         if (!run.config.allowSubtasks) return 'Subtasks are turned off for this run.'
+        if (run.status === 'verifying') return 'The team is checking the result and cannot take new tasks now. Put it in your handoff instead.'
         if (task?.proposedBy) return 'A subtask cannot propose more subtasks.'
         if (run.tasks.filter((t) => t.proposedBy).length >= MAX_PROPOSALS || run.tasks.length >= (run.config.budget.maxTasks ?? 12)) return 'The team already has as many tasks as allowed.'
         const avail = this.liveOf(run).available

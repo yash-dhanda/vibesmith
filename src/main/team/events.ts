@@ -27,7 +27,7 @@ export type Parser = (line: string) => TeamEvent[]
 // Order matters: a codex "model not supported on this account" message also mentions the account, which is not an auth problem.
 export function classifyError(msg: string): ErrorKind {
   if (/model[_ ]not[_ ]found|not supported when using|unknown model|invalid model/i.test(msg)) return 'model'
-  if (/usage limit|limit reached|out of (extra )?usage|5-hour|weekly limit|plan limit|quota/i.test(msg)) return 'limit' // the plan's allowance: waiting minutes will not help
+  if (/usage limit|limit reached|out of (extra )?usage|5-hour|weekly limit|plan limit|quota|hit your [\w -]*limit|usage credit limit/i.test(msg)) return 'limit' // the plan's allowance: waiting minutes will not help
   if (/rate limit|\b429\b|overloaded|too many requests|temporarily unavailable|\b529\b/i.test(msg)) return 'busy' // a short-lived rejection: trying again soon works
   if (/authenticat|oauth|not logged in|log ?in|\b401\b|unauthorized|expired/i.test(msg)) return 'auth'
   return 'other'
