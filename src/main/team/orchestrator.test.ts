@@ -152,6 +152,23 @@ describe('team orchestrator', () => {
 
   })
 
+  it('keeps the same run going: a message after the result was applied reopens it with a new task', async () => {
+    const x = h({ plan: { tasks: [T('a'), T('b')] } })
+    const run = await x.orch.start(x.proj, 'first job')
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    await x.orch.approveFinal(run.id)
+    expect(x.orch.get(run.id)?.status).toBe('done')
+    await x.orch.followUp(run.id, 'now also add a third thing')
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect(r.id).toBe(run.id)
+    expect(r.tasks).toHaveLength(3)
+    expect(r.tasks[2]).toMatchObject({ goal: 'now also add a third thing', status: 'done' })
+    expect(r.applied).toBe(false)
+    expect(r.approvals.filter((a) => a.kind === 'final' && a.status === 'pending')).toHaveLength(1)
+    expect(existsSync(join(r.integrationWorktree, 't1.txt'))).toBe(true) // the first round's files are in the project, so the new branch has them
+    expect((await x.orch.approveFinal(run.id)).ok).toBe(true)
+  })
+
   it('takes an applied result back out of the project with undo', async () => {
     const x = h({ plan: { tasks: [T('a'), T('b')] } })
     const run = await x.orch.start(x.proj, 'undo me')

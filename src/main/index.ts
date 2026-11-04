@@ -676,6 +676,7 @@ const teamSvc = (): TeamService =>
   (team ??= createTeamService({
     userData: app.getPath('userData'),
     mcpScript: join(here, 'team-mcp.js').replace('app.asar' + (process.platform === 'win32' ? '\\' : '/'), 'app.asar.unpacked' + (process.platform === 'win32' ? '\\' : '/')),
+    recordUsage: (agent, u) => { usage.record(`crew:${agent}`, { input: u.input, output: u.output, genMs: 0 }); win?.webContents.send('usage:changed') },
     emit: (ev) => {
       win?.webContents.send('team:event', ev)
       teamNotify(ev)
@@ -705,6 +706,7 @@ ipcMain.handle('team:pause', (_e, id: unknown, hard?: unknown) => teamSvc().orch
 ipcMain.handle('team:resume', (_e, id: unknown) => teamSvc().orch.resume(teamId(id)))
 ipcMain.handle('team:cancel', (_e, id: unknown) => teamSvc().orch.cancel(teamId(id)))
 ipcMain.handle('team:answer', (_e, id: unknown, approvalId: unknown, allow: unknown, note?: unknown) => teamSvc().orch.answerApproval(teamId(id), teamId(approvalId), allow === true, typeof note === 'string' ? note.slice(0, 500) : undefined))
+ipcMain.handle('team:follow', (_e, id: unknown, text: unknown, to?: unknown) => teamSvc().followUp(teamId(id), String(text ?? ''), to === 'claude' || to === 'codex' || to === 'local' ? to : 'all'))
 ipcMain.handle('team:steer', (_e, id: unknown, text: unknown, to?: unknown) => teamSvc().orch.steer(teamId(id), String(text ?? ''), to === 'claude' || to === 'codex' || to === 'local' ? to : 'all'))
 ipcMain.handle('team:retry-task', (_e, id: unknown, taskId: unknown) => teamSvc().orch.retryTask(teamId(id), teamId(taskId)))
 ipcMain.handle('team:skip-task', (_e, id: unknown, taskId: unknown) => teamSvc().orch.skipTask(teamId(id), teamId(taskId)))

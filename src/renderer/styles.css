@@ -1335,3 +1335,16 @@ html.remote :is(.agent-lane, .team-feed, .team-verify, .team-live-files, .team-m
   *, *::before, *::after, ::backdrop { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
   dialog, dialog[open] { scale: 1; }
 }
+
+/* the run's chat box: pinned to the bottom of the run page in every state */
+.team-composer { position: sticky; bottom: 0; z-index: 5; margin-top: 12px; padding: 10px 12px; border-radius: var(--r-lg, 14px); background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(14px); box-shadow: 0 -6px 24px rgba(0,0,0,.25); }
+.team-composer > div { display: flex; align-items: flex-end; gap: 6px; }
+.team-composer textarea { flex: 1; min-width: 0; resize: none; max-height: 160px; border: 1px solid var(--border); background: var(--bg); color: inherit; border-radius: var(--r-md); padding: 9px 12px; font: inherit; line-height: 1.4; outline: none; transition: border-color var(--t2, .18s) var(--ease, ease); }
+.team-composer textarea:focus { border-color: var(--accent, currentColor); }
+.team-composer select { max-width: 96px; border: 1px solid var(--hair); background: transparent; border-radius: var(--r-sm); font-size: 12px; align-self: stretch; }
+
+.team-background > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid var(--hair); border-radius: var(--r-md); font-size: 12.5px; font-weight: 550; color: var(--muted, inherit); }
+.team-background > summary::-webkit-details-marker { display: none; }
+.team-background[open] > summary { margin-bottom: 10px; }
+.team-background .bg-dot { width: 7px; height: 7px; border-radius: 50%; background: #e5534b; }
+.team-background > section + section { margin-top: 10px; }

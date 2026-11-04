@@ -15,9 +15,10 @@ export function setUsage(u: UsageSummary) {
   main.textContent = text
   const top = u.byModel.find((m) => m.avgTps > 0)
   const today = u.today.input + u.today.output
+  const per = u.byAgent.map((a) => `${a.agent[0].toUpperCase()}${a.agent.slice(1)} ${formatTokens(a.today)}`).join(' · ')
   const sub = total ? `${formatTokens(today)} today${top ? ` · ${formatRate(top.avgTps)} tok/s` : ''}` : 'no usage yet'
   badge.querySelector('.u-sub')!.textContent = sub
-  badge.title = `${total.toLocaleString()} tokens used · ${sub}`
+  badge.title = `${total.toLocaleString()} tokens used · ${sub}\nToday: ${per}`
 }
 
 // The usage page inside Settings.
@@ -41,6 +42,15 @@ export async function renderUsage(into: HTMLElement) {
   card('Read', formatTokens(u.allTime.input))
   card('Written', formatTokens(u.allTime.output))
   into.append(cards)
+
+  const crew = h('div', 'sgroup'); crew.append(h('div', 'gt', 'By agent'))
+  const agentCards = h('div', 'cards')
+  for (const a of u.byAgent) {
+    const c = h('div', 'card'); c.append(h('div', 'k', `${a.agent === 'local' ? 'Local' : a.agent === 'claude' ? 'Claude' : 'Codex'} today`), h('div', 'v', formatTokens(a.today)), h('div', 'note', `${formatTokens(a.last7)} this week · ${formatTokens(a.allTime)} all time`))
+    agentCards.append(c)
+  }
+  crew.append(agentCards, h('div', 'note', 'Crew work counts for Claude, Codex and Local. Local also includes Solo chats on your Ollama models.'))
+  into.append(crew)
 
   const chart = h('div', 'sgroup')
   chart.append(h('div', 'gt', 'Last 14 days'))
@@ -68,7 +78,7 @@ export async function renderUsage(into: HTMLElement) {
     const body = document.createElement('tbody')
     for (const m of u.byModel) {
       const tr = document.createElement('tr')
-      for (const [i, text] of [m.model.replace(/^ollama:/, ''), formatTokens(m.input), formatTokens(m.output), String(m.calls), m.avgTps ? `${formatRate(m.avgTps)} tok/s` : '–'].entries()) {
+      for (const [i, text] of [m.model.replace(/^ollama:/, '').replace(/^crew:(\w)(\w*)$/, (_x, a: string, b: string) => `${a.toUpperCase()}${b} (Crew)`), formatTokens(m.input), formatTokens(m.output), String(m.calls), m.avgTps ? `${formatRate(m.avgTps)} tok/s` : '–'].entries()) {
         const td = document.createElement('td')
         td.textContent = text
         if (i === 0) td.title = m.model

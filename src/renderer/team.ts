@@ -357,7 +357,7 @@ function renderRun() {
   const answered = renderAnswered(); if (answered) page.append(answered)
   if (run.status === 'awaiting_approval' && run.final) page.append(renderFinal())
   if (run.status === 'done' && run.applied) page.append(renderApplied())
-  page.append(renderBoard(), renderStory())
+  page.append(renderBoard(), renderStory(), renderSteer())
   root.replaceChildren(page); root.scrollTop = scrollTop
 }
 
@@ -583,9 +583,18 @@ function renderTask(task: Task, index: number) {
   return card
 }
 
+// Crew notes and the checks run in the background; they stay out of sight until asked for. The open/closed choice survives redraws.
+let backgroundOpen = false
+function renderBackground() {
+  const d = h('details', 'team-background') as HTMLDetailsElement; d.open = backgroundOpen
+  const failed = run!.approvals.length === 0 && log.some(x => x.ev.type === 'verify' && !x.ev.ok) && run!.status !== 'done'
+  const sum = h('summary', '', 'Background'); if (failed) sum.append(h('span', 'bg-dot')); d.append(sum, renderMemory(), renderVerify())
+  d.ontoggle = () => { backgroundOpen = d.open }
+  return d
+}
 function renderStory() {
   const area = h('section', 'team-story')
-  const side = h('aside', 'team-side-story'); side.append(renderLiveFiles(), renderFeed(), renderMemory(), renderVerify(), renderSteer(), renderDiffPanel())
+  const side = h('aside', 'team-side-story'); side.append(renderLiveFiles(), renderFeed(), renderBackground(), renderDiffPanel())
   area.append(renderLanes(), side); return area
 }
 const usedAgents = () => (['claude', 'codex', 'local'] as const).filter(a => run!.tasks.some(t => t.agent === a) || log.some(x => x.ev.type === 'agent' && x.ev.ev.agent === a))
@@ -733,13 +742,20 @@ function renderVerify() {
   for (const item of events.slice(-3)) if (item.ev.type === 'verify') { const details = h('details', `verify-card ${item.ev.ok ? 'ok' : 'bad'}`) as HTMLDetailsElement; details.open = !item.ev.ok; details.append(h('summary', '', `${item.ev.ok ? `${STEP_GLYPH.ok} Passed` : `${STEP_GLYPH.bad} Failed`} · ${item.ev.command}`), h('pre', '', item.ev.output.slice(-8000))); section.append(details) }
   return section
 }
+// One chat box for the whole run, pinned at the bottom in every state. While the crew works the message steers it; after it finishes, the same
+// message reopens the run and puts the crew back to work — the run never "ends", you keep talking to it.
 function renderSteer() {
-  const form = h('form', 'team-steer'); const label = h('label', '', 'Tell the crew'); const row = h('div')
-  const text = input('text', steerDraft); text.placeholder = 'Add context or change direction…'; text.setAttribute('aria-label', 'Tell the crew'); text.oninput = () => { steerDraft = text.value }
+  const over = ['done', 'failed', 'cancelled', 'awaiting_approval'].includes(run!.status)
+  const form = h('form', 'team-steer team-composer') as HTMLFormElement; const row = h('div')
+  const text = h('textarea') as HTMLTextAreaElement; text.rows = 1; text.value = steerDraft
+  text.placeholder = over ? 'Keep going: ask for more, a fix, or something new…' : 'Message the crew while it works…'; text.setAttribute('aria-label', 'Message the crew')
+  const grow = () => { text.style.height = 'auto'; text.style.height = `${Math.min(text.scrollHeight, 160)}px` }
+  text.oninput = () => { steerDraft = text.value; grow() }
   const to = select([['all', 'Everyone'], ['claude', 'Claude'], ['codex', 'Codex'], ['local', AGENT_NAME.local]], steerTarget); to.setAttribute('aria-label', 'Send to'); to.onchange = () => { steerTarget = to.value as typeof steerTarget }
-  const send = h('button', 'icon-btn'); send.append(icon('arrowup')); send.setAttribute('aria-label', 'Send to the crew'); send.title = 'Send'
-  row.append(text, to, send); form.append(label, row)
-  form.onsubmit = e => { e.preventDefault(); const value = text.value.trim(); if (!value) return; if (replay) { run!.messages.push({ id: uuid(), from: 'user', to: steerTarget, kind: 'steer', body: value, at: Date.now(), readBy: [] }); steerDraft = ''; renderRun() } else void call(async () => { await window.forge.teamSteer(run!.id, value, steerTarget); steerDraft = ''; await refreshRun() }) }
+  const send = h('button', 'icon-btn') as HTMLButtonElement; send.append(icon('arrowup')); send.setAttribute('aria-label', 'Send to the crew'); send.title = 'Send'; send.type = 'submit'
+  row.append(text, to, send); form.append(row); queueMicrotask(grow)
+  text.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit() } }
+  form.onsubmit = e => { e.preventDefault(); const value = text.value.trim(); if (!value) return; if (replay) { run!.messages.push({ id: uuid(), from: 'user', to: steerTarget, kind: 'steer', body: value, at: Date.now(), readBy: [] }); steerDraft = ''; renderRun() } else void call(async () => { await window.forge.teamFollow(run!.id, value, steerTarget); steerDraft = ''; await refreshRun() }) }
   return form
 }
 function renderDiffPanel() {

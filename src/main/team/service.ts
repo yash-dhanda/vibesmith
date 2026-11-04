@@ -69,7 +69,7 @@ export async function ensureRepo(project: string) {
 
 const ACTIVE = ['planning', 'running', 'paused', 'verifying', 'awaiting_approval', 'interrupted']
 
-export function createTeamService(o: { userData: string; mcpScript: string; emit: (ev: RunEvent) => void; projectNotes: (project: string) => { brief: string; rules: string }; skills?: () => { block: string; dirs: string[] } }) {
+export function createTeamService(o: { userData: string; mcpScript: string; emit: (ev: RunEvent) => void; projectNotes: (project: string) => { brief: string; rules: string }; recordUsage?: (agent: AgentName, u: { input: number; output: number }) => void; skills?: () => { block: string; dirs: string[] } }) {
   const teamDir = join(o.userData, 'team')
   let healthAt = 0
   let healthCache: Health[] = []
@@ -93,6 +93,7 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
     },
     emit: o.emit,
     projectNotes: o.projectNotes,
+    recordUsage: o.recordUsage,
     skills: o.skills,
     mcpScript: o.mcpScript,
   })
@@ -110,6 +111,13 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
       await ensureRepo(project)
       const files = cleanAttachments(join(teamDir, 'attachments'), attachments)
       return summarize(await orch.start(project, goal, { ...settings.get(project), ...config, ...(files.length ? { attachments: files } : {}), budget: { maxTasks: settings.get(project).budget?.maxTasks, ...config?.budget } }))
+    },
+    // Another message for a run: the run is one never-ending chat, so this always goes to the same run (see TeamOrchestrator.followUp).
+    async followUp(id: string, text: string, to: AgentName | 'all' = 'all') {
+      if (!orch.get(id)) throw new Error('This run no longer exists.')
+      const run = orch.get(id)!
+      if (['done', 'failed', 'cancelled'].includes(run.status) && orch.list().some((r) => r.id !== id && r.project === run.project && ACTIVE.includes(r.status))) throw new Error('Another crew run in this project is in progress. Finish or cancel it first.')
+      await orch.followUp(id, text, to)
     },
     list: () => orch.list().map(summarize),
     // A plain-text summary to paste into a bug report: versions, sign-ins, plan allowance, recent runs. No secrets, no file contents.

@@ -104,6 +104,7 @@ const api = {
   teamResume: (id: string): Promise<void> => ipcRenderer.invoke('team:resume', id),
   teamCancel: (id: string): Promise<void> => ipcRenderer.invoke('team:cancel', id),
   teamAnswer: (id: string, approvalId: string, allow: boolean, note?: string): Promise<boolean> => ipcRenderer.invoke('team:answer', id, approvalId, allow, note),
+  teamFollow: (id: string, text: string, to?: 'claude' | 'codex' | 'local' | 'all'): Promise<void> => ipcRenderer.invoke('team:follow', id, text, to),
   teamSteer: (id: string, text: string, to?: 'claude' | 'codex' | 'local' | 'all'): Promise<void> => ipcRenderer.invoke('team:steer', id, text, to),
   teamRetryTask: (id: string, taskId: string): Promise<void> => ipcRenderer.invoke('team:retry-task', id, taskId),
   teamSkipTask: (id: string, taskId: string): Promise<void> => ipcRenderer.invoke('team:skip-task', id, taskId),

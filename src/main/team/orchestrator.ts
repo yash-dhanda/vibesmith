@@ -40,6 +40,7 @@ export type Deps = {
   localModels?: () => Promise<string[]>
   emit: (ev: RunEvent) => void
   projectNotes?: (project: string) => { brief: string; rules: string }
+  recordUsage?: (agent: AgentName, u: { input: number; output: number }) => void // feeds the daily token ledger
   limits?: () => Promise<Partial<Record<AgentName, { primaryPct: number; primaryResetsAt?: number; secondaryPct?: number; secondaryResetsAt?: number }>>> // plan allowance used, when an agent can say
   skills?: () => { block: string; dirs: string[] } // the skill libraries the user added: what agents are told, and folders Claude may read
   mcpScript?: string // path to the bundled team-mcp.js; without it agents run without the mailbox
@@ -268,6 +269,44 @@ export class TeamOrchestrator {
       if (to !== 'all' && to !== agent) continue
       void h.steer(`The user says: ${msg.body}`).then((ok) => ok && !msg.readBy.includes(agent) && msg.readBy.push(agent))
     }
+  }
+
+  // The run is one never-ending chat: another message always goes to the same run.
+  // Still going -> steer. Waiting for the final OK -> the old result stays and a new task builds on it. Finished/failed/cancelled -> the run is
+  // reopened on a fresh team branch (cut from the project as it is now when the result was applied, else from the old branch) with a new task.
+  async followUp(runId: string, text: string, to: AgentName | 'all' = 'all') {
+    const run = this.runOf(runId)
+    const body = text.trim().slice(0, 2000)
+    if (!run || !body) return
+    if (['planning', 'running', 'paused', 'verifying', 'interrupted'].includes(run.status)) return this.steer(runId, body, to)
+    if (run.status === 'awaiting_approval') {
+      const a = run.approvals.find((x) => x.kind === 'final' && x.status === 'pending')
+      if (a) this.markApproval(run, a.id, 'denied', 'You asked for more work first.')
+    } else {
+      const { agents: available, skipped } = await this.usable(run.config.maxLimitPercent)
+      if (!available.length) throw new Error(`${skipped.join(' ') || 'No agent is signed in.'} Sign in or wait, then send this again.`)
+      this.live.set(runId, this.newLive(available))
+      for (const t of run.tasks) if (!['done', 'cancelled'].includes(t.status)) (t.status = 'cancelled'), (t.error = 'Replaced by your next message.')
+      const wt = run.integrationWorktree
+      if (run.applied) {
+        // the result is already in the project: the new round starts from the project as it is now
+        run.baseCommit = await snapshotCommit(run.project)
+        run.integrationBranch = `forge/${run.id}-${Date.now().toString(36)}`
+        await createRunBranch(run.project, run.integrationBranch, run.baseCommit, wt)
+      } else await addTaskWorktree(run.project, wt, run.integrationBranch, run.baseCommit) // unapplied work is still on its branch
+      run.applied = false
+      run.appliedCheckpoint = undefined
+      run.final = undefined
+      run.pausedReason = undefined
+      writeHistory(run.project, `Run ${run.id} continued with a new message: ${body.replace(/\s+/g, ' ').slice(0, 300)}`)
+    }
+    const live = this.liveOf(run)
+    this.post(run, { from: 'user', to, kind: 'steer', body })
+    const agent = to !== 'all' && live.available.includes(to) ? to : strongest(live.available)
+    this.addTask(run, { title: body.replace(/\s+/g, ' ').slice(0, 70), goal: body, agent, kind: 'build', proposedBy: 'user' })
+    live.paused = false
+    this.setStatus(run, 'running')
+    this.pump(run)
   }
 
   retryTask(runId: string, taskId: string) {
@@ -665,6 +704,7 @@ export class TeamOrchestrator {
       u.costUsd += res.usage.costUsd
       u.runs++
     }
+    if (res.usage.input || res.usage.output) this.d.recordUsage?.(agent, res.usage)
     this.out(run, { type: 'usage', runId: run.id, usage: run.usage })
     this.save(run)
     return res

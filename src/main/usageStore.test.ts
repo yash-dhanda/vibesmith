@@ -47,4 +47,15 @@ describe('UsageStore', () => {
     require('node:fs').writeFileSync(join(dir, 'usage.json'), '{ nope')
     expect(new UsageStore(dir).summary(NOW).allTime.calls).toBe(0)
   })
+
+  it('splits today by agent: Crew work and Solo local models', () => {
+    store.record('crew:claude', { input: 1000, output: 100, genMs: 0 }, NOW)
+    store.record('crew:codex', { input: 2000, output: 200, genMs: 0 }, NOW)
+    store.record('crew:codex', { input: 50, output: 50, genMs: 0 }, daysAgo(3))
+    store.record('ollama:qwen3:8b', { input: 10, output: 5, genMs: 0 }, NOW)
+    const by = Object.fromEntries(store.summary(NOW).byAgent.map((a) => [a.agent, a]))
+    expect(by.claude).toMatchObject({ today: 1100, allTime: 1100 })
+    expect(by.codex).toMatchObject({ today: 2200, last7: 2300, allTime: 2300 })
+    expect(by.local).toMatchObject({ today: 15 })
+  })
 })
