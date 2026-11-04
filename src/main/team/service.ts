@@ -148,7 +148,10 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
       // reference screenshots and documents of the project, when the owner asked for them to go with every run; their links and notes join the goal
       let refs: ReturnType<typeof referenceAttachments> = []
       let notes = ''
-      try { if (getAutoAttach(project)) { refs = referenceAttachments(project, { root: join(teamDir, 'attachments'), kinds: ['image', 'file'], limit: Math.max(0, 12 - given.length) }); notes = referencesBlock(project) } } catch { /* references are optional */ }
+      try {
+        if (getAutoAttach(project)) refs = referenceAttachments(project, { root: join(teamDir, 'attachments'), kinds: ['image', 'file'], limit: Math.max(0, 12 - given.length) })
+        if (getAutoAttach(project) || existsSync(join(project, '.forge', 'references', 'repos'))) notes = referencesBlock(project) // cloned reference repos always tell the agents where they are
+      } catch { /* references are optional */ }
       const files = [...given, ...refs].slice(0, 12)
       goal = notes ? `${goal.trim()}\n\n${notes}` : goal
       return summarize(await orch.start(project, goal, { ...settings.get(project), ...config, ...(files.length ? { attachments: files } : {}), budget: { maxTasks: settings.get(project).budget?.maxTasks, ...config?.budget } }))

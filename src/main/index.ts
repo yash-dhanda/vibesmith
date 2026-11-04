@@ -32,6 +32,7 @@ import { registerGitSearch } from './registerGitSearch'
 import { registerProjectTools } from './registerProjectTools'
 import { effectiveRules } from './projectRules'
 import { registerProjectKnowledge } from './registerProjectKnowledge'
+import { registerGithubTop } from './registerGithubTop'
 import { rankProjects, scanProjects, type ProjectHit } from './projectScan'
 import { SkillStore, type SkillRepo } from './skills'
 import { CATEGORY_LABEL, SKILL_CATALOG, SKILL_PACKS } from './skillCatalog'
@@ -42,6 +43,7 @@ import { UsageStore } from './usageStore'
 import { createTeamService, sanitizeConfig, type TeamService } from './team/service'
 import { electronCapture, registerPreviewCrew } from './registerPreviewCrew'
 import { registerQueue } from './registerQueue'
+import { registerIdeas } from './registerIdeas'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -906,6 +908,8 @@ registerQueue({ team: teamSvc, rootOf })
 registerGitSearch({ getRun: (id) => teamSvc().orch.get(id) ?? null, listRuns: () => teamSvc().list(), listChats: () => store.list(), loadChat: (id) => store.load(id) })
 registerProjectTools({ getRun: (id) => teamSvc().orch.get(id) ?? null, listRuns: () => teamSvc().list(), listChats: () => store.list(), loadChat: (id) => store.load(id), scanned: () => scanCache?.hits ?? [], busy: (p) => [...sessions.values()].some((s) => s.run && s.chat.project === p) })
 registerProjectKnowledge({ rootOf, userData: app.getPath('userData'), briefRules: (p) => briefStore().get(p).rules, getRun: (id) => teamSvc().orch.get(id) ?? null, stats: (id) => teamSvc().stats(id) })
+registerIdeas({ rootOf })
+registerGithubTop({ rootOf, userData: app.getPath('userData') })
 
 app.whenReady().then(() => {
   if (!gotLock) return

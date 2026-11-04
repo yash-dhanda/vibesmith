@@ -8,6 +8,9 @@ import { openRestorePoints } from './restorePanel'
 import { attachVoice } from './voice'
 import { openRules } from './rulesPanel'
 import { openReferences } from './referencesPanel'
+import { openGithubTop } from './githubTop'
+import { openIdeas } from './ideas'
+import { openImprove } from './improve'
 import { initLibrary, openLibrary } from './library'
 import { initModels, noModels, selectedModel } from './models'
 import type { Page } from './settings'
@@ -851,6 +854,9 @@ export async function initChat(opts: {
     { label: 'Settings', icon: 'gear', detail: 'Appearance, models, agent and shortcuts', run: () => openSettings() },
     { label: 'Usage and speed', icon: 'chart', run: () => openSettings('usage') },
     ...(isRemote() ? [] : [{ label: 'Projects dashboard', icon: 'list' as const, detail: 'Every project, its runs and what needs you', run: () => void openDashboard() }]),
+    { label: 'What to build', icon: 'bolt' as const, detail: 'Project ideas you can hand to the crew, and features to add', run: () => void openIdeas(project) },
+    ...(project ? [{ label: 'Improve this project', icon: 'sliders' as const, detail: 'What is missing or risky here, with a one-click fix for each', run: () => void openImprove(project!) }] : []),
+    { label: 'Top GitHub repos', icon: 'bolt' as const, detail: 'Browse the most popular repos and add them as skills, a project or a reference', run: () => void openGithubTop() },
     ...(project ? [{ label: 'Project rules', icon: 'shield' as const, detail: 'What every agent must follow in this project', run: () => void openRules(project!) }, { label: 'Reference library', icon: 'clip' as const, detail: 'Design screenshots, documents and links for this project', run: () => void openReferences(project!) }] : []),
     ...(project && !isRemote() ? [{ label: 'Restore points for this project', icon: 'undo' as const, detail: 'Browse and restore earlier states', run: () => void openRestorePoints(project!) }] : []),
     ...(isRemote() ? [] : [{ label: 'Toggle workspace', icon: 'code' as const, detail: 'Files, editor and terminal · Ctrl J', run: () => $('ws-toggle').click() }, { label: 'Toggle build brief', icon: 'list' as const, detail: 'Ctrl .', run: () => $('brief-toggle').click() }]),

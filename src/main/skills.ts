@@ -88,7 +88,7 @@ export const findSkills = (dir: string, repoName: string): Skill[] => scanSkills
 const TRANSIENT = /SSL|certificate|timed out|took longer|Could not resolve|early EOF|RPC failed|Connection (reset|refused)|unable to access/i
 export const friendlyGitError = (message: string) =>
   /certificate/i.test(message) ? 'Your network is changing the secure connection to GitHub (a firewall that inspects traffic). It often works on a retry or on another network, such as a phone hotspot.' : message
-async function withRetry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
+export async function withRetry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
   for (let i = 1; ; i++) {
     try { return await fn() } catch (e) {
       if (i >= tries || !TRANSIENT.test((e as Error).message)) throw e

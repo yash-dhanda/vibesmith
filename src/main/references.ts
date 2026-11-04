@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, unlinkSync } from 'node:fs'
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, unlinkSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { extname, join } from 'node:path'
 import { kindOf, safeName, type TeamAttachment } from './team/attach'
@@ -8,15 +8,17 @@ import { atomicWrite, ensureForgeDir, FORGE_DIR, isLink } from './projectRules'
 // like the rest of .forge). Files are plain files in the folder; notes and links live in links.json, the one switch in settings.json.
 // The folder is not trusted: it may be a link, and entries that are links are ignored.
 
-export type Reference = { id: string; kind: 'image' | 'file' | 'link'; name: string; size?: number; url?: string; note: string; addedAt: number }
+export type Reference = { id: string; kind: 'image' | 'file' | 'link'; name: string; size?: number; url?: string; path?: string; note: string; addedAt: number }
 export type NewReference = { name?: string; data?: string; url?: string; note?: string }
-type Meta = { links: { id: string; url: string; note: string; addedAt: number }[]; notes: Record<string, string> }
+// A link with a dir is a cloned GitHub repository kept as plain files in repos/<dir> (see githubClone.ts).
+type Meta = { links: { id: string; url: string; note: string; addedAt: number; dir?: string }[]; notes: Record<string, string> }
 
 export const MAX_REF_BYTES = 25 * 1024 * 1024
 export const MAX_REFS = 100
 const MAX_NOTE = 500
 const RESERVED = new Set(['links.json', 'settings.json'])
 const DIR = 'references'
+const REPO_DIR = /^[\w.-]+__[\w.-]+$/
 
 const folder = (project: string) => { const d = join(project, FORGE_DIR, DIR); return isLink(join(project, FORGE_DIR)) || isLink(d) ? null : d }
 const note = (v: unknown) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, MAX_NOTE) : '')
@@ -27,7 +29,7 @@ function readJson(file: string): Record<string, unknown> {
 }
 function readMeta(dir: string): Meta {
   const raw = readJson(join(dir, 'links.json'))
-  const links = Array.isArray(raw.links) ? raw.links.filter((l) => l && typeof l.id === 'string' && typeof l.url === 'string').map((l) => ({ id: l.id, url: l.url, note: note(l.note), addedAt: Number(l.addedAt) || 0 })) : []
+  const links = Array.isArray(raw.links) ? raw.links.filter((l) => l && typeof l.id === 'string' && typeof l.url === 'string').map((l) => ({ id: l.id, url: l.url, note: note(l.note), addedAt: Number(l.addedAt) || 0, ...(typeof l.dir === 'string' && REPO_DIR.test(l.dir) && !/^\.+$/.test(l.dir) ? { dir: l.dir } : {}) })) : []
   const notes: Record<string, string> = {}
   if (raw.notes && typeof raw.notes === 'object') for (const [k, v] of Object.entries(raw.notes)) notes[k] = note(v)
   return { links, notes }
@@ -49,7 +51,7 @@ export function listReferences(project: string): Reference[] {
   const meta = readMeta(dir)
   const out: Reference[] = [
     ...fileEntries(dir).map((f): Reference => ({ id: f.name, kind: kindOf(f.name) === 'image' ? 'image' : 'file', name: f.name, size: f.size, note: meta.notes[f.name] ?? '', addedAt: f.addedAt })),
-    ...meta.links.map((l): Reference => ({ id: l.id, kind: 'link', name: l.url, url: l.url, note: l.note, addedAt: l.addedAt })),
+    ...meta.links.map((l): Reference => ({ id: l.id, kind: 'link', name: l.url, url: l.url, note: l.note, addedAt: l.addedAt, ...(l.dir ? { path: join(dir, 'repos', l.dir) } : {}) })),
   ]
   return out.sort((a, b) => b.addedAt - a.addedAt)
 }
@@ -95,7 +97,12 @@ export function removeReference(project: string, id: string) {
   const dir = folder(project)
   if (!dir || typeof id !== 'string') return
   const meta = readMeta(dir)
-  if (meta.links.some((l) => l.id === id)) { meta.links = meta.links.filter((l) => l.id !== id); return writeMeta(dir, meta) }
+  const link = meta.links.find((l) => l.id === id)
+  if (link) {
+    if (link.dir) rmSync(join(dir, 'repos', link.dir), { recursive: true, force: true }) // the clone goes with its entry; dir was checked when read
+    meta.links = meta.links.filter((l) => l.id !== id)
+    return writeMeta(dir, meta)
+  }
   if (safeName(id) !== id || RESERVED.has(id)) throw new Error('That reference is not in this project.')
   try { unlinkSync(join(dir, id)) } catch { return }
   if (id in meta.notes) { delete meta.notes[id]; writeMeta(dir, meta) }
@@ -109,6 +116,20 @@ export function setReferenceNote(project: string, id: string, text: unknown) {
   if (link) link.note = note(text)
   else meta.notes[id] = note(text)
   writeMeta(dir, meta)
+}
+
+// A cloned GitHub repository (already on disk at repos/<owner>__<repo>) as a reference; adding it again replaces the earlier entry.
+export function addRepoReference(project: string, o: { fullName: string; description?: string }): Reference {
+  const [owner, repo] = o.fullName.split('/')
+  const dirName = `${owner}__${repo}`
+  if (!REPO_DIR.test(dirName) || /^\.+$/.test(owner) || /^\.+$/.test(repo)) throw new Error('That is not a GitHub repository name.')
+  const dir = ensureForgeDir(project, DIR)
+  const meta = readMeta(dir)
+  meta.links = meta.links.filter((l) => l.dir !== dirName)
+  const l = { id: randomBytes(4).toString('hex'), url: `https://github.com/${o.fullName}`, note: note(`Cloned reference: ${o.fullName}, ${o.description || 'no description'}`), addedAt: Date.now(), dir: dirName }
+  meta.links.push(l)
+  writeMeta(dir, meta)
+  return { id: l.id, kind: 'link', name: l.url, url: l.url, path: join(dir, 'repos', dirName), note: l.note, addedAt: l.addedAt }
 }
 
 // The path of a stored picture or document, for a preview; null for anything that is not a plain file of this library.
@@ -142,6 +163,6 @@ export function referenceAttachments(project: string, o: { root: string; kinds?:
 // Links and the user's notes, for the goal text: links cannot be attached as files, and notes say what each picture is for.
 export function referencesBlock(project: string): string {
   const refs = listReferences(project)
-  const lines = refs.filter((r) => r.kind === 'link' || r.note).map((r) => `- ${r.kind === 'link' ? r.url : r.name}${r.note ? `: ${r.note}` : ''}`)
+  const lines = refs.filter((r) => r.kind === 'link' || r.note).map((r) => `- ${r.kind === 'link' ? r.url : r.name}${r.path ? ` (files on this computer: ${r.path})` : ''}${r.note ? `: ${r.note}` : ''}`)
   return lines.length ? `REFERENCES the user saved for this project (links, and notes on the attached pictures and files):\n${lines.join('\n')}` : ''
 }

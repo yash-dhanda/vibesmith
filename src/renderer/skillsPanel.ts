@@ -1,7 +1,16 @@
 import type { SkillRepo } from '../main/skills'
 import { timeAgo } from './format'
+import type { SkillSuggestion } from '../main/githubTop'
+import { openGithubTop } from './githubTop'
 import { icon } from './icons'
+import { checkOwners, isVerified, ownerMap, ownerStatus, ownersToCheck, verifiedCount, type OwnerProgress } from './ownerFilter'
+import { repoFilterPanel } from './repoFilterPanel'
+import { applyRepoFilters, SKILL_FILTERS } from './repoFilters'
+import { clearSeen, excludeList, readSeen, rememberSeen, skillNote } from './skillSuggest'
+import { starBadge } from './stars'
 import { cleanErr, h, onOff } from './ui'
+
+export { openGithubTop }
 
 const EXAMPLES = ['https://github.com/anthropics/skills']
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
@@ -26,6 +35,13 @@ export function renderSkillsPanel(): HTMLElement {
   err.setAttribute('role', 'alert')
   form.append(field, go)
   add.append(form, err)
+  if (typeof window.forge.githubTop === 'function') {
+    const browse = h('button', 'btn sact skill-browse', 'Browse top GitHub repos') as HTMLButtonElement
+    browse.type = 'button'
+    browse.prepend(icon('globe', 'sm'))
+    browse.onclick = () => void openGithubTop(() => void reload())
+    add.append(browse)
+  }
 
   const list = h('section', 'sgroup skill-list')
   const recs = h('section', 'sgroup skill-recs')
@@ -104,6 +120,8 @@ export function renderSkillsPanel(): HTMLElement {
     return box
   }
 
+  const reload = () => window.forge.skillsList().then((r) => { repos = r; draw() }, () => {})
+
   // Every action reloads the list it returns; errors land under the field, never in a popup.
   const run = async (fn: () => Promise<unknown>) => {
     err.textContent = ''
@@ -135,6 +153,8 @@ export function renderSkillsPanel(): HTMLElement {
   type Catalog = Awaited<ReturnType<typeof window.forge.skillsCatalog>>
   let catalog: Catalog | null = null
   const state = new Map<string, 'queued' | 'adding' | { error: string }>()
+  const found = new Map<string, ReturnType<typeof skillNote>>() // what each Add found, for the suggestion rows
+  const names = new Map<string, string>() // display names of suggested repos, for the progress line
   const packNote = new Map<string, HTMLElement>()
   const urlOf = (repo: string) => `https://github.com/${repo}`
   const slug = (url: string) => url.match(/github\.com\/([\w.-]+\/[\w.-]+?)(?:\.git)?(?:\/|$)/i)?.[1].toLowerCase() ?? ''
@@ -145,7 +165,7 @@ export function renderSkillsPanel(): HTMLElement {
     state.set(repo, 'queued'); drawRecs()
     const job = chain.then(async () => {
       state.set(repo, 'adding'); drawRecs()
-      try { const r = await window.forge.skillsAdd(urlOf(repo)); repos = [...repos.filter((x) => x.id !== r.id), r]; state.delete(repo); return true }
+      try { const r = await window.forge.skillsAdd(urlOf(repo)); repos = [...repos.filter((x) => x.id !== r.id), r]; state.delete(repo); found.set(repo.toLowerCase(), skillNote(r)); return true }
       catch (e) { state.set(repo, { error: cleanErr(e) }); return false }
       finally { draw() }
     })
@@ -184,7 +204,7 @@ export function renderSkillsPanel(): HTMLElement {
     const failed: string[] = []
     let done = 0
     for (const [i, repo] of todo.entries()) {
-      const name = catalog?.entries.find((x) => x.repo === repo)?.name ?? repo
+      const name = catalog?.entries.find((x) => x.repo === repo)?.name ?? names.get(repo) ?? repo
       note.replaceChildren(h('span', 'st running'), document.createTextNode(` Adding ${i + 1} of ${todo.length}: ${name}`))
       if (await addRepo(repo)) done++
       else failed.push(repo)
@@ -250,7 +270,110 @@ export function renderSkillsPanel(): HTMLElement {
       }
       groups.push(d)
     }
+    drawMore()
     groupsBox.replaceChildren(...(groups.length ? groups : [h('p', 'note', `No recommended skills match “${filter.value.trim()}”.`)]))
+  }
+
+  // ---- More suggestions: skill-like repos found on GitHub, 20 per press, never the same one twice (kept in localStorage). ----
+  type Batch = { pack: Catalog['packs'][number]; items: SkillSuggestion[] }
+  const ROUND_KEY = 'forge.skillRound'
+  let round = Number(localStorage.getItem(ROUND_KEY)) || 0
+  const batches: Batch[] = []
+  const more = h('div', 'skill-more')
+  const moreMsg = h('div', 'skill-more-msg')
+  moreMsg.setAttribute('role', 'status')
+  const moreList = h('div', 'skill-more-list')
+  const findBtn = h('button', 'btn sact', 'Find more') as HTMLButtonElement
+  findBtn.type = 'button'
+  findBtn.prepend(icon('search', 'sm'))
+  const startOver = h('button', 'link-btn', 'Start over') as HTMLButtonElement
+  startOver.type = 'button'
+  startOver.title = 'Forget which suggestions were already shown'
+  startOver.onclick = () => { clearSeen(localStorage); round = 0; try { localStorage.removeItem(ROUND_KEY) } catch {} ; moreMsg.textContent = 'Suggestions start from the top again.' }
+  const moreBar = h('div', 'skill-more-bar')
+  moreBar.append(findBtn, startOver)
+  let moreProgress: OwnerProgress | null = null
+  let moreTicket = 0
+  let limitedUntil = 0
+  const panel = repoFilterPanel({ storeKey: 'forge.skillFilters', defaults: SKILL_FILTERS, onChange: () => { drawMore(); startMoreChecks() } })
+  panel.el.hidden = true
+  // Owners are looked up only while the verified switch is On (each lookup is one GitHub request); known ones always get their badge.
+  function startMoreChecks() {
+    const mine = ++moreTicket
+    const all = batches.flatMap((b) => b.items)
+    if (!panel.get().verified || !all.length) { moreProgress = null; panel.setOwnerNote(''); return }
+    const pre = applyRepoFilters(all, { ...panel.get(), verified: false }, ownerMap)
+    if (!ownersToCheck(pre).length || Date.now() < limitedUntil) { if (!ownersToCheck(pre).length) moreProgress = null; panel.setOwnerNote(ownerStatus(moreProgress)); return }
+    void checkOwners(pre, (p) => { if (mine !== moreTicket) return; moreProgress = p; if (p.stop === 'rate') limitedUntil = Date.now() + 60_000; drawMore() }, () => mine !== moreTicket)
+  }
+  more.append(h('h4', 'gt', 'More suggestions'), h('div', 'gd', 'Repos on GitHub that look like skills, most starred first. Each press finds 20 you have not seen.'), moreBar, panel.el, moreMsg, moreList)
+  recs.append(more)
+
+  findBtn.onclick = async () => {
+    findBtn.disabled = true
+    moreMsg.replaceChildren(h('span', 'st running'), document.createTextNode(' Searching GitHub…'))
+    try {
+      const shown = batches.flatMap((b) => b.items.map((x) => x.fullName))
+      const items = await window.forge.githubSkillSuggestions(round, excludeList(catalog?.entries.map((x) => x.repo) ?? [], repos.map((r) => slug(r.url)), readSeen(localStorage), shown))
+      round++
+      try { localStorage.setItem(ROUND_KEY, String(round)) } catch {}
+      rememberSeen(localStorage, items.map((x) => x.fullName))
+      moreMsg.textContent = items.length ? '' : 'Nothing new on this page of results. Press Find more again for the next one.'
+      if (items.length) {
+        for (const x of items) names.set(x.fullName, x.fullName.split('/')[1])
+        batches.push({ pack: { id: `more-${Date.now()}`, name: 'Suggestions', blurb: '', repos: items.map((x) => x.fullName) }, items })
+        drawMore()
+        startMoreChecks()
+      }
+    } catch (e) { moreMsg.textContent = cleanErr(e) } finally { findBtn.disabled = false }
+  }
+
+  function drawMore() {
+    const everything = batches.flatMap((b) => b.items)
+    const f = panel.get()
+    let visibleTotal = 0
+    panel.el.hidden = !batches.length
+    panel.setVerified(verifiedCount(everything), everything.length)
+    panel.setOwnerNote(f.verified ? ownerStatus(moreProgress) : '')
+    moreList.replaceChildren(...batches.map((batch, i) => {
+      const items = applyRepoFilters(batch.items, f, ownerMap)
+      visibleTotal += items.length
+      const b = { pack: { ...batch.pack, repos: items.map((x) => x.fullName) }, items } // "Add all" adds what is shown
+      const box = h('div', 'skill-batch')
+      const have = b.pack.repos.filter(added).length
+      const head = h('div', 'skill-batch-head')
+      const all = h('button', 'btn sact', have === b.pack.repos.length ? 'All added' : `Add all ${b.pack.repos.length}`) as HTMLButtonElement
+      all.type = 'button'
+      all.prepend(icon(have === b.pack.repos.length ? 'check' : 'plus', 'sm'))
+      all.disabled = have === b.pack.repos.length
+      const note = packNote.get(b.pack.id) ?? h('div', 'skill-pack-note')
+      note.setAttribute('role', 'status')
+      packNote.set(b.pack.id, note)
+      all.onclick = () => { all.disabled = true; void addPack(b.pack).finally(drawMore) }
+      all.disabled = all.disabled || !b.pack.repos.length
+      if (!b.pack.repos.length) all.textContent = 'None shown'
+      head.append(h('span', 'skill-batch-title', `Round ${i + 1} · ${have} of ${b.pack.repos.length} added`), all)
+      box.append(head, note)
+      for (const x of b.items) {
+        const r = h('div', 'srow skill-rec')
+        const left = h('div', 'srl')
+        const title = h('div', 'st-t', x.fullName.split('/')[1])
+        title.append(h('span', 'skill-repo-id', x.fullName))
+        if (isVerified(x.fullName)) { const v = h('span', 'gh-verified', 'Verified organization'); v.prepend(icon('check', 'sm')); title.append(v) }
+        left.append(title, h('div', 'st-d', x.description || 'No description.'))
+        if (x.language) left.append(h('div', 'skill-meta', x.language))
+        const st = state.get(x.fullName)
+        if (st && typeof st === 'object') left.append(h('div', 'errtext', st.error))
+        const n = found.get(x.fullName.toLowerCase())
+        if (n && added(x.fullName)) left.append(h('div', n.muted ? 'skill-found muted' : 'skill-found', n.text))
+        const ctl = h('div', 'ctl gh-act-inline')
+        ctl.append(starBadge(x.stars), addButton(x.fullName))
+        r.append(left, ctl)
+        box.append(r)
+      }
+      return box
+    }))
+    panel.setCount(visibleTotal, everything.length)
   }
 
   if (typeof window.forge.skillsCatalog === 'function') void window.forge.skillsCatalog().then((c) => { catalog = c; drawRecs() }).catch(() => recs.remove())

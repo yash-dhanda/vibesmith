@@ -33,6 +33,8 @@ let log: Logged[] = []
 let summaries: Summary[] = []
 let elapsedTimer: ReturnType<typeof setInterval> | null = null
 let currentProject = ''
+// A goal handed over by another screen (ideas, improve, GitHub): the start card opens with it filled in.
+let pendingGoal: { goal: string; reviewPlan?: boolean } | null = null
 let replay = false
 let replayScenario = 'entry'
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
@@ -179,7 +181,8 @@ async function showEntry() {
   intro.append(h('h1', '', 'Build with a crew: a second set of eyes.'), h('p', 'team-lede', 'Claude Code, Codex and a local model split the work and review each other. Nothing touches your project until you land it.'))
   const form = h('form', 'team-start-card') as HTMLFormElement
   form.noValidate = true // readConfig checks the numbers itself: it opens More options and focuses the field, which the browser cannot do while it is hidden
-  const goal = document.createElement('textarea'); goal.rows = 5; goal.placeholder = 'Describe what the crew should build'; goal.setAttribute('aria-label', 'Crew goal')
+  const handed = pendingGoal; pendingGoal = null
+  const goal = document.createElement('textarea'); goal.rows = 5; goal.placeholder = 'Describe what the crew should build'; goal.setAttribute('aria-label', 'Crew goal'); if (handed?.goal) { goal.value = handed.goal; requestAnimationFrame(() => { goal.focus(); goal.setSelectionRange(goal.value.length, goal.value.length) }) }
   // Files go to Forge as soon as they are added, so the run only carries their stored locations.
   const att = attachmentStrip({
     host: form, textarea: goal, max: 12, maxBytes: 200 * 1024 * 1024, limits: 'Up to 12 files per run, 200 MB each.',
@@ -204,7 +207,7 @@ async function showEntry() {
   const review = select([['cross', 'Cross-review every task'], ['off', 'No cross-review']], defaults.review ?? 'cross')
   const finalReview = select([['auto', 'Automatic (bigger runs only)'], ['true', 'Always check the combined result'], ['false', 'Skip the final review']], String(defaults.finalReview ?? 'auto'))
   const permissions = select([['bypass', 'Never ask me (bypass)'], ['ask', 'Ask before risky actions']], defaults.bypassPermissions === false ? 'ask' : 'bypass')
-  const reviewPlan = select([['false', 'Start right away'], ['true', 'Let me review the plan first']], String(defaults.reviewPlan ?? false))
+  const reviewPlan = select([['false', 'Start right away'], ['true', 'Let me review the plan first']], String(handed?.reviewPlan ?? defaults.reviewPlan ?? false))
   const fixRounds = input('number', String(defaults.maxFixRounds ?? 3)); fixRounds.min = '0'; fixRounds.max = '5'
   const codexMode = select([['app-server', 'Live Codex session'], ['exec', 'Simple Codex run']], defaults.codexMode ?? 'app-server')
   const verify = input('text', defaults.verify === null ? '' : defaults.verify ?? ''); verify.placeholder = 'Detect from project'
@@ -993,6 +996,15 @@ export function initTeam(options: { project: () => string | null }) {
   window.addEventListener('forge-open-chat', e => { setActiveRun(''); showChat(); window.dispatchEvent(new CustomEvent('forge-open-chat-now', { detail: (e as CustomEvent<string>).detail })) })
   // the dashboard's Start a Crew run: use that folder, then the start screen
   window.addEventListener('forge-start-crew', e => { const path = (e as CustomEvent<string>).detail; if (path) void window.forge.setProject(path).then(root => { currentProject = root; window.dispatchEvent(new CustomEvent('forge-project-picked', { detail: root })); showTeam() }).catch(err => toast(cleanErr(err), 5000)) })
+  // Ideas, Improve this project and the GitHub browser send a goal to the Crew start card: { goal, path?, reviewPlan? }
+  window.addEventListener('forge-start-crew-goal', e => {
+    const d = (e as CustomEvent<{ goal?: string; path?: string; reviewPlan?: boolean }>).detail
+    if (!d?.goal) return
+    pendingGoal = { goal: d.goal, reviewPlan: d.reviewPlan }
+    const go = () => { setActiveRun(''); showTeam() }
+    if (d.path) void window.forge.setProject(d.path).then(root => { currentProject = root; window.dispatchEvent(new CustomEvent('forge-project-picked', { detail: root })); go() }).catch(err => toast(cleanErr(err), 5000))
+    else go()
+  })
   window.addEventListener('forge-open-run', e => { showTeam(false); void openRun((e as CustomEvent<string>).detail).catch(err => toast(cleanErr(err), 5000)) })
   // a chat or a new chat from the sidebar leaves the Crew screen (it used to stay on it)
   $('history').addEventListener('click', e => { if (app.classList.contains('team-mode') && (e.target as HTMLElement).closest('.chat-open:not(.run-open), #new-chat, #side-new')) { setActiveRun(''); showChat() } })

@@ -1,0 +1,106 @@
+/* ---- Top GitHub repos, and More suggestions in Settings > Skills ---- */
+.tool-dialog.gh-dialog { width: min(920px, 96vw); height: min(86vh, 900px); }
+.gh-body { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; padding: 14px 18px 0; }
+.gh-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.gh-select { height: 32px; max-width: 200px; padding: 0 8px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-md); font-size: 12.5px; }
+.gh-select:focus-visible, .gh-filter:focus-visible { border-color: var(--focus); outline: 0; }
+.gh-filter { flex: 1; min-width: 160px; height: 32px; padding: 0 10px; background: transparent; border: 1px solid var(--border); border-radius: var(--r-md); font-size: 12.5px; }
+.gh-help, .gh-note { margin: 0; }
+.gh-note:empty { display: none; }
+.gh-list { flex: 1; min-height: 0; overflow: auto; margin: 0 -18px; padding: 0 18px 14px; }
+.gh-skel { height: 76px; margin-bottom: 8px; }
+.gh-row { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px 2px; border-top: 1px solid var(--hair); content-visibility: auto; contain-intrinsic-size: auto 104px; }
+.gh-row:first-child { border-top: 0; }
+.gh-row:focus-visible { outline: 1.5px solid var(--focus); outline-offset: -2px; border-radius: var(--r-sm); }
+.gh-rank { color: var(--faint); font: 12px var(--mono); font-variant-numeric: tabular-nums; text-align: right; padding-top: 2px; }
+.gh-main { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.gh-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.gh-name { color: var(--text); font-size: 14px; font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+.gh-name:hover { text-decoration: underline; text-underline-offset: 2px; }
+.gh-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.gh-lang { display: inline-flex; align-items: center; gap: 5px; }
+.gh-dot { width: 8px; height: 8px; border-radius: 50%; }
+.gh-chip { padding: 1px 7px; border: 1px solid var(--hair); border-radius: 999px; color: var(--faint); font-size: 11.5px; }
+.gh-desc { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.gh-desc.faint { color: var(--faint); }
+.gh-what summary { width: max-content; color: var(--muted); font-size: 12.5px; cursor: pointer; }
+.gh-what summary:hover { color: var(--text); }
+.gh-sum { margin: 6px 0 2px; padding-left: 12px; border-left: 1px solid var(--hair); color: var(--text); font-size: 12.5px; line-height: 1.55; }
+.gh-status:empty { display: none; }
+.gh-line { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.gh-line.faint { color: var(--faint); }
+.gh-line .btn.sact { height: 28px; padding: 0 12px; font-size: 12.5px; }
+.gh-line .st.running, .gh-act .st.running { border-color: currentColor; border-top-color: transparent; }
+.gh-act { position: relative; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.gh-menu { display: flex; flex-direction: column; min-width: 230px; padding: 4px; border: 1px solid var(--hair); border-radius: var(--r-md); background: var(--panel); animation: rise var(--t1) var(--ease) both; }
+.gh-item { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 7px 10px; background: none; border: 0; border-radius: var(--r-sm); font-size: 12.5px; text-align: left; }
+.gh-item:hover:not(:disabled) { background: var(--panel-2); }
+.gh-item:disabled { color: var(--faint); cursor: default; }
+.gh-why { color: var(--faint); font-size: 11.5px; }
+
+/* stars: the first thing to read in a row */
+.gh-starbox { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.gh-starnum { display: inline-flex; align-items: center; gap: 5px; font-size: 17px; font-weight: 650; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.gh-starnum .ic { width: 16px; height: 16px; color: var(--warn); fill: currentColor; stroke-width: 1.4; }
+.gh-gain { color: var(--ok); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gh-verified { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border: 1px solid var(--hair); border-radius: var(--r-xs); color: var(--ok); font-size: 11.5px; white-space: nowrap; }
+.gh-verified .ic { width: 12px; height: 12px; }
+.gh-act-inline { display: flex; align-items: center; gap: 16px; }
+
+/* safety scan, saved list */
+.gh-verdict { padding: 1px 7px; border: 1px solid currentColor; border-radius: var(--r-xs); font-size: 11.5px; white-space: nowrap; }
+.gh-verdict.ok, .gh-fhead.ok { color: var(--ok); }
+.gh-verdict.caution, .gh-fhead.caution { color: var(--warn); }
+.gh-verdict.danger, .gh-fhead.danger { color: var(--err); }
+.gh-safety-link { padding: 0 4px; font-size: 12px; }
+.gh-findings { margin: 4px 0; padding: 8px 10px; border: 1px solid var(--hair); border-radius: var(--r-md); background: var(--panel); font-size: 12px; line-height: 1.5; }
+.gh-fhead { font-weight: 550; }
+.gh-findings ul { margin: 4px 0 0; padding-left: 16px; }
+.gh-f { color: var(--muted); }
+.gh-f.caution::marker { color: var(--warn); }
+.gh-f.danger { color: var(--text); }
+.gh-f.danger::marker { color: var(--err); }
+.gh-f.info { color: var(--faint); }
+.gh-actrow { display: flex; align-items: center; gap: 8px; }
+.gh-save .ic { color: var(--muted); }
+.gh-save.on .ic { color: var(--warn); fill: currentColor; }
+.gh-note-input { height: 28px; max-width: 420px; font-size: 12.5px; }
+
+/* filters */
+.gh-filters { border: 1px solid var(--hair); border-radius: var(--r-md); background: var(--panel); }
+.gh-filters > summary { padding: 8px 12px; color: var(--muted); font-size: 12.5px; font-weight: 500; cursor: pointer; }
+.gh-filters[open] > summary { border-bottom: 1px solid var(--hair); }
+.gh-count { color: var(--faint); font-weight: 400; font-variant-numeric: tabular-nums; }
+.gh-frows { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 4px 24px; padding: 8px 12px 4px; }
+.gh-frow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; }
+.gh-ftext { display: flex; flex-direction: column; gap: 1px; min-width: 0; font-size: 12.5px; }
+.gh-ftext strong { font-weight: 550; }
+.gh-vcount { color: var(--faint); font-weight: 400; }
+.gh-fdesc { color: var(--faint); font-size: 11.5px; line-height: 1.45; }
+.gh-frows > .link-btn { justify-self: start; align-self: center; }
+.gh-fnote { padding: 0 12px 8px; font-size: 12px; }
+.gh-fnote:empty { display: none; }
+.gh-fnote.faint { color: var(--faint); }
+
+/* More suggestions */
+.skill-browse { margin-top: 12px; }
+.skill-more { margin-top: 22px; }
+.skill-more-bar { display: flex; align-items: center; gap: 10px; margin: 12px 0 4px; }
+.skill-more-msg { min-height: 18px; margin-bottom: 4px; color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 4px; }
+.skill-more-msg:empty { min-height: 0; }
+.skill-more-msg .st.running { border-color: currentColor; border-top-color: transparent; }
+.skill-batch { margin-top: 12px; border-top: 1px solid var(--hair); }
+.skill-batch-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 2px 4px; }
+.skill-batch-title { color: var(--faint); font-size: 12px; }
+.skill-found { margin-top: 4px; color: var(--muted); font-size: 12px; }
+.skill-found.muted { color: var(--faint); }
+
+@media (max-width: 800px) {
+  .tool-dialog.gh-dialog { width: 100%; height: calc(var(--vvh, 100dvh) - var(--safe-t) - 24px); }
+  .gh-row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .gh-rank { display: none; }
+  .gh-act { align-items: flex-start; }
+  .gh-frows { grid-template-columns: minmax(0, 1fr); }
+}
+@media (hover: none) { .gh-select, .gh-filter, .gh-item { min-height: 44px; font-size: 16px; } }
+.gh-risk { color: var(--err); border-color: var(--errborder); } .gh-riskbtn { align-self: center; white-space: nowrap; }

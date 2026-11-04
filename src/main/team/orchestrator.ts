@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createCheckpoint, git, undoTo } from '../checkpoint'
@@ -887,7 +888,7 @@ export class TeamOrchestrator {
       model: agent === 'codex' ? run.config.codexModel : agent === 'local' ? run.config.localModel : run.config.claudeModel,
       effort: effortFor({ agent, phase, kind: task.kind, changedFiles: changedFiles ?? (phase === 'review' ? task.changed.length : undefined), config: run.config }),
       codexMode: run.config.codexMode,
-      addDirs: [...(skills?.dirs ?? []), ...(past ? [join(run.project, HISTORY_DIR)] : []), ...(att?.length ? [join(this.d.teamDir, 'attachments')] : []), ...(phase === 'final-review' && live.shots?.length ? [join(this.d.teamDir, 'visual', run.id)] : [])],
+      addDirs: [...(skills?.dirs ?? []), ...(past ? [join(run.project, HISTORY_DIR)] : []), ...(att?.length ? [join(this.d.teamDir, 'attachments')] : []), ...(phase === 'final-review' && live.shots?.length ? [join(this.d.teamDir, 'visual', run.id)] : []), ...(existsSync(join(run.project, '.forge', 'references', 'repos')) ? [join(run.project, '.forge', 'references', 'repos')] : [])],
       images: [...imagePaths(att), ...(phase === 'final-review' && agent !== 'local' ? (live.shots ?? []).map((x) => x.path) : [])],
       web: run.config.webResearch !== false,
       onEvent: (ev) => {

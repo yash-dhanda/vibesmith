@@ -182,6 +182,17 @@ const api = {
   voiceSet: (o: { command?: string; model?: string; language?: string }): Promise<void> => ipcRenderer.invoke('voice:set', o),
   voiceTranscribe: (audio: ArrayBuffer | string): Promise<string> => ipcRenderer.invoke('voice:transcribe', audio),
   teamStats: (runId: string): Promise<import('../main/registerProjectKnowledge').CrewStats | null> => ipcRenderer.invoke('team:stats', runId),
+  githubTop: (period: 'day' | 'week' | 'month' | 'all', mode: 'new' | 'trending', refresh?: boolean): Promise<import('../main/githubTop').TopResult> => ipcRenderer.invoke('github:top', period, mode, refresh),
+  githubSummary: (fullName: string): Promise<import('../main/githubTop').RepoSummary> => ipcRenderer.invoke('github:summary', fullName),
+  githubSkillSuggestions: (round: number, exclude: string[]): Promise<import('../main/githubTop').SkillSuggestion[]> => ipcRenderer.invoke('github:skill-suggestions', round, exclude),
+  githubOwners: (owners: string[]): Promise<import('../main/githubTop').OwnersChecked> => ipcRenderer.invoke('github:owners', owners),
+  githubSafety: (fullName: string): Promise<import('../main/repoSafety').SafetyReport> => ipcRenderer.invoke('github:safety', fullName),
+  githubSavedList: (refresh?: boolean): Promise<{ items: import('../main/savedRepos').SavedRepo[]; stopped: 'rate' | 'error' | null }> => ipcRenderer.invoke('github:saved-list', refresh),
+  githubSavedSet: (item: import('../main/savedRepos').NewSaved): Promise<import('../main/savedRepos').SavedRepo> => ipcRenderer.invoke('github:saved-set', item),
+  githubSavedRemove: (fullName: string): Promise<void> => ipcRenderer.invoke('github:saved-remove', fullName),
+  githubPlan: (fullName: string, mode: 'project' | 'reference', knownKb?: number): Promise<import('../main/registerGithubTop').ClonePlan> => ipcRenderer.invoke('github:plan', fullName, mode, knownKb),
+  githubClone: (fullName: string, mode: 'project' | 'reference', description?: string, parent?: string): Promise<import('../main/registerGithubTop').CloneResult> => ipcRenderer.invoke('github:clone', fullName, mode, description, parent),
+  onGithubCloneProgress: (cb: (m: { fullName: string; bytes: number }) => void) => ipcRenderer.on('github:clone-progress', (_e, m) => cb(m)),
   // workspace (files, editor, terminal)
   list: (dir: string): Promise<{ name: string; dir: boolean }[]> => ipcRenderer.invoke('fs:list', dir),
   read: (file: string): Promise<string> => ipcRenderer.invoke('fs:read', file),
@@ -195,6 +206,9 @@ const api = {
   restoreList: (project: string): Promise<import('../main/restorePoints').RestorePoint[]> => ipcRenderer.invoke('restore:list', project),
   restoreDiff: (project: string, id: string): Promise<{ files: { path: string; status: 'added' | 'modified' | 'deleted'; added: number; removed: number }[]; diff: string; truncated: boolean }> => ipcRenderer.invoke('restore:diff', project, id),
   restoreApply: (project: string, id: string, files?: string[]): Promise<{ restored: string[]; checkpoint: string | null }> => ipcRenderer.invoke('restore:apply', project, id, files),
+  // improve this project
+  projectHealth: (fresh?: boolean): Promise<import('../main/projectHealth').HealthReport> => ipcRenderer.invoke('project:health', fresh),
+  projectFeatureIdeas: (): Promise<import('../main/registerIdeas').FeatureIdeasResult> => ipcRenderer.invoke('project:feature-ideas'),
   onTermData: (cb: (d: string) => void) => ipcRenderer.on('term:data', (_e, d: string) => cb(d)),
 }
 
