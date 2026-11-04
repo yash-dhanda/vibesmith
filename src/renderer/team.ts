@@ -4,6 +4,7 @@ import { md, folderName, formatTokens, timeAgo } from './format'
 import { fileIcon, icon, type IconName } from './icons'
 import { $, cleanErr, emo, h, toast } from './ui'
 import { replayRun } from './teamReplay'
+import { enabledSkillCount } from './skillsPanel'
 import { AGENT_FULL, AGENT_NAME, N } from './names'
 import { RUN_GLYPH, STEP_GLYPH, TASK_GLYPH, TOOL_GLYPH } from './glyphs'
 import { buildStage, pushCode, type StageCode } from './teamStage'
@@ -89,7 +90,10 @@ function folderFinder(goal: HTMLTextAreaElement, pill: HTMLButtonElement) {
   const box = h('section', 'team-folder'); box.setAttribute('aria-label', 'Project folder')
   const row = h('div', 'team-folder-row'); const hint = h('div', 'team-folder-hint'); const chips = h('div', 'team-folder-chips')
   const scan = h('button', 'link-btn team-folder-scan') as HTMLButtonElement; scan.type = 'button'; scan.append(icon('search', 'sm'), document.createTextNode('Find folder')); scan.title = 'Scan this computer for project folders'
-  row.append(hint, scan); box.append(row, chips)
+  const skills = h('button', 'skill-chip team-skills') as HTMLButtonElement; skills.type = 'button'; skills.title = 'Skills the crew can read: open Settings → Skills'; skills.hidden = true
+  skills.onclick = () => void import('./settings').then(m => m.openSettings('skills'))
+  void enabledSkillCount().then(n => { if (n === null) return; skills.hidden = false; skills.replaceChildren(icon('spark', 'sm'), document.createTextNode(`Skills · ${n} on`)) })
+  row.append(hint, skills, scan); box.append(row, chips)
   const panel = h('div', 'team-folder-panel'); panel.hidden = true
   const filter = input('search'); filter.placeholder = 'Filter folders'; filter.setAttribute('aria-label', 'Filter folders')
   const list = h('div', 'team-folder-list'); panel.append(filter, list); box.append(panel)

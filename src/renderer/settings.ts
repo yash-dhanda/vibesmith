@@ -1,16 +1,17 @@
 import type { TeamConfig } from '../main/team/types'
 import { getCustomIds, loadModels, setCustomIds } from './models'
-import { $, MINUTE_CHOICES, STEP_CHOICES, agentLimits, cleanErr, h, numCtxPref, setThemePref, themePref, toast, type ThemePref } from './ui'
+import { $, MINUTE_CHOICES, STEP_CHOICES, agentLimits, cleanErr, h, numCtxPref, onOff, setThemePref, themePref, toast, type ThemePref } from './ui'
+import { renderSkillsPanel } from './skillsPanel'
 import { icon, type IconName } from './icons'
 import { openLibrary } from './library'
 import { renderUsage } from './usage'
 import { AGENT_NAME, N } from './names'
 
 // Settings is a full page: grouped pages in a nav column on the left, one column of sections on the right.
-export type Page = 'general' | 'appearance' | 'shortcuts' | 'models' | 'agent' | 'team' | 'usage' | 'privacy' | 'about'
+export type Page = 'general' | 'appearance' | 'shortcuts' | 'models' | 'agent' | 'team' | 'skills' | 'usage' | 'privacy' | 'about'
 const NAV: [string, [Page, IconName, string][]][] = [
   ['Personal', [['general', 'sliders', 'General'], ['appearance', 'contrast', 'Appearance'], ['shortcuts', 'keyboard', 'Keyboard']]],
-  ['Forge', [['models', 'cube', 'Models & engine'], ['agent', 'bot', 'Agent'], ['team', 'users', N.crew], ['usage', 'chart', 'Usage & spend'], ['privacy', 'shield', 'Privacy'], ['about', 'help', 'Help & about']]],
+  ['Forge', [['models', 'cube', 'Models & engine'], ['agent', 'bot', 'Agent'], ['team', 'users', N.crew], ['skills', 'spark', 'Skills'], ['usage', 'chart', 'Usage & spend'], ['privacy', 'shield', 'Privacy'], ['about', 'help', 'Help & about']]],
 ]
 const PAGES = NAV.flatMap(([, items]) => items)
 const TITLE = Object.fromEntries(PAGES.map(([id, , label]) => [id, label])) as Record<Page, string>
@@ -37,27 +38,6 @@ function row(title: string, desc: string, ...controls: HTMLElement[]) {
   r.append(t, c)
   return r
 }
-
-function seg<T extends string>(options: [T, string][], value: T, onPick: (v: T) => void): HTMLElement {
-  const wrap = h('div', 'seg')
-  wrap.setAttribute('role', 'group')
-  for (const [v, label] of options) {
-    const b = h('button', v === value ? 'on' : '', label) as HTMLButtonElement
-    b.setAttribute('aria-pressed', String(v === value))
-    b.type = 'button'
-    b.onclick = () => {
-      wrap.querySelectorAll('button').forEach((x) => { x.classList.remove('on'); x.setAttribute('aria-pressed', 'false') })
-      b.classList.add('on')
-      b.setAttribute('aria-pressed', 'true')
-      onPick(v)
-    }
-    wrap.append(b)
-  }
-  return wrap
-}
-
-// Booleans are an Off | On pair, not a checkbox.
-const onOff = (on: boolean, onChange: (v: boolean) => void) => seg<'off' | 'on'>([['off', 'Off'], ['on', 'On']], on ? 'on' : 'off', (v) => onChange(v === 'on'))
 
 // A native select inside a bordered box with up/down chevrons.
 function choose(options: [string, string][], value: string, onPick: (v: string) => void) {
@@ -429,7 +409,8 @@ async function usage(into: HTMLElement) {
 }
 
 // ---- the page ----
-const BUILD: Record<Page, (into: HTMLElement) => void | Promise<void>> = { general, appearance, shortcuts, models, agent, team, usage, privacy, about }
+const skills = (into: HTMLElement) => { into.append(renderSkillsPanel()) }
+const BUILD: Record<Page, (into: HTMLElement) => void | Promise<void>> = { general, appearance, shortcuts, models, agent, team, skills, usage, privacy, about }
 let current: Page = 'general'
 let body: HTMLElement | null = null
 let headTitle: HTMLElement | null = null
@@ -454,7 +435,7 @@ async function rerender() {
   const q = query.trim().toLowerCase()
   if (!q) await BUILD[current](fresh)
   else for (const [id, , label] of PAGES) {
-    if (id === 'usage') continue
+    if (id === 'usage' || id === 'skills') continue // these load their own content
     const part = h('div')
     await BUILD[id](part)
     part.querySelectorAll<HTMLElement>('.srow').forEach((r) => (r.hidden = !r.textContent!.toLowerCase().includes(q)))

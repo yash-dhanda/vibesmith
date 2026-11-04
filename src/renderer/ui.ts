@@ -53,6 +53,28 @@ export function toast(msg: string, ms = 1800, action?: { label: string; run: () 
   timer = setTimeout(close, action ? Math.max(ms, 6000) : Math.max(ms, 2400))
 }
 
+// A segmented choice; the selected part has the lighter fill.
+export function seg<T extends string>(options: [T, string][], value: T, onPick: (v: T) => void): HTMLElement {
+  const wrap = h('div', 'seg')
+  wrap.setAttribute('role', 'group')
+  for (const [v, label] of options) {
+    const b = h('button', v === value ? 'on' : '', label) as HTMLButtonElement
+    b.setAttribute('aria-pressed', String(v === value))
+    b.type = 'button'
+    b.onclick = () => {
+      wrap.querySelectorAll('button').forEach((x) => { x.classList.remove('on'); x.setAttribute('aria-pressed', 'false') })
+      b.classList.add('on')
+      b.setAttribute('aria-pressed', 'true')
+      onPick(v)
+    }
+    wrap.append(b)
+  }
+  return wrap
+}
+
+// Booleans are an Off | On pair, not a checkbox.
+export const onOff = (on: boolean, onChange: (v: boolean) => void) => seg<'off' | 'on'>([['off', 'Off'], ['on', 'On']], on ? 'on' : 'off', (v) => onChange(v === 'on'))
+
 export async function copy(text: string, what = 'Copied') {
   try {
     await navigator.clipboard.writeText(text)

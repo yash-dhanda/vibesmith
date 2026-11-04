@@ -483,6 +483,25 @@ dialog[open]::backdrop { background: var(--scrim); }
 .sselect select option { background: var(--panel); color: var(--text); }
 .sselect .ic { position: absolute; right: 10px; color: var(--faint); pointer-events: none; }
 .btn.sact { height: 32px; padding: 0 14px; background: transparent; font-size: 13px; gap: 7px; }
+/* skills */
+.skill-add { display: flex; gap: 8px; margin-top: 10px; }
+.skill-add input { flex: 1; min-width: 0; height: 36px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: transparent; outline: 0; }
+.skill-add input:focus { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
+.skill-add .btn { height: 36px; padding: 0 16px; }
+.skill-add .st.running, .skill-repo .st.running { border-color: currentColor; border-top-color: transparent; }
+.skill-err { min-height: 18px; padding-top: 6px; }
+.skill-repo { border-top: 1px solid var(--hair); animation: rise var(--t2) var(--ease) both; }
+.skill-repo:first-of-type { border-top: 0; }
+.skill-repo.off .st-t { color: var(--muted); }
+.skill-items { margin: -4px 0 12px; }
+.skill-items summary { cursor: pointer; color: var(--muted); font-size: 12.5px; padding: 4px 0; width: max-content; }
+.skill-items ul { list-style: none; margin: 6px 0 0; padding: 0 0 0 12px; border-left: 1px solid var(--hair); display: flex; flex-direction: column; gap: 6px; animation: fade var(--t2) ease-out; }
+.skill-items li { display: flex; flex-direction: column; min-width: 0; font-size: 12.5px; }
+.skill-items li span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.skill-examples { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.skill-chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--muted); font: 12px var(--mono); white-space: nowrap; }
+.skill-chip:hover { background: var(--panel-2); color: var(--text); }
+.team-skills { font-family: var(--sans); flex: none; }
 /* theme preview cards */
 .scards { display: flex; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
 .scard { display: flex; flex-direction: column; gap: 6px; width: 164px; padding: 6px; border: 1px solid var(--hair); border-radius: 10px; background: transparent; color: var(--muted); font-size: 12px; text-align: center; }
