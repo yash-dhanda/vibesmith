@@ -102,7 +102,7 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
       if (!goal.trim()) throw new Error('Describe what the team should build.')
       if (orch.list().some((r) => r.project === project && ACTIVE.includes(r.status))) throw new Error('This project already has a team run in progress. Finish, apply or cancel it first.')
       await ensureRepo(project)
-      return summarize(await orch.start(project, goal, { ...settings.get(project), ...config, budget: { ...settings.get(project).budget, ...config?.budget } }))
+      return summarize(await orch.start(project, goal, { ...settings.get(project), ...config, budget: { maxTasks: settings.get(project).budget?.maxTasks, ...config?.budget } }))
     },
     list: () => orch.list().map(summarize),
     // A plain-text summary to paste into a bug report: versions, sign-ins, plan allowance, recent runs. No secrets, no file contents.

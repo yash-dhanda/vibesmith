@@ -360,7 +360,7 @@ describe('team orchestrator', () => {
   it('leaves an agent out when its plan allowance is nearly used, and refuses to start when none is left', async () => {
     const x = h({ plan: { tasks: [T('a', { agent: 'codex' })] } })
     ;(x.orch as any).d.limits = async () => ({ codex: { primaryPct: 97, primaryResetsAt: 1793747988 } })
-    const run = await x.orch.start(x.proj, 'quota')
+    const run = await x.orch.start(x.proj, 'quota', { maxLimitPercent: 80 })
     const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
     expect(new Set(x.calls.map((c) => c.agent))).toEqual(new Set(['claude'])) // everything, planning and review included, went to Claude
     expect(r.tasks[0].agent).toBe('claude')
@@ -368,7 +368,7 @@ describe('team orchestrator', () => {
 
     const y = h({ plan: { tasks: [T('a')] } }, { available: ['codex'] })
     ;(y.orch as any).d.limits = async () => ({ codex: { primaryPct: 97 } })
-    await expect(y.orch.start(y.proj, 'nothing left')).rejects.toThrow(/97% used/)
+    await expect(y.orch.start(y.proj, 'nothing left', { maxLimitPercent: 80 })).rejects.toThrow(/97% used/)
     const z = h({ plan: { tasks: [T('a')] } }, { available: ['codex'] })
     ;(z.orch as any).d.limits = async () => ({ codex: { primaryPct: 97 } })
     const run3 = await z.orch.start(z.proj, 'override', { maxLimitPercent: 0 }) // the user turned the guard off
@@ -418,9 +418,26 @@ describe('team orchestrator', () => {
     expect(x.orch.get(run.id)!.config.budget.maxAgentRuns).toBeGreaterThan(3)
   })
 
+  it('the "Allow 50% more" button clears the budget question and lets the run carry on', async () => {
+    const x = h({ plan: { tasks: [T('a'), T('b', { deps: ['a'] }), T('c', { deps: ['b'] })] } })
+    const run = await x.orch.start(x.proj, 'budget button', { budget: { maxAgentRuns: 3 } })
+    await until(x.orch, run.id, (r) => r.approvals.some((a) => a.kind === 'budget' && a.status === 'pending'))
+    for (let i = 0; i < 10 && x.orch.get(run.id)!.status !== 'awaiting_approval'; i++) { x.orch.extendBudget(run.id); await sleep(40) }
+    const r = x.orch.get(run.id)!
+    expect(r.status).toBe('awaiting_approval')
+    expect(r.approvals.filter((a) => a.kind === 'budget' && a.status === 'pending')).toHaveLength(0)
+  })
+
+  it('has no budget or allowance limits unless the user sets one', async () => {
+    const x = h({ limitsPct: 95, plan: { tasks: [T('a'), T('b', { deps: ['a'] }), T('c', { deps: ['b'] })] } })
+    const run = await x.orch.start(x.proj, 'unlimited')
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect(r.approvals.some((a) => a.kind === 'budget')).toBe(false)
+  })
+
   it('pauses when the subscription allowance is nearly used, and continues after the user allows more', async () => {
     const x = h({ limitsPct: 95, plan: { tasks: [T('a'), T('b', { deps: ['a'] })] } })
-    const run = await x.orch.start(x.proj, 'limits')
+    const run = await x.orch.start(x.proj, 'limits', { maxLimitPercent: 80 })
     const r = await until(x.orch, run.id, (r) => r.approvals.some((a) => a.kind === 'budget' && a.status === 'pending'))
     expect(r.pausedReason).toMatch(/plan allowance for this window is 95% used/)
     expect(r.limits?.codex ?? r.limits?.claude).toMatchObject({ primaryPct: 95, secondaryPct: 3 })

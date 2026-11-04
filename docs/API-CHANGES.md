@@ -2,6 +2,11 @@
 
 Claude appends every new `window.forge` call or event here. Additive only.
 
+## 2026-11-04 — team runs have no limits by default
+
+- **No token, time, agent-run or plan-allowance limit unless the user sets one.** `DEFAULT_CONFIG.maxLimitPercent` is now `0` (off); the team settings form starts with the three budget fields empty ("No limit"). Saved per-project budgets no longer carry over; only `maxTasks` does.
+- **`teamExtendBudget(runId)`** now also answers any open "budget reached" question as yes, so the card closes and the run resumes. One such question is asked at a time, not one per task.
+
 ## 2026-11-03 — plan events, friendly labels, per-file undo
 
 - **Event `{ type: 'plan', items: { text: string; status: 'todo' | 'doing' | 'done' }[] }`** on `onAgentEvent`. The agent calls a new `update_plan` tool for work with 3+ steps; each call sends the whole checklist again (replace, do not merge). It is stored in the transcript, so a reopened chat replays it. `update_plan` never produces a `tool`/`tool_result` event.

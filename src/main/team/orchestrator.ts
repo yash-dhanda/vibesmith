@@ -56,6 +56,7 @@ type Live = {
   paused: boolean
   running: Map<string, Promise<void>>
   pending: Map<string, (a: { allow: boolean; note?: string }) => void>
+  budgetAsk: boolean // one "budget reached" question at a time, however many tasks hit the limit together
   git: Mutex // short git admin steps (worktree add)
   merge: Mutex // one merge at a time, conflict resolution included
   available: AgentName[]
@@ -340,15 +341,28 @@ export class TeamOrchestrator {
     return diffText(run.integrationWorktree, run.baseCommit, 'HEAD', 120_000).catch(() => '')
   }
 
+  // Raises every limit that is set by half. Any "budget reached" question still open is answered yes, so the card goes away and the run continues.
   extendBudget(runId: string, factor = 1.5) {
     const run = this.runOf(runId)
     if (!run) return
+    this.raiseBudget(run, factor)
+    const live = this.live.get(runId)
+    for (const a of run.approvals) {
+      if (a.kind !== 'budget' || a.status !== 'pending') continue
+      const resolve = live?.pending.get(a.id)
+      live?.pending.delete(a.id)
+      this.markApproval(run, a.id, 'allowed')
+      resolve?.({ allow: true })
+    }
+    if (run.status === 'paused') void this.resume(runId)
+  }
+
+  private raiseBudget(run: Run, factor = 1.5) {
     const b = run.config.budget
     for (const k of ['maxTokens', 'maxMinutes', 'maxAgentRuns', 'maxCostUsd'] as const) if (b[k]) b[k] = Math.ceil(b[k]! * factor * 100) / 100
     const used = Math.max(0, ...Object.values(run.limits ?? {}).map((l) => Math.max(l?.primaryPct ?? 0, l?.secondaryPct ?? 0)))
     if (run.config.maxLimitPercent && used >= run.config.maxLimitPercent) run.config.maxLimitPercent = Math.min(100, Math.ceil(used) + 5)
     this.save(run)
-    if (run.status === 'paused') void this.resume(runId)
   }
 
   async approveFinal(runId: string): Promise<{ ok: boolean; message: string; checkpoint?: string }> {
@@ -417,7 +431,7 @@ export class TeamOrchestrator {
   // ------------------------------------------------------------------ plumbing
 
   private newLive(available: AgentName[]): Live {
-    return { ctl: new AbortController(), stop: null, paused: false, running: new Map(), pending: new Map(), git: new Mutex(), merge: new Mutex(), available, finishing: false, handles: new Map() }
+    return { ctl: new AbortController(), stop: null, paused: false, running: new Map(), pending: new Map(), budgetAsk: false, git: new Mutex(), merge: new Mutex(), available, finishing: false, handles: new Map() }
   }
   private liveOf(run: Run): Live {
     let l = this.live.get(run.id)
@@ -733,8 +747,12 @@ export class TeamOrchestrator {
     const live = this.liveOf(run)
     live.paused = true
     this.setStatus(run, 'paused', `Stopped: ${why}.`)
+    if (live.budgetAsk) return
+    live.budgetAsk = true
     const r = await this.ask(run, { kind: 'budget', title: 'Budget reached', detail: `${why}. Allow 50% more and continue?` })
-    if (r.allow) this.extendBudget(run.id)
+    live.budgetAsk = false
+    if (r.allow && this.overBudget(run)) this.raiseBudget(run)
+    if (r.allow && run.status === 'paused') void this.resume(run.id)
   }
 
   // ------------------------------------------------------------------ one task
