@@ -72,6 +72,7 @@ export type TeamConfig = {
   claudeModel?: string
   bypassPermissions?: boolean // never ask the user to allow a command or file read (default on). Hard limits stay: no push, no sudo, no writes outside the task folder or to secrets
   claudeEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+  codexEffort?: 'low' | 'medium' | 'high' | 'xhigh' // Codex's reasoning effort
   maxParallelPerAgent: number
   maxFixRounds: number
   maxVerifyRounds: number

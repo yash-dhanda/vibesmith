@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { AgentEvent, Mode } from '../main/agent/loop'
 import type { ChatListItem, ChatStatus, TranscriptItem } from '../main/chatStore'
 import type { UsageSummary } from '../main/usageStore'
+import type { ProjectHit } from '../main/projectScan'
 import type { RunSummary, TeamMemory } from '../main/team/service'
 import type { Run as TeamRun, RunEvent as TeamRunEvent, TeamConfig } from '../main/team/types'
 
@@ -16,6 +17,9 @@ export type OpenedChat = { id: string; title: string; project: string | null; mi
 const api = {
   // app + chats
   appInit: (): Promise<{ chats: ChatListItem[]; project: string | null; usage: UsageSummary }> => ipcRenderer.invoke('app:init'),
+  scanProjects: (fresh?: boolean): Promise<ProjectHit[]> => ipcRenderer.invoke('project:scan', fresh),
+  suggestProjects: (query: string): Promise<ProjectHit[]> => ipcRenderer.invoke('project:suggest', query),
+  setProject: (path: string): Promise<string> => ipcRenderer.invoke('project:set', path),
   pickProject: (chatId: string): Promise<string | null> => ipcRenderer.invoke('project:pick', chatId),
   chatsList: (): Promise<ChatListItem[]> => ipcRenderer.invoke('chats:list'),
   chatsViewing: (id: string | null) => ipcRenderer.send('chats:viewing', id),

@@ -2,8 +2,8 @@ import { app, BrowserWindow, dialog, ipcMain, Notification, shell } from 'electr
 import type * as PtyModule from 'node-pty'
 import { homedir } from 'node:os'
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { readdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { checkForUpdate, type UpdateInfo } from './updates'
 import { PRICES_AS_OF, costOf, priceFor } from './pricing'
@@ -27,6 +27,7 @@ import { listModels, makeProvider, modelSupportsVision, ollamaStatus } from './m
 import { AttachmentStore, inlineText } from './attachments'
 import { getVerify, setVerify } from './settings'
 import { registerLibrary } from './library'
+import { rankProjects, scanProjects, type ProjectHit } from './projectScan'
 import { UsageStore } from './usageStore'
 import { createTeamService, sanitizeConfig, type TeamService } from './team/service'
 
@@ -196,6 +197,24 @@ ipcMain.handle('project:pick', async (_e, chatId: string) => {
   const r = await dialog.showOpenDialog({ properties: ['openDirectory'] })
   if (r.canceled) return getRoot()
   const root = setRoot(r.filePaths[0])
+  rememberProject(root)
+  return root
+})
+
+// Folder finder for Team mode: scan the home folder for projects, match them to what the user typed, and open the one they click.
+let scanCache: { at: number; hits: ProjectHit[] } | null = null
+const scanned = async (fresh = false) => {
+  if (!fresh && scanCache && Date.now() - scanCache.at < 120_000) return scanCache.hits
+  const hits = (await scanProjects()).sort((a, b) => b.mtime - a.mtime)
+  scanCache = { at: Date.now(), hits }
+  return hits
+}
+ipcMain.handle('project:scan', async (_e, fresh?: unknown) => (await scanned(fresh === true)).slice(0, 300))
+ipcMain.handle('project:suggest', async (_e, query: unknown) => rankProjects(await scanned(), String(query ?? '').slice(0, 2000)))
+ipcMain.handle('project:set', async (_e, path: unknown) => {
+  const p = String(path ?? '')
+  if (!isAbsolute(p) || !(await stat(p).then((s) => s.isDirectory()).catch(() => false))) throw new Error('That folder is not available.')
+  const root = setRoot(p)
   rememberProject(root)
   return root
 })

@@ -19,7 +19,7 @@ import { DEFAULT_CONFIG, emptyUsage, type Approval, type ApprovalKind, type Mess
 export type AgentCall = {
   cwd: string; prompt: string; write: boolean; resume?: string; model?: string; signal: AbortSignal; link: TeamLink | null; taskId: string
   onEvent: (e: TeamEvent) => void
-  effort?: string // Claude only
+  effort?: string // the reasoning effort for this agent (Claude or Codex)
   codexMode?: 'exec' | 'app-server'
   onApproval?: (a: ApprovalAsk) => Promise<boolean> // Codex app-server asks before leaving its sandbox
   onHandle?: (h: ServerHandle | null) => void // lets the orchestrator steer a running agent
@@ -613,7 +613,7 @@ export class TeamOrchestrator {
     const call = async (resumeId: string | undefined) => this.d.runner(agent, {
       cwd, prompt, write, resume: resumeId, signal: live.ctl.signal, taskId: task.id, link: await this.linkFor(run, task, agent),
       model: agent === 'codex' ? run.config.codexModel : agent === 'local' ? run.config.localModel : run.config.claudeModel,
-      effort: agent === 'claude' ? run.config.claudeEffort : undefined,
+      effort: agent === 'claude' ? run.config.claudeEffort : agent === 'codex' ? run.config.codexEffort : undefined,
       codexMode: run.config.codexMode,
       onEvent: (ev) => {
         if (ev.type === 'limits') {

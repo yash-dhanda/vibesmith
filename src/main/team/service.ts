@@ -26,6 +26,7 @@ export function sanitizeConfig(raw: unknown): Partial<TeamConfig> {
   if (typeof r.codexModel === 'string' && /^[\w.:-]{1,60}$/.test(r.codexModel)) out.codexModel = r.codexModel
   if (typeof r.bypassPermissions === 'boolean') out.bypassPermissions = r.bypassPermissions
   if (r.claudeEffort === 'low' || r.claudeEffort === 'medium' || r.claudeEffort === 'high' || r.claudeEffort === 'xhigh' || r.claudeEffort === 'max') out.claudeEffort = r.claudeEffort
+  if (r.codexEffort === 'low' || r.codexEffort === 'medium' || r.codexEffort === 'high' || r.codexEffort === 'xhigh') out.codexEffort = r.codexEffort
   if (typeof r.claudeModel === 'string' && /^[\w.:\[\]-]{1,60}$/.test(r.claudeModel)) out.claudeModel = r.claudeModel
   const par = num(r.maxParallelPerAgent, 1, 4)
   if (par) out.maxParallelPerAgent = par

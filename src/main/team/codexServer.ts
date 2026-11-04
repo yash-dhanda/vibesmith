@@ -17,6 +17,7 @@ export type ApprovalAsk = { kind: 'command' | 'files'; title: string; detail: st
 export type CodexServerOpts = RunOpts & {
   write: boolean
   model: string
+  effort?: string
   resume?: string
   team?: TeamLink
   onApproval?: (a: ApprovalAsk) => Promise<boolean>
@@ -208,7 +209,7 @@ export function runCodexServer(o: CodexServerOpts, bin = 'codex'): Promise<RunRe
         const started = await request(o.resume ? 'thread/resume' : 'thread/start', o.resume ? { threadId: o.resume, ...common } : common)
         threadId = started.thread.id
         push({ type: 'session', agent: 'codex', sessionId: threadId })
-        const t = request('turn/start', { threadId, input: [{ type: 'text', text: o.prompt }] })
+        const t = request('turn/start', { threadId, input: [{ type: 'text', text: o.prompt }], ...(o.effort ? { effort: o.effort } : {}) })
         o.onHandle?.({
           steer: async (text) => {
             if (!turnId) return false

@@ -707,6 +707,7 @@ export async function initChat(opts: {
   onFileChanged = opts.onFileChanged
   onFilesRestored = opts.onFilesRestored
   onProject = opts.onProject
+  window.addEventListener('forge-project-picked', (e) => { const p = (e as CustomEvent<string>).detail; if (p && p !== project && !hasMessages) { setProject(p); void onProject(p) } })
   openWorkspace = opts.openWorkspace
   try {
     modeSel.value = localStorage.getItem('forge.mode') ?? 'ask-all'

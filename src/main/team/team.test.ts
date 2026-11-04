@@ -94,6 +94,10 @@ describe('argument builders', () => {
     const rw = claudeArgs({ cwd: '/p', prompt: 'x', write: true, resume: 'abc', mcpConfig: '/m.json', model: 'sonnet', effort: 'high' })
     expect(rw).toEqual(expect.arrayContaining(['acceptEdits', '--resume', 'abc', '--mcp-config', '/m.json', '--model', 'sonnet', '--effort', 'high', '--allowedTools']))
   })
+  it('codex: passes the chosen reasoning effort, and nothing when none is chosen', () => {
+    expect(codexArgs({ cwd: '/p', prompt: 'x', write: true, model: 'm', effort: 'xhigh' })).toContain('model_reasoning_effort="xhigh"')
+    expect(codexArgs({ cwd: '/p', prompt: 'x', write: true, model: 'm' }).join(' ')).not.toContain('model_reasoning_effort')
+  })
   it('codex: pins the model, reads the prompt from stdin, sandboxes by role', () => {
     const a = codexArgs({ cwd: '/p', prompt: 'x', write: true, model: 'gpt-5.6-luna' })
     const lean = codexLeanArgs()

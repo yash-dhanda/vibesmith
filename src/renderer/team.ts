@@ -84,6 +84,44 @@ function field(label: string, control: HTMLElement, hint = '') {
 const input = (type: string, value = '') => { const el = document.createElement('input'); el.type = type; el.value = value; return el }
 const select = (values: [string, string][], value = '') => { const el = document.createElement('select'); for (const [v, label] of values) el.append(new Option(label, v)); el.value = value; return el }
 
+// Finds the project the request is about: matches what the user typed to the project folders on this computer, and lists them all on request.
+function folderFinder(goal: HTMLTextAreaElement, pill: HTMLButtonElement) {
+  const box = h('section', 'team-folder'); box.setAttribute('aria-label', 'Project folder')
+  const row = h('div', 'team-folder-row'); const hint = h('div', 'team-folder-hint'); const chips = h('div', 'team-folder-chips')
+  const scan = h('button', 'link-btn team-folder-scan') as HTMLButtonElement; scan.type = 'button'; scan.append(emo('🔎'), document.createTextNode('Find folder')); scan.title = 'Scan this computer for project folders'
+  row.append(hint, scan); box.append(row, chips)
+  const panel = h('div', 'team-folder-panel'); panel.hidden = true
+  const filter = input('search'); filter.placeholder = 'Filter folders'; filter.setAttribute('aria-label', 'Filter folders')
+  const list = h('div', 'team-folder-list'); panel.append(filter, list); box.append(panel)
+  const apiOk = typeof window.forge.suggestProjects === 'function' && !replay
+  const home = (p: string) => p.replace(/^\/home\/[^/]+/, '~')
+  const mark = () => { hint.replaceChildren(emo('📁'), document.createTextNode(currentProject ? `Working in ${home(currentProject)}` : 'No folder chosen yet. Describe the job, or find a folder.')) }
+  const choose = async (path: string) => {
+    try { const root = await window.forge.setProject(path); currentProject = root; window.dispatchEvent(new CustomEvent('forge-project-picked', { detail: root })); pill.replaceChildren(emo('📁'), document.createTextNode(folderName(root))); pill.title = root; mark(); chips.replaceChildren(); panel.hidden = true; toast(`📁 Using ${folderName(root)}`) }
+    catch (e) { toast(cleanErr(e), 4000) }
+  }
+  const item = (hit: { path: string; name: string; markers: string[]; mtime: number }, cls = 'team-folder-chip') => {
+    const b = h('button', cls) as HTMLButtonElement; b.type = 'button'; b.title = hit.path; b.append(emo('📁'), h('strong', '', hit.name), h('span', '', home(hit.path.slice(0, hit.path.length - hit.name.length - 1)))); if (hit.path === currentProject) b.classList.add('on')
+    b.onclick = () => void choose(hit.path); return b
+  }
+  let timer: ReturnType<typeof setTimeout> | null = null, token = 0
+  const suggest = () => { if (!apiOk) return; const mine = ++token, q = goal.value.trim(); if (q.length < 4) { chips.replaceChildren(); return }
+    void window.forge.suggestProjects(q).then(hits => { if (mine !== token) return; chips.replaceChildren(...hits.filter(x => x.path !== currentProject).slice(0, 4).map(x => item(x))) }).catch(() => {}) }
+  goal.addEventListener('input', () => { if (timer) clearTimeout(timer); timer = setTimeout(suggest, 350) })
+  let all: { path: string; name: string; markers: string[]; mtime: number }[] = []
+  const draw = () => { const q = filter.value.trim().toLowerCase(); const shown = all.filter(x => !q || x.path.toLowerCase().includes(q)).slice(0, 60); list.replaceChildren(...(shown.length ? shown.map(x => item(x, 'team-folder-row-item')) : [h('p', 'team-empty', all.length ? 'No folder matches.' : 'No project folders found.')])) }
+  filter.oninput = draw
+  scan.onclick = async () => {
+    if (!apiOk) return
+    panel.hidden = !panel.hidden; if (panel.hidden) return
+    list.replaceChildren(h('p', 'team-empty', 'Scanning your computer…')); scan.disabled = true
+    try { all = await window.forge.scanProjects(true); draw(); filter.focus() } catch (e) { list.replaceChildren(h('p', 'team-empty', cleanErr(e))) } finally { scan.disabled = false }
+  }
+  if (!apiOk) scan.hidden = true
+  mark(); suggest()
+  return box
+}
+
 async function showEntry() {
   run = null; log = []; liveFiles.clear(); sharedMemory = null; undoResult = ''; stopClock()
   root.replaceChildren(h('div', 'team-entry-skeleton skel'))
@@ -132,7 +170,10 @@ async function showEntry() {
   const verify = input('text', defaults.verify === null ? '' : defaults.verify ?? ''); verify.placeholder = 'Detect from project'
   const codexModel = select(health.codexModels.map(m => [m, m] as [string, string]), defaults.codexModel ?? health.codexModels[0] ?? '')
   const localModel = select(health.localModels.map(m => [m, m] as [string, string]), defaults.localModel ?? health.localModels[0] ?? '')
-  const claudeModel = input('text', defaults.claudeModel ?? ''); claudeModel.placeholder = 'Default Claude model'
+  const claudeModels: [string, string][] = [['', 'Account default'], ['claude-opus-5-5', 'Opus 5.5'], ['claude-sonnet-5-5', 'Sonnet 5.5'], ['claude-haiku-5-5', 'Haiku 5.5'], ['claude-fable-5-1', 'Fable 5.1']]
+  if (defaults.claudeModel && !claudeModels.some(([v]) => v === defaults.claudeModel)) claudeModels.push([defaults.claudeModel, defaults.claudeModel])
+  const claudeModel = select(claudeModels, defaults.claudeModel ?? ''); claudeModel.setAttribute('aria-label', 'Claude model')
+  const codexEffort = select([['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high']], defaults.codexEffort ?? 'high'); codexEffort.setAttribute('aria-label', 'Codex reasoning effort')
   const effort = select([['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high'], ['max', 'Maximum']], defaults.claudeEffort ?? 'high')
   const minutes = input('number', ''); minutes.min = '1'; minutes.placeholder = 'No limit'
   const tokens = input('number', ''); tokens.min = '1000'; tokens.step = '1000'; tokens.placeholder = 'No limit'
@@ -140,15 +181,15 @@ async function showEntry() {
   const maxTasks = input('number', String(defaults.budget?.maxTasks ?? 12)); maxTasks.min = '1'; maxTasks.max = '30'
   const limit = input('number', String(defaults.maxLimitPercent ?? 0)); limit.min = '0'; limit.max = '100'
   const grid = h('div', 'team-config-grid')
-  grid.append(field('Planner', planner, 'Chooses who splits the goal into tasks.'), field('Parallel tasks per agent', parallel, 'More tasks can finish sooner, but use more allowance.'), field('Task review', review), field('Final review', finalReview, 'Automatic checks the whole result only for runs of 3 or more tasks, which saves plan usage.'), field('Permissions', permissions, 'Bypass lets the agents run commands and read files without asking. They still cannot push to git, use sudo, or write outside their own task folder.'), field('Plan approval', reviewPlan, 'Stops after planning so you can edit, reassign or skip tasks before any agent works.'), field('Fix attempts per task', fixRounds), field('Project check', verify, 'Leave blank to detect it from the project.'), field('Codex connection', codexMode, 'Live sessions support streaming and immediate steering.'), field('Codex model', codexModel), ...(health.localModels.length ? [field('Local model', localModel, 'Runs on this computer through Ollama. Free, but weaker: the team gives it simple tasks.')] : []), field('Claude model', claudeModel), field('Claude effort', effort), field('Time limit (minutes)', minutes, 'Empty means no limit.'), field('Token limit', tokens, 'Empty means no limit.'), field('Agent runs limit', runs, 'Empty means no limit.'), field('Maximum tasks', maxTasks), field('Pause at plan usage %', limit, '0 disables this limit.'))
+  grid.append(field('Planner', planner, 'Chooses who splits the goal into tasks.'), field('Parallel tasks per agent', parallel, 'More tasks can finish sooner, but use more allowance.'), field('Task review', review), field('Final review', finalReview, 'Automatic checks the whole result only for runs of 3 or more tasks, which saves plan usage.'), field('Permissions', permissions, 'Bypass lets the agents run commands and read files without asking. They still cannot push to git, use sudo, or write outside their own task folder.'), field('Plan approval', reviewPlan, 'Stops after planning so you can edit, reassign or skip tasks before any agent works.'), field('Fix attempts per task', fixRounds), field('Project check', verify, 'Leave blank to detect it from the project.'), field('Codex connection', codexMode, 'Live sessions support streaming and immediate steering.'), field('Time limit (minutes)', minutes, 'Empty means no limit.'), field('Token limit', tokens, 'Empty means no limit.'), field('Agent runs limit', runs, 'Empty means no limit.'), field('Maximum tasks', maxTasks), field('Pause at plan usage %', limit, '0 disables this limit.'))
   const validation = h('div', 'team-config-error'); validation.setAttribute('role', 'alert')
   const numeric = [parallel, fixRounds, minutes, tokens, runs, maxTasks, limit]
   const readConfig = (): Partial<TeamConfig> | null => {
     if (numeric.some(item => !item.checkValidity() || !Number.isFinite(Number(item.value)))) { validation.textContent = 'Check the highlighted team settings.'; numeric.find(item => !item.checkValidity())?.focus(); return null }
     validation.textContent = ''
-    return { planner: planner.value as TeamConfig['planner'], maxParallelPerAgent: Number(parallel.value), review: review.value as TeamConfig['review'], finalReview: finalReview.value === 'auto' ? 'auto' : finalReview.value === 'true', reviewPlan: reviewPlan.value === 'true', bypassPermissions: permissions.value === 'bypass', maxFixRounds: Number(fixRounds.value), codexMode: codexMode.value as TeamConfig['codexMode'], verify: verify.value.trim() || undefined, codexModel: codexModel.value, localModel: localModel.value || undefined, claudeModel: claudeModel.value.trim() || undefined, claudeEffort: effort.value as TeamConfig['claudeEffort'], maxLimitPercent: Number(limit.value), budget: { maxMinutes: Number(minutes.value) || undefined, maxTokens: Number(tokens.value) || undefined, maxAgentRuns: Number(runs.value) || undefined, maxTasks: Number(maxTasks.value) } }
+    return { planner: planner.value as TeamConfig['planner'], maxParallelPerAgent: Number(parallel.value), review: review.value as TeamConfig['review'], finalReview: finalReview.value === 'auto' ? 'auto' : finalReview.value === 'true', reviewPlan: reviewPlan.value === 'true', bypassPermissions: permissions.value === 'bypass', maxFixRounds: Number(fixRounds.value), codexMode: codexMode.value as TeamConfig['codexMode'], verify: verify.value.trim() || undefined, codexModel: codexModel.value, localModel: localModel.value || undefined, claudeModel: claudeModel.value.trim() || undefined, claudeEffort: effort.value as TeamConfig['claudeEffort'], codexEffort: codexEffort.value as TeamConfig['codexEffort'], maxLimitPercent: Number(limit.value), budget: { maxMinutes: Number(minutes.value) || undefined, maxTokens: Number(tokens.value) || undefined, maxAgentRuns: Number(runs.value) || undefined, maxTasks: Number(maxTasks.value) } }
   }
-  const reset = h('button', 'btn', 'Reset defaults') as HTMLButtonElement; reset.prepend(emo('🔄')); reset.type = 'button'; reset.onclick = () => { planner.value = 'auto'; parallel.value = '2'; review.value = 'cross'; finalReview.value = 'auto'; reviewPlan.value = 'false'; permissions.value = 'bypass'; fixRounds.value = '3'; verify.value = ''; codexMode.value = 'app-server'; claudeModel.value = ''; effort.value = 'high'; minutes.value = '60'; tokens.value = '500000'; runs.value = '20'; maxTasks.value = '12'; limit.value = '90'; validation.textContent = 'Defaults restored. They will save when you start a run.' }
+  const reset = h('button', 'btn', 'Reset defaults') as HTMLButtonElement; reset.prepend(emo('🔄')); reset.type = 'button'; reset.onclick = () => { planner.value = 'auto'; parallel.value = '2'; review.value = 'cross'; finalReview.value = 'auto'; reviewPlan.value = 'false'; permissions.value = 'bypass'; fixRounds.value = '3'; verify.value = ''; codexMode.value = 'app-server'; claudeModel.value = ''; effort.value = 'high'; codexEffort.value = 'high'; minutes.value = ''; tokens.value = ''; runs.value = ''; maxTasks.value = '12'; limit.value = '0'; validation.textContent = 'Defaults restored. They will save when you start a run.' }
   const saveDefaults = h('button', 'btn', 'Save defaults') as HTMLButtonElement; saveDefaults.prepend(emo('💾')); saveDefaults.type = 'button'; saveDefaults.onclick = () => void call(async () => { const config = readConfig(); if (!config || typeof window.forge.teamSettingsSet !== 'function') return; await window.forge.teamSettingsSet(config); validation.textContent = 'Team defaults saved for this project.' })
   const settingActions = h('div', 'team-setting-actions'); settingActions.append(reset, saveDefaults)
   advanced.append(summary, grid, validation, settingActions)
@@ -174,7 +215,18 @@ async function showEntry() {
   const diagnostics = h('button', 'icon-btn') as HTMLButtonElement; diagnostics.type = 'button'; diagnostics.append(emo('🩺')); diagnostics.setAttribute('aria-label', 'Copy diagnostics'); diagnostics.title = 'Copy diagnostics: versions, agent status and recent runs for a bug report. No secrets or file contents.'
   diagnostics.onclick = () => void call(async () => { const text = replay ? 'Forge replay diagnostics' : await window.forge.teamDiagnostics(); await navigator.clipboard.writeText(text); toast('🩺 Diagnostics copied') })
   const actions = h('div', 'team-start-actions'); actions.append(project, diagnostics, h('span', 'grow'), start)
-  form.append(goal, healthBox, advanced, actions)
+  const agentsBox = h('section', 'team-agents'); agentsBox.setAttribute('aria-label', 'Models and effort')
+  const agentCard = (agent: 'claude' | 'codex' | 'local', model: HTMLSelectElement, effortSel?: HTMLSelectElement) => {
+    const card = h('div', `team-agent-card ${agent}`); const name = h('div', 'team-agent-name'); name.append(h('span', `agent-orb ${agent}`), h('strong', '', AGENT_FULL[agent]))
+    const rows = h('div', 'team-agent-fields'); const label = (text: string, control: HTMLElement) => { const l = h('label', 'team-agent-field'); l.append(h('span', '', text), control); return l }
+    rows.append(label('Model', model)); if (effortSel) rows.append(label('Effort', effortSel))
+    card.append(name, rows); return card
+  }
+  const readyAgents = new Set(health.agents.filter(a => a.ok).map(a => a.agent))
+  agentsBox.append(agentCard('claude', claudeModel, effort), agentCard('codex', codexModel, codexEffort))
+  if (health.localModels.length) agentsBox.append(agentCard('local', localModel))
+  agentsBox.querySelectorAll<HTMLElement>('.team-agent-card').forEach(card => { const a = (['claude', 'codex', 'local'] as const).find(x => card.classList.contains(x)); if (a && !readyAgents.has(a) && !replay) card.classList.add('off') })
+  form.append(goal, folderFinder(goal, project), agentsBox, healthBox, advanced, actions)
   form.onsubmit = async e => {
     e.preventDefault(); const text = goal.value.trim(); if (!text || start.disabled) return
     const config = readConfig(); if (!config) return

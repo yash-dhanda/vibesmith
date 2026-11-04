@@ -2,6 +2,11 @@
 
 Claude appends every new `window.forge` call or event here. Additive only.
 
+## 2026-11-04 — folder finder and visible model/effort for Team mode
+
+- **`forge.scanProjects(fresh?): Promise<ProjectHit[]>`**, **`forge.suggestProjects(query): Promise<ProjectHit[]>`**, **`forge.setProject(path): Promise<string>`**. `ProjectHit = { path, name, markers, mtime }`. The scan walks the home folder (depth 5, skips hidden folders and dependency folders, does not look inside a project) and lists folders with a marker file such as `.git` or `package.json`. `suggestProjects` ranks them against the words of a request. `setProject` makes a folder the working project, same as the folder dialog.
+- **`TeamConfig.codexEffort?: 'low' | 'medium' | 'high' | 'xhigh'`** is passed to Codex (`-c model_reasoning_effort=...` for exec, `effort` on `turn/start` for the app-server). Claude effort and models for each agent are now shown on the Team start card, not under Advanced.
+
 ## 2026-11-04 — team runs have no limits by default
 
 - **No token, time, agent-run or plan-allowance limit unless the user sets one.** `DEFAULT_CONFIG.maxLimitPercent` is now `0` (off); the team settings form starts with the three budget fields empty ("No limit"). Saved per-project budgets no longer carry over; only `maxTasks` does.
