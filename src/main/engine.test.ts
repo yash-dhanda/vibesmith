@@ -3,8 +3,16 @@ import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { Writable } from 'node:stream'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Engine, expectedDigest, extractCommand, findBinary, pickAsset, sha256File, type Asset, type EngineProgress } from './engine'
+
+// lets one test swap in a write stream that fails like a full disk
+const hook = vi.hoisted(() => ({ cws: null as null | (() => unknown) }))
+vi.mock('node:fs', async (orig) => {
+  const fs = await orig<typeof import('node:fs')>()
+  return { ...fs, createWriteStream: (...a: Parameters<typeof fs.createWriteStream>) => (hook.cws ? hook.cws() : fs.createWriteStream(...a)) }
+})
 
 const A = (name: string, extra: Partial<Asset> = {}): Asset => ({ name, browser_download_url: `https://x/${name}`, size: 100, ...extra })
 const RELEASE = [A('ollama-linux-amd64.tar.zst'), A('ollama-linux-amd64-rocm.tar.zst'), A('ollama-linux-arm64.tar.zst'), A('ollama-linux-arm64-jetpack5.tar.zst'), A('ollama-windows-amd64.zip'), A('ollama-windows-arm64.zip'), A('ollama-darwin.tgz'), A('sha256sum.txt'), A('OllamaSetup.exe')]
@@ -132,4 +140,86 @@ describe('Engine.install', () => {
     await expect(e.install(() => {}, ctl.signal)).rejects.toThrow()
     expect(e.binary()).toBeNull()
   })
+})
+
+// a release whose download is whatever stream `body` makes; the abort signal errors the body the way a real fetch does
+const streamNet = (name: string, body: (c: ReadableStreamDefaultController<Uint8Array>) => void, digest?: string) => async (url: string, init?: RequestInit) => {
+  if (url.includes('api.github.com')) return new Response(JSON.stringify({ assets: [A(name, { digest, size: 100 })] }))
+  return new Response(new ReadableStream<Uint8Array>({ start(c) { init?.signal?.addEventListener('abort', () => c.error(new DOMException('aborted', 'AbortError'))); body(c) } }))
+}
+const install = (e: Engine, signal = new AbortController().signal) => e.install(() => {}, signal)
+const mk = (f: ReturnType<typeof streamNet>, platform: NodeJS.Platform = 'linux') => new Engine(dir, join(dir, 'models'), { fetchFn: f, platform, arch: 'x64' })
+
+describe('Engine.install failures', () => {
+  it('a full disk ends the install with a clear message instead of hanging, and removes the partial file', async () => {
+    hook.cws = () => new Writable({ write: (_c, _e, cb) => cb(Object.assign(new Error('ENOSPC: no space left on device, write'), { code: 'ENOSPC' })) })
+    try {
+      const e = mk(streamNet('ollama-linux-amd64.tgz', (c) => c.enqueue(new Uint8Array(1000))))
+      await expect(install(e)).rejects.toThrow(/Not enough disk space/)
+    } finally {
+      hook.cws = null
+    }
+    expect(existsSync(join(dir, 'downloads'))).toBe(false)
+  }, 4000)
+
+  it('Cancel stops the download, removes the partial file and rejects as an abort', async () => {
+    const ctl = new AbortController()
+    const e = mk(streamNet('ollama-linux-amd64.tgz', (c) => c.enqueue(new Uint8Array(1000))))
+    const p = install(e, ctl.signal)
+    await new Promise((r) => setTimeout(r, 200))
+    ctl.abort()
+    await expect(p).rejects.toThrow(/abort/i)
+    expect(existsSync(join(dir, 'downloads'))).toBe(false)
+  }, 4000)
+
+  it('a dropped connection says so and leaves no partial file', async () => {
+    const e = mk(streamNet('ollama-linux-amd64.tgz', (c) => { c.enqueue(new Uint8Array(1000)); setTimeout(() => c.error(new TypeError('terminated')), 50) }))
+    await expect(install(e)).rejects.toThrow(/interrupted/)
+    expect(existsSync(join(dir, 'downloads'))).toBe(false)
+  }, 4000)
+
+  it('an archive that will not unpack reports tar\'s own reason, not a zstd hint, and is removed', async () => {
+    const junk = Buffer.from('not an archive at all')
+    const e = mk(streamNet('ollama-linux-amd64.tgz', (c) => (c.enqueue(new Uint8Array(junk)), c.close()), 'sha256:' + createHash('sha256').update(junk).digest('hex')))
+    const err = await install(e).catch((x: Error) => x)
+    expect((err as Error).message).toMatch(/Could not unpack the download: .+/)
+    expect((err as Error).message).not.toMatch(/install the "zstd"/)
+    expect(existsSync(join(dir, 'downloads'))).toBe(false)
+  })
+})
+
+describe('Engine.start', () => {
+  const script = (body: string, mode = 0o755) => {
+    mkdirSync(join(dir, 'bin'), { recursive: true })
+    writeFileSync(join(dir, 'bin/ollama'), body)
+    chmodSync(join(dir, 'bin/ollama'), mode)
+  }
+  const down = async () => new Response('', { status: 500 })
+
+  it('a program that cannot run fails at once with the reason', async () => {
+    script('#!/bin/sh\nexit 0\n', 0o644)
+    const t = Date.now()
+    await expect(new Engine(dir, join(dir, 'models'), { fetchFn: down, platform: 'linux' }).start()).rejects.toThrow(/Could not start the AI engine \(EACCES\)/)
+    expect(Date.now() - t).toBeLessThan(3000)
+  }, 8000)
+
+  it('an engine that dies at once says what it printed', async () => {
+    script('#!/bin/sh\necho "address already in use" >&2\nexit 1\n')
+    await expect(new Engine(dir, join(dir, 'models'), { fetchFn: down, platform: 'linux' }).start()).rejects.toThrow(/stopped right after starting\. address already in use/)
+  }, 8000)
+
+  it('two overlapping starts spawn one engine', async () => {
+    const count = join(dir, 'count')
+    script(`#!/bin/sh\necho x >> ${count}\nexec sleep 5\n`)
+    let up = false
+    setTimeout(() => (up = true), 1200)
+    const f = async () => (up ? new Response(JSON.stringify({ version: '1' })) : new Response('', { status: 500 }))
+    const e = new Engine(dir, join(dir, 'models'), { fetchFn: f, platform: 'linux' })
+    const a = e.start()
+    await new Promise((r) => setTimeout(r, 300))
+    await Promise.all([a, e.start()])
+    expect(readFileSync(count, 'utf8').trim().split('\n')).toHaveLength(1)
+    expect((await e.status()).state).toBe('ready-managed')
+    e.stop()
+  }, 8000)
 })

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { CATALOG, rank, sortByQuality } from './catalog'
 import { searchHF } from './hf'
 import { PullTracker } from './pull'
-import { fitFor, parseNvidiaSmi } from './system'
+import { fitFor, parseNvidiaSmi, remoteSystem, withLoadedVram } from './system'
 
 const laptop = { ramGB: 30, gpu: { name: 'RTX 5070 Laptop', vramGB: 8, freeGB: 5.82 } }
 const desktop = { ramGB: 48, gpu: { name: 'RTX 3090 Ti', vramGB: 24, freeGB: 23 } }
@@ -88,6 +88,16 @@ describe('PullTracker', () => {
     expect(t.update('')).toBeNull()
     expect(t.update(L({ error: 'pull model manifest: file does not exist' }))).toMatchObject({ done: true, error: 'pull model manifest: file does not exist' })
   })
+  it('a resumed pull does not count bytes from earlier runs as speed', () => {
+    const t = new PullTracker()
+    t.update(L({ status: 'pulling manifest' }), 0)
+    const first = t.update(L({ status: 'pulling a', digest: 'a', total: 4_400_000_000, completed: 4_400_000_000 }), 100)!
+    t.update(L({ status: 'pulling b', digest: 'b', total: 300_000_000, completed: 0 }), 100)
+    const later = t.update(L({ status: 'pulling b', digest: 'b', total: 300_000_000, completed: 50_000_000 }), 1100)!
+    expect(first.bytesPerSec).toBe(0)
+    expect(later.bytesPerSec).toBeCloseTo(50_000_000 / 1.1, -4) // only what arrived in this run
+    expect(later.percent).toBe(94) // progress still counts everything on disk
+  })
   it('never reports 100% before the server says it is done', () => {
     const t = new PullTracker()
     expect(t.update(L({ status: 'pulling x', digest: 'x', total: 10, completed: 10 }), 0)!.percent).toBe(99)
@@ -124,5 +134,25 @@ describe('sortByQuality', () => {
     expect(sortByQuality(['llama3.2:3b', 'qwen3.5:9b:latest'])[0]).toBe('qwen3.5:9b:latest') // :latest still finds the catalog entry
     expect(sortByQuality(['qwen3.5:9b', 'gemma4:12b'])).toEqual(['gemma4:12b', 'qwen3.5:9b']) // equal rank: alphabetical, so the order never jumps around
     expect(sortByQuality(['b-unknown', 'a-unknown'])).toEqual(['a-unknown', 'b-unknown'])
+  })
+})
+
+describe('fit for the engine that will run the model', () => {
+  const ranked = (s: Parameters<typeof rank>[0]) => rank(s).filter((m) => m.best).map((m) => m.id)
+  it('video memory held by the model Ollama keeps loaded counts as free', () => {
+    const idle = ranked(laptop)
+    const held = { ...laptop, gpu: { ...laptop.gpu, freeGB: 0.22 } } // nvidia-smi right after a chat with qwen3:8b
+    expect(fitFor(5.2, held)).toBe('partial')
+    const busy = withLoadedVram(held, [{ vramGB: 5.6 }])
+    expect(fitFor(5.2, busy)).toBe('gpu')
+    expect(ranked(busy)).toEqual(idle)
+    expect(withLoadedVram(laptop, [{ vramGB: 99 }]).gpu!.freeGB).toBe(8) // never more than the card has
+    expect(withLoadedVram({ gpu: null }, [{ vramGB: 5 }]).gpu).toBeNull()
+  })
+  it('a remote engine is rated on its card alone, since its RAM is unknown', () => {
+    const r = remoteSystem(24)
+    expect(fitFor(17, r)).toBe('gpu')
+    expect(fitFor(30, r)).toBe('too-big') // never "partial" or "cpu" on this computer's RAM
+    expect(rank(remoteSystem(12)).every((m) => m.fit === 'gpu' || m.fit === 'too-big')).toBe(true)
   })
 })

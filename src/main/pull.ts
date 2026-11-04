@@ -2,7 +2,8 @@
 export type PullProgress = { status: string; completed: number; total: number; percent: number; bytesPerSec: number; done: boolean; error?: string }
 
 export class PullTracker {
-  private layers = new Map<string, { total: number; completed: number }>()
+  // `base` is what a layer already had on disk when it first showed up (a resumed pull), so only bytes received now count towards speed
+  private layers = new Map<string, { total: number; completed: number; base: number }>()
   private samples: { t: number; bytes: number }[] = []
 
   update(line: string, now = Date.now()): PullProgress | null {
@@ -14,15 +15,16 @@ export class PullTracker {
       return null
     }
     if (j.error) return { status: j.error, completed: 0, total: 0, percent: 0, bytesPerSec: 0, done: true, error: j.error }
-    if (j.digest && typeof j.total === 'number') this.layers.set(j.digest, { total: j.total, completed: j.completed ?? 0 })
+    if (j.digest && typeof j.total === 'number') this.layers.set(j.digest, { total: j.total, completed: j.completed ?? 0, base: this.layers.get(j.digest)?.base ?? j.completed ?? 0 })
     let completed = 0
     let total = 0
-    for (const l of this.layers.values()) (completed += l.completed), (total += l.total)
+    let received = 0
+    for (const l of this.layers.values()) (completed += l.completed), (total += l.total), (received += l.completed - l.base)
     // speed over the last few seconds, not since the start, so it reacts when the network slows down
-    this.samples.push({ t: now, bytes: completed })
+    this.samples.push({ t: now, bytes: received })
     while (this.samples.length > 2 && now - this.samples[0].t > 6000) this.samples.shift()
     const first = this.samples[0]
-    const bps = now > first.t ? Math.max(0, ((completed - first.bytes) / (now - first.t)) * 1000) : 0
+    const bps = now > first.t ? Math.max(0, ((received - first.bytes) / (now - first.t)) * 1000) : 0
     const done = j.status === 'success'
     return { status: j.status ?? '', completed, total, percent: done ? 100 : total ? Math.min(99, Math.floor((completed / total) * 100)) : 0, bytesPerSec: bps, done }
   }

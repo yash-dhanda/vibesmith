@@ -1,5 +1,5 @@
 import { app, safeStorage } from 'electron'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 export type KeyProvider = 'anthropic' | 'openai' | 'openrouter'
@@ -7,12 +7,26 @@ export const KEY_PROVIDERS: KeyProvider[] = ['anthropic', 'openai', 'openrouter'
 
 // Keys live encrypted with the OS keychain (safeStorage). The renderer can set, clear and ask "is there one"; it can never read one back.
 const file = () => join(app.getPath('userData'), 'keys.json')
+// A missing file means no keys yet. A file that cannot be read throws, so setKey/clearKey never write over keys that are still there;
+// a file that is not valid JSON is moved aside (it could not be read anyway) and the store starts empty.
 const load = (): Record<string, string> => {
+  let text: string
   try {
-    return JSON.parse(readFileSync(file(), 'utf8'))
-  } catch {
-    return {}
+    text = readFileSync(file(), 'utf8')
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return {}
+    throw e
   }
+  try {
+    const j = JSON.parse(text) as unknown
+    if (j && typeof j === 'object' && !Array.isArray(j)) return j as Record<string, string>
+  } catch {
+    /* fall through: not JSON */
+  }
+  try {
+    renameSync(file(), `${file()}.bad-${Date.now()}`)
+  } catch {}
+  return {}
 }
 
 function canStore(): boolean {
@@ -38,9 +52,9 @@ export function clearKey(p: KeyProvider) {
 }
 
 export function getKey(p: KeyProvider): string | null {
-  const v = load()[p]
-  if (!v) return null
   try {
+    const v = load()[p]
+    if (typeof v !== 'string' || !v) return null
     return safeStorage.decryptString(Buffer.from(v, 'base64'))
   } catch {
     return null // keychain changed or file copied from another machine

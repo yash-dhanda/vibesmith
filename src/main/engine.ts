@@ -2,6 +2,8 @@ import { spawn, execFile, type ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { chmodSync, createReadStream, createWriteStream, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { patientFetch } from './net'
 import { getHost } from './ollamaHost'
 
@@ -109,74 +111,97 @@ export class Engine {
     rmSync(dl, { recursive: true, force: true })
     mkdirSync(dl, { recursive: true })
     const file = join(dl, asset.name)
+    const noSpace = 'Not enough disk space for the AI engine. Free some space and try again.'
 
-    // download
-    const res = await this.f(asset.browser_download_url, { signal, headers: { 'user-agent': 'forge-app' } })
-    if (!res.ok || !res.body) throw new Error(`The download failed (${res.status}).`)
-    const total = Number(res.headers.get('content-length')) || asset.size
-    const out = createWriteStream(file + '.part')
-    let got = 0
-    let last = { t: Date.now(), n: 0 }
-    let bps = 0
+    // Whatever goes wrong from here on, the half-finished archive must not stay behind (it is ~1.5 GB).
     try {
-      for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
-        if (!out.write(chunk)) await new Promise((r) => out.once('drain', r))
-        got += chunk.length
-        const now = Date.now()
-        if (now - last.t >= 500) {
-          bps = ((got - last.n) / (now - last.t)) * 1000
-          last = { t: now, n: got }
-          onProgress({ phase: 'download', done: got, total, bytesPerSec: bps })
+      // download
+      const res = await this.f(asset.browser_download_url, { signal, headers: { 'user-agent': 'forge-app' } })
+      if (!res.ok || !res.body) throw new Error(`The download failed (${res.status}).`)
+      const total = Number(res.headers.get('content-length')) || asset.size
+      let got = 0
+      let last = { t: Date.now(), n: 0 }
+      const count = async function* (src: AsyncIterable<Uint8Array>) {
+        for await (const chunk of src) {
+          got += chunk.length
+          const now = Date.now()
+          if (now - last.t >= 500) {
+            const bps = ((got - last.n) / (now - last.t)) * 1000
+            last = { t: now, n: got }
+            onProgress({ phase: 'download', done: got, total, bytesPerSec: bps })
+          }
+          yield chunk
         }
       }
+      try {
+        await pipeline(Readable.fromWeb(res.body as never), count, createWriteStream(file + '.part'), { signal })
+      } catch (e) {
+        if (signal.aborted) throw e // the caller treats this as the user's own Cancel
+        throw new Error((e as NodeJS.ErrnoException).code === 'ENOSPC' ? noSpace : 'The download was interrupted. Try again.')
+      }
+      renameSync(file + '.part', file)
+      onProgress({ phase: 'download', done: got, total: got })
+
+      // verify: the release lists a SHA-256 for each file
+      onProgress({ phase: 'verify', done: 0, total: 1 })
+      const want = expectedDigest(asset)
+      if (want && (await sha256File(file)) !== want) throw new Error('The download is corrupt (its checksum does not match). Nothing was installed. Try again.')
+
+      // extract
+      onProgress({ phase: 'extract', done: 0, total: 1 })
+      rmSync(this.binDir(), { recursive: true, force: true })
+      mkdirSync(this.binDir(), { recursive: true })
+      const { cmd, args } = extractCommand(file, this.binDir())
+      await new Promise<void>((resolve, reject) =>
+        execFile(cmd, args, { timeout: 300_000, windowsHide: true }, (err, _o, stderr) => {
+          if (!err) return resolve()
+          const why = String(stderr || err.message).trim().slice(-300)
+          // tar names zstd in its error whenever it cannot run it; a damaged archive also mentions zstd, so match the "cannot run" wording
+          if (asset.name.endsWith('.zst') && /cannot exec|can't launch|not found/i.test(why)) return reject(new Error('Could not unpack the download. The zstd tool is needed on Linux: install the "zstd" package.'))
+          if (/no space left/i.test(why)) return reject(new Error(noSpace))
+          reject(new Error(`Could not unpack the download: ${why}`))
+        }),
+      )
+      const bin = this.binary()
+      if (!bin) throw new Error('The download did not contain the Ollama program.')
+      if (this.platform !== 'win32') chmodSync(bin, 0o755)
     } finally {
-      await new Promise<void>((r) => out.end(r))
-    }
-    renameSync(file + '.part', file)
-    onProgress({ phase: 'download', done: got, total: got })
-
-    // verify: the release lists a SHA-256 for each file
-    onProgress({ phase: 'verify', done: 0, total: 1 })
-    const want = expectedDigest(asset)
-    if (want && (await sha256File(file)) !== want) {
       rmSync(dl, { recursive: true, force: true })
-      throw new Error('The download is corrupt (its checksum does not match). Nothing was installed. Try again.')
     }
-
-    // extract
-    onProgress({ phase: 'extract', done: 0, total: 1 })
-    rmSync(this.binDir(), { recursive: true, force: true })
-    mkdirSync(this.binDir(), { recursive: true })
-    const { cmd, args } = extractCommand(file, this.binDir())
-    await new Promise<void>((resolve, reject) =>
-      execFile(cmd, args, { timeout: 300_000, windowsHide: true }, (err, _o, stderr) =>
-        err ? reject(new Error(asset.name.endsWith('.zst') ? 'Could not unpack the download. The zstd tool is needed on Linux: install the "zstd" package.' : `Could not unpack the download: ${stderr || err.message}`)) : resolve(),
-      ),
-    )
-    const bin = this.binary()
-    if (!bin) throw new Error('The download did not contain the Ollama program.')
-    if (this.platform !== 'win32') chmodSync(bin, 0o755)
-    rmSync(dl, { recursive: true, force: true })
     onProgress({ phase: 'done', done: 1, total: 1 })
   }
 
-  // Starts the installed copy and waits until it answers.
-  async start(): Promise<void> {
+  // Starts the installed copy and waits until it answers. Overlapping calls (launch and the Start button) share one run.
+  private starting: Promise<void> | null = null
+  start(): Promise<void> {
+    return (this.starting ??= this.doStart().finally(() => (this.starting = null)))
+  }
+
+  private async doStart(): Promise<void> {
     if (await this.version()) return
     const bin = this.binary()
     if (!bin) throw new Error('The AI engine is not installed.')
     mkdirSync(this.modelsDir, { recursive: true })
     const port = new URL(this.host).host
-    this.child = spawn(bin, ['serve'], {
+    const child = (this.child = spawn(bin, ['serve'], {
       env: { ...process.env, OLLAMA_HOST: port, OLLAMA_MODELS: this.modelsDir, OLLAMA_FLASH_ATTENTION: '1', OLLAMA_KV_CACHE_TYPE: 'q8_0' },
-      stdio: 'ignore',
+      stdio: ['ignore', 'ignore', 'pipe'],
       windowsHide: true,
-    })
+    }))
     let exited = false
-    this.child.on('exit', () => (exited = true))
+    const fail: { err?: NodeJS.ErrnoException } = {}
+    let tail = '' // the engine's last words, shown if it dies at once
+    child.stderr?.on('data', (d) => (tail = (tail + d).slice(-400)))
+    child.on('exit', () => (exited = true))
+    child.on('error', (e) => ((fail.err = e), (exited = true)))
     for (let i = 0; i < 80; i++) {
       if (await this.version()) return
-      if (exited) throw new Error('The AI engine stopped right after starting.')
+      if (exited) {
+        if (this.child === child) this.child = null
+        if (fail.err) throw new Error(`Could not start the AI engine (${fail.err.code ?? fail.err.message}).`)
+        const why = tail.trim().split('\n').slice(-3).join(' ')
+        throw new Error(`The AI engine stopped right after starting.${why ? ` ${why}` : ''}`)
+      }
       await new Promise((r) => setTimeout(r, 500))
     }
     this.stop()

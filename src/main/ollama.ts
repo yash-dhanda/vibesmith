@@ -5,7 +5,7 @@ type Fetch = (url: string, init?: { signal?: AbortSignal }) => Promise<{ json():
 export type OllamaStatus = {
   up: boolean
   models: string[]
-  loaded: { name: string; gpuPercent: number }[] // models in memory right now, and how much of each sits in video memory
+  loaded: { name: string; gpuPercent: number; vramGB: number }[] // models in memory right now, and how much of each sits in video memory
 }
 
 export async function ollamaStatus(host = getHost(), f: Fetch = (u, i) => fetch(u, i)): Promise<OllamaStatus> {
@@ -14,7 +14,7 @@ export async function ollamaStatus(host = getHost(), f: Fetch = (u, i) => fetch(
     let loaded: OllamaStatus['loaded'] = []
     try {
       const ps = (await (await f(`${host}/api/ps`, { signal: AbortSignal.timeout(2000) })).json()) as { models?: { name: string; size: number; size_vram: number }[] }
-      loaded = (ps.models ?? []).map((m) => ({ name: m.name, gpuPercent: m.size > 0 ? Math.round((m.size_vram / m.size) * 100) : 0 }))
+      loaded = (ps.models ?? []).map((m) => ({ name: m.name, gpuPercent: m.size > 0 ? Math.round((m.size_vram / m.size) * 100) : 0, vramGB: (m.size_vram || 0) / 1024 ** 3 }))
     } catch {
       // older servers have no /api/ps: the GPU question simply stays unanswered
     }

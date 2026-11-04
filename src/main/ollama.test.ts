@@ -10,7 +10,7 @@ const server = (routes: Record<string, unknown>) => async (url: string) => {
 describe('ollamaStatus', () => {
   it('lists models and how much of each loaded model is on the GPU', async () => {
     const s = await ollamaStatus('http://x', server({ '/api/tags': { models: [{ name: 'qwen3:8b' }, { name: 'llama3:8b' }] }, '/api/ps': { models: [{ name: 'qwen3:8b', size: 6_000, size_vram: 3_000 }] } }))
-    expect(s).toEqual({ up: true, models: ['qwen3:8b', 'llama3:8b'], loaded: [{ name: 'qwen3:8b', gpuPercent: 50 }] })
+    expect(s).toEqual({ up: true, models: ['qwen3:8b', 'llama3:8b'], loaded: [{ name: 'qwen3:8b', gpuPercent: 50, vramGB: 3_000 / 1024 ** 3 }] })
     expect(runsOnCpu(s)).toBe(false)
   })
   it('flags a model that runs entirely on the CPU', async () => {

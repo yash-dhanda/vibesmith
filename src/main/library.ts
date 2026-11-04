@@ -7,7 +7,7 @@ import { searchHF } from './hf'
 import { patientFetch } from './net'
 import { ollamaStatus, runsOnCpu } from './ollama'
 import { PullTracker } from './pull'
-import { systemInfo, type SystemInfo } from './system'
+import { remoteSystem, systemInfo, withLoadedVram, type SystemInfo } from './system'
 import { getHost, isRemote, normalizeHost, remoteVramGB, setHost } from './ollamaHost'
 
 // Model names go to the local engine only, but they still come from the screen: keep to what a model name can contain.
@@ -24,7 +24,11 @@ export function registerLibrary(getWin: () => BrowserWindow | null) {
   let installing: AbortController | null = null
   const pulls = new Map<string, AbortController>()
   let sys: SystemInfo | null = null
-  const system = async () => (sys = await systemInfo(data))
+  const system = async () => {
+    const s = await systemInfo(data)
+    if (s.gpu) sys = s // a missed nvidia-smi (driver busy, slow start) is asked again next time, not kept for the session
+    return s
+  }
 
   ipcMain.handle('engine:status', async () => {
     const st = await engine.status()
@@ -61,6 +65,8 @@ export function registerLibrary(getWin: () => BrowserWindow | null) {
       await engine.install((p) => send('engine:progress', p), installing.signal)
       send('engine:progress', { phase: 'start', done: 0, total: 1 })
       await engine.start()
+    } catch (e) {
+      if (!installing?.signal.aborted) throw e // the user's own Cancel is not an error
     } finally {
       installing = null
       send('engine:changed')
@@ -78,8 +84,7 @@ export function registerLibrary(getWin: () => BrowserWindow | null) {
   ipcMain.handle('models:catalog', async () => {
     const [s, st] = await Promise.all([sys ?? system(), ollamaStatus(engine.host)])
     const have = new Set(st.models.flatMap((m) => [m, m.replace(/:latest$/, '')]))
-    // A remote engine's card is not ours: rate models against the memory the user gave for it.
-    const target = isRemote() ? { ...s, gpu: { name: 'Remote GPU', vramGB: remoteVramGB(), freeGB: remoteVramGB() } } : s
+    const target = isRemote() ? remoteSystem(remoteVramGB()) : withLoadedVram(s, st.loaded)
     return rank(target).map((m) => ({ ...m, installed: have.has(m.id) }))
   })
 
@@ -127,13 +132,13 @@ export function registerLibrary(getWin: () => BrowserWindow | null) {
           const p = tracker.update(line)
           if (!p) continue
           send('models:progress', { name, ...p })
-          if (p.error) throw new Error(p.error)
+          if (p.error) return // the progress event above already carries the error; throwing too would show it twice
         }
       }
       send('models:changed')
     } catch (e) {
       if (ctl.signal.aborted) send('models:progress', { name, status: 'cancelled', completed: 0, total: 0, percent: 0, bytesPerSec: 0, done: true, cancelled: true })
-      else throw e
+      else throw e instanceof TypeError && e.message === 'terminated' ? new Error('The engine stopped during the download.') : e
     } finally {
       pulls.delete(name)
     }
