@@ -24,7 +24,7 @@ export type RemoteDeps = {
   bind?: string // tests: where to listen
 }
 
-const BLOCKED = (c: string) => c.startsWith('remote:') || c === 'project:pick' || c === 'app:open-data' || c === 'team:history-open'
+const BLOCKED = (c: string) => c.startsWith('remote:') || c === 'project:pick' || c === 'app:open-data' || c === 'team:history-open' || c === 'team:export-report'
 const MIME: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf', '.map': 'application/json', '.webmanifest': 'application/manifest+json' }
 const brotli = promisify(brotliCompress)
 const gz = promisify(gzip)
@@ -277,7 +277,7 @@ export class RemoteServer {
       let msg: { calls?: { c?: unknown; a?: unknown }[] }
       try { msg = await this.body(req) } catch { return void this.json(res, 400, { error: 'bad request' }) }
       const calls = Array.isArray(msg.calls) ? msg.calls.slice(0, 40) : []
-      const event = { sender: { send: (ch: string, ...a: unknown[]) => this.broadcast(ch, a), isDestroyed: () => false } }
+      const event = { sender: { send: (ch: string, ...a: unknown[]) => this.broadcast(ch, a), isDestroyed: () => false }, remote: true }
       const results = await Promise.all(calls.map(async (call) => {
         const c = typeof call?.c === 'string' ? call.c : ''
         if (!c || BLOCKED(c)) return { ok: false, error: 'This action is only available on the computer.' }
@@ -295,7 +295,7 @@ export class RemoteServer {
       const args = Array.isArray(msg.a) ? msg.a : []
       if (!c || BLOCKED(c)) return void this.json(res, 403, { ok: false, error: 'This action is only available on the computer.' })
       const sender = { send: (ch: string, ...a: unknown[]) => this.broadcast(ch, a), isDestroyed: () => false }
-      const event = { sender }
+      const event = { sender, remote: true }
       if (url.pathname === '/send') {
         for (const fn of this.d.listeners.get(c) ?? []) try { fn(event, ...args) } catch {}
         return void this.json(res, 200, { ok: true })

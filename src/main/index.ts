@@ -439,8 +439,8 @@ ipcMain.handle('agent:send', async (e, p: { chatId: string; text: string; attach
   const git = await hasGit()
   if (git && !(await isRepo(root))) {
     if (readdirSync(root).length === 0) await initRepo(root)
-    else if (!(readState().noUndo ?? []).includes(root)) {
-      const r = await dialog.showMessageBox(BrowserWindow.fromWebContents(e.sender)!, {
+    else if (!(e as { remote?: boolean }).remote && !(readState().noUndo ?? []).includes(root)) { // a phone cannot answer a dialog on the computer: it runs without undo
+      const r = await dialog.showMessageBox(BrowserWindow.fromWebContents(e.sender) ?? win!, {
         type: 'question', buttons: ['Turn on undo', 'Not for this folder'], defaultId: 0, cancelId: 1,
         message: 'Turn on undo for this folder?',
         detail: 'Forge keeps a private snapshot of your files before each run so you can undo anything it changes. This adds a hidden .git folder here and does not touch your files.',
@@ -732,7 +732,7 @@ ipcMain.handle('team:settings-set', (_e, cfg: unknown) => {
 ipcMain.handle('team:export-report', async (e, id: unknown) => {
   const run = teamSvc().orch.get(teamId(id))
   if (!run?.final) throw new Error('This run has no report yet.')
-  const r = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender)!, { defaultPath: join(run.project, 'TEAM-REPORT.md'), filters: [{ name: 'Markdown', extensions: ['md'] }] })
+  const r = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender) ?? win!, { defaultPath: join(run.project, 'TEAM-REPORT.md'), filters: [{ name: 'Markdown', extensions: ['md'] }] })
   if (r.canceled || !r.filePath) return null
   writeFileSync(r.filePath, run.final.report)
   return r.filePath

@@ -16,7 +16,7 @@ async function boot() {
   const preloadFile = join(dir, 'preload.mjs')
   writeFileSync(preloadFile, 'import { contextBridge, ipcRenderer } from "electron";\ncontextBridge.exposeInMainWorld("forge", { hello: (n) => ipcRenderer.invoke("hello", n) });')
   const sent: unknown[][] = []
-  const handlers = new Map<string, (e: any, ...a: any[]) => unknown>([['hello', (_e, n) => `hi ${n}`], ['boom', () => { throw new Error('nope') }], ['project:pick', () => 'x'], ['ping', (e) => { e.sender.send('pong', 1) }], ['bytes', (_e, files: any) => files.map((f: any) => `${f.name}:${f.data instanceof Uint8Array}:${f.data.length}`)]])
+  const handlers = new Map<string, (e: any, ...a: any[]) => unknown>([['hello', (_e, n) => `hi ${n}`], ['boom', () => { throw new Error('nope') }], ['project:pick', () => 'x'], ['team:export-report', () => 'x'], ['who', (e: any) => e.remote === true], ['ping', (e) => { e.sender.send('pong', 1) }], ['bytes', (_e, files: any) => files.map((f: any) => `${f.name}:${f.data instanceof Uint8Array}:${f.data.length}`)]])
   const listeners = new Map<string, ((e: any, ...a: any[]) => void)[]>([['note', [(_e, ...a) => { sent.push(a) }]]])
   srv = new RemoteServer({ dir, rendererDir, preloadFile, handlers, listeners, bind: '127.0.0.1' })
   await srv.start(0)
@@ -51,6 +51,8 @@ describe('remote access', () => {
     expect(await (await rpc(t.base, cookie, 'hello', ['phone'])).json()).toEqual({ ok: true, result: 'hi phone' })
     expect(await (await rpc(t.base, cookie, 'boom')).json()).toEqual({ ok: false, error: 'nope' })
     expect((await rpc(t.base, cookie, 'project:pick')).status).toBe(403)
+    expect((await rpc(t.base, cookie, 'team:export-report')).status).toBe(403)
+    expect(await (await rpc(t.base, cookie, 'who')).json()).toEqual({ ok: true, result: true }) // handlers can tell the call came from a phone
     expect((await rpc(t.base, cookie, 'remote:set')).status).toBe(403)
     expect((await rpc(t.base, cookie, 'missing')).status).toBe(404)
     const html = await (await fetch(`${t.base}/`, { headers: { cookie } })).text()
