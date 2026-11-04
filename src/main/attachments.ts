@@ -24,6 +24,17 @@ const isText = (b: Uint8Array) => {
   }
 }
 
+// What the bytes really are. A picture saved under the wrong extension (a WebP named .jpg) would reach the model with the
+// wrong media type and be refused, so the type comes from the bytes and the extension is corrected to match.
+function sniffImage(b: Uint8Array): string | null {
+  const at = (o: number, s: string) => [...s].every((c, i) => b[o + i] === c.charCodeAt(0))
+  if (b[0] === 0x89 && at(1, 'PNG')) return 'png'
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'jpg'
+  if (at(0, 'GIF8')) return 'gif'
+  if (at(0, 'RIFF') && at(8, 'WEBP')) return 'webp'
+  return null
+}
+
 export class AttachmentStore {
   constructor(private dir: string) {}
 
@@ -40,11 +51,14 @@ export class AttachmentStore {
     const out: { att: Attachment; data: Uint8Array }[] = []
     for (const f of files) {
       const name = safeName(String(f?.name ?? ''))
-      const data = f?.data instanceof Uint8Array ? f.data : new Uint8Array(0)
-      const mime = IMAGE_MIME[extname(name).slice(1).toLowerCase()]
-      if (mime) {
+      if (!(f?.data instanceof Uint8Array)) throw new Error(`${name} could not be read.`) // never store it as an empty file
+      const data = f.data
+      if (IMAGE_MIME[extname(name).slice(1).toLowerCase()]) {
         if (data.length > MAX_IMAGE) throw new Error(`${name} is too big (pictures up to 15 MB).`)
-        out.push({ att: { id: randomUUID().slice(0, 10), name, kind: 'image', size: data.length, mime }, data })
+        const real = sniffImage(data)
+        if (!real) throw new Error(`${name} is not a valid picture (png, jpg, gif or webp).`)
+        const fixed = IMAGE_MIME[extname(name).slice(1).toLowerCase()] === IMAGE_MIME[real] ? name : `${name.slice(0, name.length - extname(name).length)}.${real}`
+        out.push({ att: { id: randomUUID().slice(0, 10), name: fixed, kind: 'image', size: data.length, mime: IMAGE_MIME[real] }, data })
       } else if (isText(data)) {
         if (data.length > MAX_TEXT) throw new Error(`${name} is too big (text files up to 1 MB).`)
         out.push({ att: { id: randomUUID().slice(0, 10), name, kind: 'text', size: data.length, mime: 'text/plain' }, data })

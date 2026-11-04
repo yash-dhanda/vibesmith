@@ -18,11 +18,21 @@ export class BriefStore {
   constructor(private file: string) {}
 
   private all(): Record<string, Brief> {
+    let raw: string
     try {
-      return JSON.parse(readFileSync(this.file, 'utf8'))
+      raw = readFileSync(this.file, 'utf8')
     } catch {
-      return {}
+      return {} // no file yet
     }
+    try {
+      const v = JSON.parse(raw)
+      if (v && typeof v === 'object' && !Array.isArray(v)) return v
+    } catch {}
+    // Unreadable: the next save would replace every project's brief with one. Keep what is left beside it instead.
+    try {
+      renameSync(this.file, this.file + '.corrupt')
+    } catch {}
+    return {}
   }
 
   get(root: string): Brief {

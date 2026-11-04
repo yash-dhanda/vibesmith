@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -39,5 +39,15 @@ describe('BriefStore', () => {
     const file = join(mkdtempSync(join(tmpdir(), 'forge-brief-')), 'b.json')
     new BriefStore(file).set('/p/x', { revision: 0, name: 'kept' })
     expect(new BriefStore(file).get('/p/x').name).toBe('kept')
+  })
+
+  it.each(['{"/p/a":{"name":"cut', 'null', '[]'])('an unreadable file (%j) is set aside, not overwritten by the next save', (bad) => {
+    const file = join(mkdtempSync(join(tmpdir(), 'forge-brief-')), 'b.json')
+    writeFileSync(file, bad)
+    const s = new BriefStore(file)
+    expect(s.set('/p/b', { revision: 0, name: 'B' }).conflict).toBe(false)
+    expect(readFileSync(file + '.corrupt', 'utf8')).toBe(bad)
+    expect(s.get('/p/b').name).toBe('B')
+    expect(existsSync(file + '.tmp')).toBe(false)
   })
 })

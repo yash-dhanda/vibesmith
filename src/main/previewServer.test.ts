@@ -24,6 +24,27 @@ const get = async (path: string, headers?: Record<string, string>) => {
 }
 
 describe('PreviewServer', () => {
+  it('two starts in the same tick share one server', async () => {
+    const [a, b] = await Promise.all([srv.start(), srv.start()])
+    expect(a).toBe(b)
+    expect((await get('/')).status).toBe(200)
+    expect(srv.url).toBe(a)
+    expect((await fetch(a)).status).toBe(200)
+  })
+
+  it('a request that arrives after stop is refused instead of throwing', async () => {
+    await srv.start()
+    const rejections: unknown[] = []
+    const on = (e: unknown) => rejections.push(e)
+    process.on('unhandledRejection', on)
+    const handle = (srv as unknown as { handle: (u: string, h: string, r: unknown) => Promise<void> }).handle.bind(srv)
+    srv.stop()
+    const res = { writeHead: () => ({ end: () => {} }) }
+    await handle('/', '127.0.0.1:1', res)
+    process.off('unhandledRejection', on)
+    expect(rejections).toEqual([])
+  })
+
   it('refuses to start without an index.html', async () => {
     writeFileSync(join(dir, 'index.html'), '')
     const empty = new PreviewServer(mkdtempSync(join(tmpdir(), 'forge-empty-')))
@@ -58,5 +79,22 @@ describe('PreviewServer', () => {
       })
     })
     expect(r).toBe(403)
+  })
+
+  it('stop() during start() does not leave a server listening', async () => {
+    const starting = srv.start()
+    srv.stop()
+    await expect(starting).rejects.toThrow(/stopped/)
+    expect(srv.url).toBe('')
+    expect(await srv.start()).toMatch(/^http/) // and it can be started again afterwards
+  })
+
+  it('redirects a folder to its trailing-slash form so relative links work, without leaking dot folders', async () => {
+    await srv.start()
+    mkdirSync(join(dir, '.git'))
+    const r = await fetch(srv.url + 'sub?x=1', { redirect: 'manual' })
+    expect(r.status).toBe(301)
+    expect(r.headers.get('location')).toBe('./sub/?x=1')
+    expect((await fetch(srv.url + '.git', { redirect: 'manual' })).status).toBe(404)
   })
 })

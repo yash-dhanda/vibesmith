@@ -6,24 +6,35 @@ import { AttachmentStore, inlineText } from './attachments'
 
 const store = () => new AttachmentStore(mkdtempSync(join(tmpdir(), 'forge-att-')))
 const bytes = (s: string) => new TextEncoder().encode(s)
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3])
 
 describe('AttachmentStore', () => {
   it('stores pictures and text files, finds them by id, and cleans names', () => {
     const s = store()
-    const [img, txt] = s.add('chat1', [{ name: '../shot one.PNG', data: new Uint8Array([1, 2, 3]) }, { name: 'notes.md', data: bytes('# hi') }])
-    expect(img).toMatchObject({ name: 'shot_one.PNG', kind: 'image', mime: 'image/png', size: 3 })
+    const [img, txt] = s.add('chat1', [{ name: '../shot one.PNG', data: PNG }, { name: 'notes.md', data: bytes('# hi') }])
+    expect(img).toMatchObject({ name: 'shot_one.PNG', kind: 'image', mime: 'image/png', size: PNG.length })
     expect(txt).toMatchObject({ name: 'notes.md', kind: 'text' })
     const f = s.find('chat1', txt.id)!
     expect(f.name).toBe('notes.md')
     expect(s.text(f)).toEqual({ text: '# hi', cut: false })
-    expect(s.dataUrl(s.find('chat1', img.id)!)).toBe('data:image/png;base64,AQID')
+    expect(s.dataUrl(s.find('chat1', img.id)!)).toBe('data:image/png;base64,' + Buffer.from(PNG).toString('base64'))
   })
   it('refuses binary files that are not pictures, huge files and too many files, storing nothing', () => {
     const s = store()
-    expect(() => s.add('c', [{ name: 'a.png', data: bytes('ok') }, { name: 'tool.exe', data: new Uint8Array([0, 1, 2]) }])).toThrow(/not a picture or a text file/)
+    expect(() => s.add('c', [{ name: 'a.png', data: PNG }, { name: 'tool.exe', data: new Uint8Array([0, 1, 2]) }])).toThrow(/not a picture or a text file/)
     expect(s.find('c', 'anything')).toBeNull()
     expect(() => s.add('c', [{ name: 'big.txt', data: new Uint8Array(1024 * 1024 + 1).fill(97) }])).toThrow(/too big/)
     expect(() => s.add('c', Array.from({ length: 9 }, () => ({ name: 'a.txt', data: bytes('x') })))).toThrow(/up to 8/)
+  })
+  it('types a picture by its bytes, fixes a wrong extension, and refuses fake pictures and unreadable data', () => {
+    const s = store()
+    const webp = new Uint8Array([...bytes('RIFF'), 0, 0, 0, 0, ...bytes('WEBP')])
+    const [a] = s.add('c', [{ name: 'saved.jpg', data: webp }])
+    expect(a).toMatchObject({ name: 'saved.webp', mime: 'image/webp' })
+    expect(s.find('c', a.id)).toMatchObject({ kind: 'image', mime: 'image/webp' })
+    expect(() => s.add('c', [{ name: 'error.png', data: bytes('<html>nope</html>') }])).toThrow(/not a valid picture/)
+    expect(() => s.add('c', [{ name: 'empty.png', data: new Uint8Array(0) }])).toThrow(/not a valid picture/)
+    expect(() => s.add('c', [{ name: 'a.txt', data: new ArrayBuffer(10) as unknown as Uint8Array }])).toThrow(/could not be read/)
   })
   it('keeps one chat out of another and rejects bad ids', () => {
     const s = store()

@@ -19,16 +19,29 @@ export class PreviewServer {
   private server: Server | null = null
   private clients = new Set<ServerResponse>()
   private timer: NodeJS.Timeout | null = null
+  private starting: Promise<string> | null = null // two start() calls in one tick must share one server
+  private epoch = 0 // bumped by stop(), so a start() still in flight can tell it was cancelled
   url = ''
 
   constructor(private root: string) {}
 
-  async start(): Promise<string> {
-    if (this.server) return this.url
+  start(): Promise<string> {
+    if (this.server) return Promise.resolve(this.url)
+    if (this.starting) return this.starting
+    const p: Promise<string> = this.listen().finally(() => this.starting === p && (this.starting = null))
+    return (this.starting = p)
+  }
+
+  private async listen(): Promise<string> {
+    const epoch = this.epoch
     const entry = await stat(join(this.root, 'index.html')).catch(() => null)
     if (!entry?.isFile()) throw new Error('Nothing to preview yet: this project has no index.html.')
     const server = createServer((req, res) => void this.handle(req.url ?? '/', req.headers.host ?? '', res))
     await new Promise<void>((ok, fail) => server.once('error', fail).listen(0, '127.0.0.1', ok))
+    if (epoch !== this.epoch) { // stop() ran while we were starting: nobody holds this server any more, so it would listen forever
+      server.close()
+      throw new Error('The preview was stopped.')
+    }
     this.server = server
     this.url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`
     return this.url
@@ -44,6 +57,8 @@ export class PreviewServer {
   }
 
   stop() {
+    this.epoch++
+    this.starting = null
     if (this.timer) clearTimeout(this.timer)
     this.timer = null
     for (const c of this.clients) c.end()
@@ -56,10 +71,12 @@ export class PreviewServer {
   private async handle(rawUrl: string, host: string, res: ServerResponse) {
     const fail = (code: number, msg: string) => res.writeHead(code, { 'content-type': 'text/plain; charset=utf-8' }).end(msg)
     // A page on another site must not be able to read the project through this port (DNS rebinding).
-    if (host !== new URL(this.url).host) return fail(403, 'forbidden')
+    if (!this.url || host !== new URL(this.url).host) return fail(403, 'forbidden')
     let path: string
+    let url: URL
     try {
-      path = decodeURIComponent(new URL(rawUrl, this.url).pathname)
+      url = new URL(rawUrl, this.url)
+      path = decodeURIComponent(url.pathname)
     } catch {
       return fail(400, 'bad request')
     }
@@ -70,12 +87,16 @@ export class PreviewServer {
       res.on('close', () => this.clients.delete(res))
       return
     }
+    if (/(^|\/)\./.test(path)) return fail(404, 'not found') // dotfiles and dot folders stay private
     try {
       let file = resolveIn(this.root, path.replace(/^\/+/, '') || '.')
-      if ((await stat(file)).isDirectory()) file = join(file, 'index.html')
+      if ((await stat(file)).isDirectory()) {
+        // /sub must become /sub/, or the page's relative links (style.css) resolve against the parent folder. Relative Location: never leaves this host.
+        if (!path.endsWith('/')) return void res.writeHead(301, { location: `./${url.pathname.split('/').pop()}/${url.search}` }).end()
+        file = join(file, 'index.html')
+      }
       const type = TYPES[extname(file).slice(1).toLowerCase()]
       if (!type) return fail(404, 'not found') // only web file types are served: never .env, keys or sources of other kinds
-      if (/(^|\/)\./.test(path)) return fail(404, 'not found') // dotfiles and dot folders stay private
       let body = await readFile(file)
       if (type.startsWith('text/html')) body = Buffer.from(body.toString('utf8') + RELOAD)
       res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }).end(body)

@@ -9,6 +9,8 @@ describe('updates', () => {
     expect(newerThan('0.1.0', '0.1.0')).toBe(false)
     expect(newerThan('1.0.0-beta', '0.9.0')).toBe(true)
     expect(newerThan('0.1.0', '0.2.0')).toBe(false)
+    expect(newerThan('1.0.0', '1.0.0-beta')).toBe(true)
+    expect(newerThan('1.0.0-beta', '1.0.0-beta')).toBe(false)
   })
   it('reports a newer release and ignores drafts, prereleases, old tags and failures', async () => {
     const rel = { tag_name: 'v0.2.0', html_url: 'https://github.com/x/y/releases/tag/v0.2.0', body: 'notes' }

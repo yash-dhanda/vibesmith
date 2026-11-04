@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { AgentEvent } from './agent/loop'
 import type { Message } from './agent/provider'
@@ -39,7 +39,8 @@ export function compact(items: TranscriptItem[]): TranscriptItem[] {
   return out
 }
 
-export const SAFE_ID = /^[\w-]+$/
+// 'index' is the sidebar's own file (chats/index.json), so it cannot name a chat.
+export const SAFE_ID = /^(?!index$)[\w-]+$/
 
 export type SearchHit = ChatSummary & { snippets: { where: 'title' | 'user' | 'assistant'; text: string }[] }
 
@@ -71,10 +72,32 @@ export class ChatStore {
 
   private readIndex(): ChatSummary[] {
     try {
-      return JSON.parse(readFileSync(this.index(), 'utf8'))
-    } catch {
-      return []
+      const v = JSON.parse(readFileSync(this.index(), 'utf8'))
+      if (Array.isArray(v) && v.every((s) => typeof s?.id === 'string')) return v
+    } catch {}
+    return this.rebuildIndex()
+  }
+
+  // A missing, empty or garbled index must not make every saved chat vanish from the sidebar (and the next save then
+  // write an index naming only itself): the chat files are the truth, so list them again.
+  private rebuildIndex(): ChatSummary[] {
+    const out: ChatSummary[] = []
+    let names: string[] = []
+    try {
+      names = readdirSync(this.dir)
+    } catch {}
+    for (const f of names) {
+      const id = f.slice(0, -'.json'.length)
+      if (!f.endsWith('.json') || !SAFE_ID.test(id)) continue
+      const c = this.load(id)
+      if (c && typeof c.updatedAt === 'number') out.push({ id, title: String(c.title ?? ''), project: c.project ?? null, updatedAt: c.updatedAt, ...(c.pinned ? { pinned: true } : {}) })
     }
+    if (out.length) {
+      try {
+        this.writeAtomic(this.index(), out)
+      } catch {}
+    }
+    return out
   }
 
   // The screen picks the id of a new chat up front, so live events can be matched to it before the first save.
