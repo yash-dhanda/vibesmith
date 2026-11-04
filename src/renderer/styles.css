@@ -1235,6 +1235,74 @@ button, a, summary, select, label { touch-action: manipulation; }
   .plan-edit-row select, .plan-edit-row .plan-skip { grid-column: 2; justify-self: start; }
 }
 
+/* ---- code colours without Monaco (the phone link), and its plain diff ---- */
+.tk-k { color: #569cd6; } .tk-s { color: #ce9178; } .tk-c { color: #6a9955; } .tk-n { color: #b5cea8; } .tk-t { color: #9cdcfe; }
+:root[data-theme='light'] .tk-k { color: #0000ff; } :root[data-theme='light'] .tk-s { color: #a31515; } :root[data-theme='light'] .tk-c { color: #008000; } :root[data-theme='light'] .tk-n { color: #098658; } :root[data-theme='light'] .tk-t { color: #e50000; }
+.lite-diff { margin: 0; height: 100%; overflow: auto; padding: 10px 12px; font: 12px/1.6 var(--mono); white-space: pre; -webkit-user-select: text; user-select: text; }
+.lite-diff .diff-add { color: var(--add-ink); background: var(--add); } .lite-diff .diff-remove { color: var(--del-ink); background: var(--del); } .lite-diff .diff-hunk { color: var(--faint); }
+.stage-more { display: block; width: 100%; height: 44px; margin: 0 0 8px; border: 1px dashed var(--ed-line); border-radius: var(--r-sm); background: none; color: var(--ed-dim); font: 12px var(--sans); }
+.load-earlier { align-self: center; }
+.chat-skel { height: 44px; margin: 6px 4px; border-radius: var(--r-md); }
+
+/* ---- the phone link (html.remote): cheaper to draw, and it behaves like an app ---- */
+:root.remote { --t1: 100ms; --t2: 150ms; --t3: 180ms; --float: 0 0 0 1px var(--border); }
+html.remote, html.remote body { overscroll-behavior: none; touch-action: manipulation; }
+html.remote body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+html.remote :is(.assistant, .user, pre, code, .stage-code, .feed-body, .errcard, .task-error, .note, .q-detail, .team-final-report, .memory-item, input, textarea, [contenteditable]) { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+/* flat layers: hairlines instead of large blurred shadows, no repainting canvas behind a run */
+html.remote .question-card, :root.remote .toast, :root.remote dialog { box-shadow: none; }
+html.remote #app #history { box-shadow: none; border-right: 1px solid var(--hair); }
+html.remote #team-root:has(> .team-run) { background-image: none; }
+/* only the working indicators keep moving; every other loop plays once */
+html.remote *, html.remote *::before, html.remote *::after { animation-iteration-count: 1 !important; }
+html.remote .thinking i, html.remote .lane-live.on::before, html.remote .stage-cursor, html.remote .netbar-spin { animation-iteration-count: infinite !important; }
+html.remote #thread > * { animation: none; }
+html.remote .fresh { animation-duration: .6s; }
+html.remote .stage-block.arriving { animation-duration: .25s; }
+/* off-screen rows are not laid out or painted; panels that change often do not relayout the page */
+html.remote #chat-list .chat-item { content-visibility: auto; contain-intrinsic-size: auto 50px; }
+html.remote .run-row { content-visibility: auto; contain-intrinsic-size: auto 120px; }
+html.remote :is(.task-card, .plan-edit-row) { content-visibility: auto; contain-intrinsic-size: auto 130px; }
+html.remote :is(.activity-row, .feed-item, .skill-rec) { content-visibility: auto; contain-intrinsic-size: auto 48px; }
+html.remote .stage-editor { contain: strict; }
+/* the live editor on a phone: no gutter, and files off screen are skipped (each block is as wide as its longest line, so nothing is clipped) */
+html.remote .stage-gutter { display: none; }
+html.remote .stage-doc { padding-left: 6px; }
+html.remote .stage-block { content-visibility: auto; contain-intrinsic-size: auto 600px; width: max-content; min-width: 100%; padding-left: 10px; }
+html.remote .stage-bhead::before { left: 0; }
+html.remote .stage-code code { display: block; }
+html.remote :is(.agent-lane, .team-feed, .team-verify, .team-live-files, .team-memory, .team-diff-panel) { contain: layout paint; }
+/* "Reconnecting…": a slim pill under the status bar while the link is down */
+.netbar { position: fixed; z-index: 50; top: calc(8px + env(safe-area-inset-top)); left: 50%; translate: -50% 0; display: flex; align-items: center; gap: 8px; padding: 6px 14px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel); color: var(--muted); font-size: 13px; animation: fade var(--t2) ease-out; }
+.netbar-spin { width: 12px; height: 12px; border: 1.5px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+#tabbar { display: none; }
+@media (max-width: 800px) {
+  /* the bottom bar: Solo, Crew, Settings; the header's menu button keeps the chat list */
+  #app, #app.no-hist, #app.ws-open, #app.team-mode { grid-template-rows: minmax(0, 1fr) auto; }
+  #tabbar { display: flex; border-top: 1px solid var(--hair); background: var(--bg); padding: 2px calc(8px + env(safe-area-inset-right)) env(safe-area-inset-bottom) calc(8px + env(safe-area-inset-left)); }
+  :root.kb #tabbar { display: none; }
+  .tab-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 50px; border: 0; background: none; color: var(--faint); font-size: 11px; }
+  .tab-btn[aria-current='true'] { color: var(--text); }
+  .tab-btn .ic { width: 20px; height: 20px; }
+  .composer-modes, #team-back { display: none; }
+  #composer-wrap { padding-bottom: 8px; }
+  :root.kb #composer-wrap { padding-bottom: 6px; }
+  #team-root { padding-bottom: 0; }
+  #toasts { bottom: calc(66px + env(safe-area-inset-bottom)); }
+  :root.kb #toasts { bottom: 10px; }
+  /* reading on a phone: bigger type in chat */
+  .assistant, .user { font-size: 17px; }
+  .assistant { line-height: 1.6; }
+  .assistant code, .assistant pre { font-size: 14px; }
+  .assistant h3 { font-size: 19px; } .assistant h4 { font-size: 17px; }
+  .user.sending { opacity: .6; }
+  .user.sending::after { content: 'Sending…'; display: block; margin-top: 2px; font-size: 12px; color: var(--muted); text-align: right; }
+  .user.failed { box-shadow: inset 0 0 0 1px var(--errborder); }
+  /* headers that stay while their list scrolls */
+  .group-label { position: sticky; top: 0; z-index: 1; background: var(--side); }
+  .set-head { position: sticky; top: 0; z-index: 2; background: var(--bg); margin-top: calc(-12px - env(safe-area-inset-top)); padding: calc(12px + env(safe-area-inset-top)) 0 6px; }
+}
+
 /* ---- keyframes ---- */
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
 @keyframes fade { from { opacity: 0; } }

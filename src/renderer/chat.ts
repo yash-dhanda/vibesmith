@@ -5,13 +5,16 @@ import { STEP_GLYPH, TOOL_GLYPH } from './glyphs'
 import { renderHistory } from './history'
 import { initLibrary, openLibrary } from './library'
 import { initModels, noModels, selectedModel } from './models'
-import { openSettings } from './settings'
+import type { Page } from './settings'
 import { $, agentLimits, cleanErr, copy, emo, h, numCtxPref, showMenu, toast, uuid } from './ui'
-import { initUsage } from './usage'
+import { initUsage, setUsage } from './usage'
 import { initBrief, resetBrief, projectBrief, briefGoal, briefEvent, briefUndone, withPriorities } from './brief'
 import { initPalette } from './palette'
 import { attachmentStrip, sentChips, type Kind } from './attachments'
-import { isRemote, phone, toggleDrawer } from './phone'
+import { cacheGet, cacheSet, isRemote, onResync, phone, toggleDrawer } from './phone'
+
+// Settings is its own chunk: nothing on the first screen needs it.
+const openSettings = (page?: Page) => import('./settings').then((m) => m.openSettings(page)).catch((e) => toast(cleanErr(e), 4000))
 
 const thread = $('thread')
 const scroller = $('thread-scroll')
@@ -66,6 +69,28 @@ let log: TranscriptItem[] = [] // mirror of what is on screen, for export
 let emptyEl: HTMLElement | null = null
 let emptySub: HTMLElement | null = null
 let reply: { el: HTMLElement; text: string } | null = null
+// Streaming text is drawn at most once a frame (every 100 ms on a phone), not once per token: each draw re-renders the whole reply.
+let replyDirty = false, replyFrame = 0, replyTimer: ReturnType<typeof setTimeout> | null = null, replyDrawn = 0
+function drawReply() {
+  replyFrame = 0; replyTimer = null
+  if (!reply || !replyDirty) return
+  replyDirty = false; replyDrawn = performance.now()
+  const stick = nearBottom()
+  reply.el.innerHTML = md(reply.text)
+  if (stick) toEnd()
+}
+function scheduleReply() {
+  replyDirty = true
+  if (replyFrame || replyTimer) return
+  const wait = isRemote() ? 100 - (performance.now() - replyDrawn) : 0
+  if (wait > 0) replyTimer = setTimeout(() => { replyTimer = null; replyFrame = requestAnimationFrame(drawReply) }, wait)
+  else replyFrame = requestAnimationFrame(drawReply)
+}
+function flushReply() {
+  if (replyFrame) cancelAnimationFrame(replyFrame)
+  if (replyTimer) clearTimeout(replyTimer)
+  drawReply()
+}
 let thinkingEl: HTMLElement | null = null
 let runUsage = { input: 0, output: 0, genSec: 0, calls: 0 }
 const live = { chars: 0, start: 0, timer: null as ReturnType<typeof setInterval> | null }
@@ -346,7 +371,7 @@ function changesCard(ev: Extract<AgentEvent, { type: 'changes' }>, replace?: HTM
   undo.prepend(icon('undo', 'sm'))
   undo.title = 'Undo this run: restore every file in this checkpoint'
   const page = ev.files.find((f) => f.status !== 'deleted' && /\.html?$/i.test(f.path))
-  if (page) {
+  if (page && !isRemote()) {
     const open = h('button', 'undo')
     open.append(icon('globe', 'sm'), document.createTextNode('Open page'))
     open.title = `Open ${page.path} in your browser`
@@ -360,7 +385,7 @@ function changesCard(ev: Extract<AgentEvent, { type: 'changes' }>, replace?: HTM
     statusEl.append(fileIcon(f.status))
     statusEl.title = f.status === 'added' ? 'New' : f.status === 'deleted' ? 'Removed' : 'Updated'
     row.append(statusEl, h('span', 'tool-path', f.path))
-    if (f.status !== 'deleted') row.onclick = async () => { await openWorkspace(); onFileChanged(f.path) }
+    if (f.status !== 'deleted' && !isRemote()) row.onclick = async () => { await openWorkspace(); onFileChanged(f.path) }
     const kind = /\.css$/i.test(f.path) ? 'Styles and appearance' : /\.html?$/i.test(f.path) ? 'Page content and structure' : /\.(js|ts|tsx|jsx|py)$/i.test(f.path) ? 'App behavior' : 'Project file'
     const before = f.status === 'added' ? 'Not in project' : 'Existing file'
     const after = f.status === 'deleted' ? 'Removed from project' : `${f.added} lines added · ${f.removed} removed`
@@ -424,10 +449,21 @@ function addUser(text: string, files: { id: string; name: string; kind: Kind }[]
   if (text) bubble.append(document.createTextNode(text))
   add(bubble)
   setProject(project)
+  return bubble
+}
+// On the phone a sent message is shown at once, marked "Sending" until the computer has it.
+let pendingBubble: HTMLElement | null = null
+function markSent(failed = false) {
+  if (!pendingBubble) return
+  pendingBubble.classList.remove('sending')
+  if (failed) pendingBubble.classList.add('failed')
+  pendingBubble = null
 }
 
 // ---- events from the agent ----
 function handle(ev: AgentEvent) {
+  if (ev.type !== 'delta') flushReply() // anything after the text is drawn after it
+  markSent()
   log.push(ev)
   if (ev.type !== 'delta' && ev.type !== 'usage' && ev.type !== 'turn_end') briefEvent(ev)
   switch (ev.type) {
@@ -440,9 +476,7 @@ function handle(ev: AgentEvent) {
       if (!live.start) live.start = performance.now()
       live.chars += ev.text.length
       reply.text += ev.text
-      const stick = nearBottom()
-      reply.el.innerHTML = md(reply.text)
-      if (stick) toEnd()
+      scheduleReply()
       break
     }
     case 'turn_end':
@@ -544,8 +578,11 @@ function handle(ev: AgentEvent) {
 // ---- composer ----
 function grow() {
   prompt.style.height = 'auto'
-  prompt.style.height = Math.min(prompt.scrollHeight, 200) + 'px'
+  prompt.style.height = Math.min(prompt.scrollHeight, phone.matches ? sixLines() : 200) + 'px'
 }
+// A phone's composer grows to six lines, then scrolls.
+let sixLinesPx = 0
+const sixLines = () => sixLinesPx ||= (() => { const cs = getComputedStyle(prompt); return Math.round(parseFloat(cs.fontSize) * 1.55 * 6 + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)) })()
 
 async function chooseFolder() {
   if (isRemote()) { toast('Pick the folder in Crew with Find folder, or choose it on the computer.', 5000); return }
@@ -569,7 +606,8 @@ async function send() {
   if (!project) return
   sending = true
   const files = att.items().flatMap((x) => (x.state === 'ready' && x.result ? [{ id: x.result.id, name: x.file.name, kind: x.result.kind ?? x.kind }] : []))
-  addUser(text, files)
+  const bubble = addUser(text, files)
+  if (isRemote()) { bubble.classList.add('sending'); pendingBubble = bubble }
   att.clear()
   prompt.value = ''
   grow()
@@ -581,10 +619,12 @@ async function send() {
   try {
     await window.forge.agentSend({ chatId: activeId, text, attachments: files.map((f) => f.id), mode: modeSel.value as Mode, model: selectedModel(), numCtx: numCtxPref(), ...agentLimits() })
   } catch (e) {
+    markSent(true)
     hideThinking()
     add(h('div', 'errcard', cleanErr(e)))
     setRunning(false)
   } finally {
+    markSent()
     sending = false
   }
 }
@@ -607,12 +647,29 @@ function resetView() {
   ctxChip.hidden = true
 }
 
-function replay(items: TranscriptItem[], liveRun: boolean) {
+// A phone draws the last 300 steps of a long chat (from a message boundary) and offers the rest behind a button.
+const PHONE_STEPS = 300
+function replay(items: TranscriptItem[], liveRun: boolean, all = !isRemote()) {
   setRunning(false)
-  for (const it of items) {
+  let from = 0
+  if (!all && items.length > PHONE_STEPS) {
+    from = items.findIndex((it, i) => i >= items.length - PHONE_STEPS && it.type === 'user')
+    if (from < 0) from = items.length - PHONE_STEPS
+    const more = h('button', 'btn load-earlier', 'Show earlier messages') as HTMLButtonElement
+    more.onclick = () => {
+      const fromEnd = scroller.scrollHeight - scroller.scrollTop
+      resetView()
+      replay(items, statusOf(activeId) !== 'idle', true)
+      scroller.scrollTop = scroller.scrollHeight - fromEnd
+    }
+    thread.append(more)
+  }
+  for (const it of items.slice(from)) {
     if (it.type === 'user') addUser(it.text, it.attachments ?? [])
     else handle(it)
   }
+  if (from) log = [...items.slice(0, from), ...log]
+  flushReply()
   finishGroup()
   if (!liveRun) {
     // A chat saved mid-run (app closed) can end on a step that never got an answer: no dead buttons.
@@ -629,6 +686,7 @@ function replay(items: TranscriptItem[], liveRun: boolean) {
 
 async function refreshHistory() {
   chats = await window.forge.chatsList()
+  if (isRemote()) cacheSet('boot', { chats: chats.slice(0, 60), project })
   const shown = chats.filter((c) => matchesQuery(c, query))
   renderHistory(shown, activeId, query, { open: openChat, remove: removeChat, rename: renameChat })
   const me = chats.find((c) => c.id === activeId)
@@ -662,6 +720,19 @@ async function openChat(id: string) {
   } catch (e) {
     toast(cleanErr(e), 3500)
   }
+}
+
+// After the phone was offline or asleep: draw the open chat again from what the computer has now.
+async function reloadActive() {
+  if (sending || !chats.some((c) => c.id === activeId)) return
+  const id = activeId
+  const c = await window.forge.chatsOpen(id)
+  if (activeId !== id || sending) return
+  const stay = !nearBottom(), top = scroller.scrollTop
+  resetView()
+  if (c.transcript.length) replay(c.transcript, c.status !== 'idle')
+  else showEmpty()
+  if (stay) scroller.scrollTop = top
 }
 
 async function newChat() {
@@ -722,13 +793,13 @@ function moreMenu() {
   const asMarkdown = () => exportMarkdown(title, project, log)
   showMenu($('more'), [
     { label: 'Copy chat as Markdown', run: () => copy(asMarkdown(), 'Chat copied') },
-    {
+    ...(isRemote() ? [] : [{
       label: 'Export as Markdown…',
       run: async () => {
         if (await window.forge.saveText(`${title.replace(/[^\w.-]+/g, '-').slice(0, 40) || 'chat'}.md`, asMarkdown())) toast('Exported')
       },
-    },
-    ...(project ? [{ label: 'Open project folder', run: () => window.forge.openFolder(activeId).catch((e) => toast(cleanErr(e), 4000)) }] : []),
+    }]),
+    ...(project && !isRemote() ? [{ label: 'Open project folder', run: () => window.forge.openFolder(activeId).catch((e) => toast(cleanErr(e), 4000)) }] : []),
     ...(me ? [{ label: 'Rename', run: startTitleEdit }, { label: 'Delete chat', danger: true, run: () => toast(`Delete “${me.title}”? This cannot be undone.`, 6000, { label: 'Delete', run: () => removeChat(me.id) }) }] : []),
   ])
 }
@@ -757,12 +828,11 @@ export async function initChat(opts: {
     { label: 'Model library', icon: 'cube', detail: 'Download models and check hardware fit', run: () => openLibrary() },
     { label: 'Settings', icon: 'gear', detail: 'Appearance, models, agent and shortcuts', run: () => openSettings() },
     { label: 'Usage and speed', icon: 'chart', run: () => openSettings('usage') },
-    { label: 'Toggle workspace', icon: 'code', detail: 'Files, editor and terminal · Ctrl J', run: () => $('ws-toggle').click() },
-    { label: 'Toggle build brief', icon: 'list', run: () => $('brief-toggle').click() },
+    ...(isRemote() ? [] : [{ label: 'Toggle workspace', icon: 'code' as const, detail: 'Files, editor and terminal · Ctrl J', run: () => $('ws-toggle').click() }, { label: 'Toggle build brief', icon: 'list' as const, run: () => $('brief-toggle').click() }]),
     { label: 'Focus message', icon: 'keyboard', detail: 'Ctrl L', run: () => prompt.focus() },
     { label: 'Toggle chat history', icon: 'sidebar', detail: 'Ctrl B', run: () => $('hist-toggle').click() },
     ...(['ask-all', 'auto-edit', 'full-auto'] as const).map((mode, i) => ({ label: `Autonomy: ${['Ask before edits', 'Auto-edit', 'Full auto'][i]}`, icon: 'sliders' as const, run: () => { modeSel.value = mode; localStorage.setItem('forge.mode', mode) } })),
-    ...(project ? [{ label: 'Open project folder', icon: 'folder' as const, run: () => { window.forge.openFolder(activeId).catch(e => toast(cleanErr(e), 4000)) } }] : []),
+    ...(project && !isRemote() ? [{ label: 'Open project folder', icon: 'folder' as const, run: () => { window.forge.openFolder(activeId).catch(e => toast(cleanErr(e), 4000)) } }] : []),
     ...chats.map(c => ({ label: c.title, icon: 'edit' as const, detail: `Chat · ${folderName(c.project)}`, run: () => openChat(c.id) })),
     ...Array.from($<HTMLSelectElement>('model').options).map(m => ({ label: `Use ${m.text}`, icon: 'cpu' as const, detail: 'Model', run: () => { const sel = $<HTMLSelectElement>('model'); sel.value = m.value; sel.dispatchEvent(new Event('change')) } })),
   ])
@@ -831,7 +901,8 @@ export async function initChat(opts: {
     const a = t.closest('a[data-ext]') as HTMLAnchorElement | null
     if (a) {
       e.preventDefault()
-      window.forge.openExternal(a.href)
+      if (isRemote()) window.open(a.href, '_blank', 'noopener') // on the phone, not on the computer
+      else window.forge.openExternal(a.href)
     }
   })
 
@@ -851,14 +922,21 @@ export async function initChat(opts: {
     }
   })
 
-  await initModels()
-  const init = await window.forge.appInit()
+  // The phone paints the last chat list it saw at once (skeleton rows the first time), then the real one.
+  if (isRemote()) {
+    const cached = cacheGet<{ chats: ChatListItem[]; project: string | null }>('boot')
+    if (cached?.chats?.length) renderHistory(cached.chats.map((c) => ({ ...c, status: 'idle' as const })), activeId, '', { open: openChat, remove: removeChat, rename: renameChat })
+    else $('chat-list').replaceChildren(...Array.from({ length: 6 }, () => h('div', 'chat-skel skel')))
+    onResync(async () => { await refreshHistory(); await reloadActive(); setUsage(await window.forge.usageSummary()) })
+  }
+  // One round trip: the models, the chat list and usage are asked for together.
+  const [, init] = await Promise.all([initModels(), window.forge.appInit(), initUsage()])
   project = init.project
   chats = init.chats
   setProject(project)
   renderHistory(chats.filter((c) => matchesQuery(c, query)), activeId, query, { open: openChat, remove: removeChat, rename: renameChat })
+  if (isRemote()) cacheSet('boot', { chats: chats.slice(0, 60), project })
   if (project) await onProject(project)
-  await initUsage()
   // First run: nothing to talk to yet, so open the library with a welcome instead of an empty chat.
   let onboarded = false
   try {

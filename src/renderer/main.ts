@@ -4,7 +4,7 @@ import { applyTheme, $, cleanErr, toast } from './ui'
 import { hydrateIcons } from './icons'
 import { applyNames } from './names'
 import { initTeam, setTeamProject } from './team'
-import { initPhone } from './phone'
+import { bootDone, initPhone, isRemote } from './phone'
 import '@fontsource-variable/geist/index.css'
 import '@fontsource-variable/geist-mono/index.css'
 
@@ -16,6 +16,7 @@ let workspace: typeof import('./workspace') | null = null
 let loading: Promise<typeof import('./workspace')> | null = null
 async function loadWorkspace() {
   if (workspace) return workspace
+  if (isRemote()) throw new Error('Files, the editor and the terminal open on the computer.') // never download Monaco and xterm to a phone
   loading ??= import('./workspace').then(async module => {
     await module.setProject(root)
     workspace = module
@@ -41,11 +42,12 @@ initChat({
   openWorkspace,
 }).catch(e => toast(`Couldn’t load Forge: ${cleanErr(e)}`, 6000))
 initTeam({ project: () => root })
+bootDone() // the shell is drawn (data still on its way, shown as skeleton rows or the last list seen)
 $('ws-toggle').onclick = () => {
   if ($('app').classList.contains('ws-open')) workspace?.setWorkspace(false)
   else void openWorkspace()
 }
-try { if (localStorage.getItem('forge.ws') === '1') void openWorkspace() } catch {}
+try { if (localStorage.getItem('forge.ws') === '1' && !isRemote()) void openWorkspace() } catch {}
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
   try { if (localStorage.getItem('forge.theme') === 'system') applyTheme('system') } catch {}
 })

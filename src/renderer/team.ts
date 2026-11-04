@@ -11,7 +11,8 @@ import { RUN_GLYPH, STEP_GLYPH, TASK_GLYPH, TOOL_GLYPH } from './glyphs'
 import { buildStage, pushCode, type StageCode } from './teamStage'
 import { attachmentStrip, kindOf, readBase64, sentChips } from './attachments'
 import type { TeamAttachment } from '../main/team/attach'
-import { isRemote, phone, toggleDrawer } from './phone'
+import { cacheGet, cacheSet, isRemote, onResync, phone, toggleDrawer } from './phone'
+import { colorize, mountDiff } from './codeColor'
 import { normaliseTeamEventsAsync, reduceTeamView, type LoggedTeamEvent } from './teamReducer'
 
 type Logged = LoggedTeamEvent
@@ -135,6 +136,8 @@ function folderFinder(goal: HTMLTextAreaElement, pill: HTMLButtonElement) {
 async function showEntry() {
   run = null; log = []; liveFiles.clear(); sharedMemory = null; undoResult = ''; stopClock()
   root.replaceChildren(h('div', 'team-entry-skeleton skel'))
+  const cachedRuns = isRemote() && !localStorage.getItem('forge.teamReplay') ? cacheGet<Summary[]>('runs') : null // the phone shows the runs it saw last while it asks
+  if (cachedRuns?.length) { summaries = cachedRuns; const wait = h('div', 'team-entry'); wait.append(h('div', 'team-entry-skeleton skel'), renderRunList()); root.replaceChildren(wait) }
   if (!apiReady()) {
     const unavailable = h('section', 'team-entry')
     unavailable.append(emptyState('users', `${N.crew} is coming together`, 'This build does not include the crew service yet. Update Forge to use Claude Code and Codex together.'))
@@ -159,6 +162,7 @@ async function showEntry() {
   }
   const [health, list, defaults] = loaded
   summaries = list
+  if (isRemote() && !replay) cacheSet('runs', list.slice(0, 30))
   const page = h('div', 'team-entry')
   const intro = h('section', 'team-intro')
   intro.append(h('h1', '', 'Build with a crew: a second set of eyes.'), h('p', 'team-lede', 'Claude Code, Codex and a local model split the work, review each other and bring back one checked result. Nothing touches your project until you land it.'))
@@ -318,7 +322,7 @@ function renderRunList() {
     const status = h('span', 'c-status'); status.append(statusTag(item.status))
     open.append(h('strong', 'c-goal', item.goal), status, where, count, when)
     const acts = h('span', 'run-acts')
-    if (typeof window.forge.teamExportReport === 'function' && ['awaiting_approval', 'done'].includes(item.status)) { const exportButton = h('button', 'icon-btn sm'); exportButton.append(icon('download', 'sm')); exportButton.title = 'Export report'; exportButton.setAttribute('aria-label', `Export report for ${item.goal}`); exportButton.onclick = () => void call(() => window.forge.teamExportReport(item.id)); acts.append(exportButton) }
+    if (typeof window.forge.teamExportReport === 'function' && !isRemote() && ['awaiting_approval', 'done'].includes(item.status)) { const exportButton = h('button', 'icon-btn sm'); exportButton.append(icon('download', 'sm')); exportButton.title = 'Export report'; exportButton.setAttribute('aria-label', `Export report for ${item.goal}`); exportButton.onclick = () => void call(() => window.forge.teamExportReport(item.id)); acts.append(exportButton) }
     if (typeof window.forge.teamDelete === 'function' && !['planning', 'running', 'verifying', 'paused', 'interrupted'].includes(item.status)) {
       const del = h('button', 'icon-btn sm'); del.append(icon('trash', 'sm')); del.title = 'Delete run'; del.setAttribute('aria-label', `Delete ${item.goal}`)
       del.onclick = () => void call(async () => { if (!window.confirm(`Delete this run?\n\n${item.goal}\n\nIts saved report and unfinished crew work will be removed.`)) return; if (await window.forge.teamDelete(item.id)) { summaries = summaries.filter(x => x.id !== item.id); redraw() } })
@@ -374,7 +378,7 @@ function renderRunHeader() {
   else if (['paused', 'interrupted'].includes(run!.status)) controls.append(actionButton('Resume', () => teamAction(() => window.forge.teamResume(run!.id))))
   else if (['planning', 'running', 'verifying'].includes(run!.status)) controls.append(pauseButton())
   if (isActive(run!.status) && run!.status !== 'awaiting_approval') controls.append(actionButton('Cancel run', () => teamAction(() => window.forge.teamCancel(run!.id)), 'danger', 'x'))
-  if (run!.final && typeof window.forge.teamExportReport === 'function') controls.append(actionButton('Export report', () => call(() => window.forge.teamExportReport(run!.id)), '', 'download'))
+  if (run!.final && typeof window.forge.teamExportReport === 'function' && !isRemote()) controls.append(actionButton('Export report', () => call(() => window.forge.teamExportReport(run!.id)), '', 'download'))
   header.append(back, identity, status, elapsed, controls)
   const usage = h('div', 'team-usage-strip')
   for (const agent of ['claude', 'codex', 'local'] as const) {
@@ -656,7 +660,7 @@ function renderLiveCode(event: Extract<RunEvent, { type: 'agent' }>['ev'] & { ty
   } else {
     const code = h('code', '', event.text.slice(-30000)); pre.append(code)
     const marker = `${event.id}:${event.text.length}`; code.dataset.liveCode = marker
-    void import('./teamDiff').then(({ colorizeTeamCode }) => colorizeTeamCode(event.text.slice(-30000), event.path)).then(html => { if (code.isConnected && code.dataset.liveCode === marker) code.innerHTML = html }).catch(() => {})
+    void colorize(event.text.slice(-30000), event.path).then(html => { if (code.isConnected && code.dataset.liveCode === marker) code.innerHTML = html }).catch(() => {})
   }
   if (!event.done) { pre.append(h('span', 'code-cursor', '')); requestAnimationFrame(() => { pre.scrollTop = pre.scrollHeight }) }
   card.append(head, pre); return card
@@ -716,7 +720,7 @@ async function refreshMemory() {
   const id = run.id; memoryLoading = true
   try { const next = await window.forge.teamMemory(id); if (run?.id === id) sharedMemory = next }
   catch { /* The run remains usable when memory refresh fails. */ }
-  finally { if (run?.id === id) { memoryLoading = false; renderRun() } }
+  finally { if (run?.id === id) { memoryLoading = false; if (isRemote()) queueDraw('run'); else renderRun() } }
 }
 
 function scheduleMemoryRefresh() {
@@ -757,7 +761,7 @@ function renderDiffPanel() {
 async function openDiff(taskId?: string, path?: string, live = false) {
   const host = document.querySelector<HTMLElement>('.team-diff-host'); if (!host || !run) return
   host.classList.add('open'); host.replaceChildren(h('div', 'team-diff-loading skel')); host.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  try { const diff = replay ? `diff --git a/${path ?? 'src/team.ts'} b/${path ?? 'src/team.ts'}\n--- a/${path ?? 'src/team.ts'}\n+++ b/${path ?? 'src/team.ts'}\n@@ -1,2 +1,3 @@\n export const team = true\n+export const calm = true` : live && taskId && typeof window.forge.teamLiveDiff === 'function' ? await window.forge.teamLiveDiff(run.id, taskId, path) : await window.forge.teamDiff(run.id, taskId); const { mountTeamDiff } = await import('./teamDiff'); host.replaceChildren(); await mountTeamDiff(host, diff || 'No changes are available yet.') }
+  try { const diff = replay ? `diff --git a/${path ?? 'src/team.ts'} b/${path ?? 'src/team.ts'}\n--- a/${path ?? 'src/team.ts'}\n+++ b/${path ?? 'src/team.ts'}\n@@ -1,2 +1,3 @@\n export const team = true\n+export const calm = true` : live && taskId && typeof window.forge.teamLiveDiff === 'function' ? await window.forge.teamLiveDiff(run.id, taskId, path) : await window.forge.teamDiff(run.id, taskId); host.replaceChildren(); await mountDiff(host, diff || 'No changes are available yet.') }
   catch (e) { host.replaceChildren(h('div', 'errcard', cleanErr(e))) }
 }
 
@@ -814,15 +818,49 @@ function reduceEvent(event: RunEvent, t = Date.now()) {
     else if (e.type !== 'error' && !(e.type === 'done' && !e.ok)) return // talk, commands and planning stay out of the live view
   }
   if (event.type === 'task' || event.type === 'message') scheduleMemoryRefresh()
+  if (isRemote()) { queueDraw(event.type === 'agent' ? event.ev.agent : event.type === 'live' ? 'live' : 'run'); return }
   if (refreshTimer) clearTimeout(refreshTimer)
   refreshTimer = setTimeout(() => {
-    if (event.type === 'agent') { const old = document.querySelector(`.agent-lane.${event.ev.agent}`); const body = old?.querySelector<HTMLElement>('.lane-body'); const top = body?.scrollTop ?? 0; const follow = body ? body.scrollHeight - body.scrollTop - body.clientHeight < 36 : true; if (!old) { renderRun(); return } const next = renderLane(event.ev.agent); old.replaceWith(next); const nextBody = next.querySelector<HTMLElement>('.lane-body'); if (nextBody) nextBody.scrollTop = follow ? nextBody.scrollHeight : top }
-    else if (event.type === 'live') { const old = document.querySelector('.team-live-files'); old?.replaceWith(renderLiveFiles()) }
+    if (event.type === 'agent') redrawLane(event.ev.agent)
+    else if (event.type === 'live') redrawLiveFiles()
     else renderRun()
   }, event.type === 'agent' || event.type === 'live' ? 80 : 0)
 }
+function redrawLane(agent: 'claude' | 'codex' | 'local') {
+  const old = document.querySelector(`.agent-lane.${agent}`); const body = old?.querySelector<HTMLElement>('.lane-body'); const top = body?.scrollTop ?? 0; const follow = body ? body.scrollHeight - body.scrollTop - body.clientHeight < 36 : true
+  if (!old) { renderRun(); return }
+  const next = renderLane(agent); old.replaceWith(next); const nextBody = next.querySelector<HTMLElement>('.lane-body'); if (nextBody) nextBody.scrollTop = follow ? nextBody.scrollHeight : top
+}
+const redrawLiveFiles = () => document.querySelector('.team-live-files')?.replaceWith(renderLiveFiles())
+// A phone redraws at most every 100 ms, whatever the event rate: everything that changed in between is drawn once.
+const drawQueue = new Set<string>()
+let drawTimer: ReturnType<typeof setTimeout> | null = null, drawnAt = 0
+function queueDraw(what: string) {
+  drawQueue.add(what)
+  drawTimer ??= setTimeout(() => {
+    drawTimer = null; drawnAt = performance.now()
+    const todo = [...drawQueue]; drawQueue.clear()
+    if (!run) return
+    if (todo.includes('run')) return renderRun()
+    for (const w of todo) if (w === 'live') redrawLiveFiles(); else redrawLane(w as 'claude' | 'codex' | 'local')
+  }, Math.max(0, 100 - (performance.now() - drawnAt)))
+}
+
+// After the phone was offline or asleep: the open run (or the run list) is read again, keeping the scroll position.
+async function resyncTeam() {
+  if ($('team-screen').hidden || replay) return
+  if (!run) { summaries = await window.forge.teamList(); cacheSet('runs', summaries.slice(0, 30)); document.querySelector('.team-runs')?.replaceWith(renderRunList()); return }
+  const id = run.id
+  const [saved, events] = await Promise.all([window.forge.teamGet(id), window.forge.teamEvents(id)])
+  if (!saved || run?.id !== id) return
+  run = saved
+  const normal = await normaliseTeamEventsAsync(events); log = normal.log; liveFiles = normal.liveFiles
+  if (!['planning', 'running', 'paused', 'interrupted'].includes(run.status)) liveFiles.clear()
+  renderRun()
+}
 
 export function initTeam(options: { project: () => string | null }) {
+  if (isRemote()) onResync(resyncTeam)
   currentProject = options.project() ?? ''
   const enabled = apiReady(); $('mode-team').hidden = !enabled; $('team-nav').hidden = !enabled
   $('mode-team').onclick = () => showTeam(); $('team-nav').onclick = () => showTeam(); $('team-back').onclick = showChat; $('mode-chat').onclick = showChat
