@@ -45,9 +45,9 @@
           <div class="bar">
             <button class="pill" id="project" title="The folder the agent works in">Choose folder</button>
             <select aria-label="Agent autonomy" id="mode" title="How much the agent may do without asking">
-              <option value="ask-all">✋ Ask before edits</option>
-              <option value="auto-edit">✏️ Auto-edit</option>
-              <option value="full-auto">🚀 Full auto</option>
+              <option value="ask-all">Ask before edits</option>
+              <option value="auto-edit">Auto-edit</option>
+              <option value="full-auto">Full auto</option>
             </select>
             <select aria-label="AI model" id="model" title="Model"></select>
             <span class="grow"></span>
@@ -57,20 +57,20 @@
         <div class="composer-note"><span id="model-honesty">Checking model availability…</span><span title="Enter sends, Shift+Enter adds a new line">↵ send · ⇧↵ new line</span></div>
       </div>
       <aside id="build-brief" aria-label="What we’re building">
-        <div class="brief-top"><span class="eyebrow"><span class="emo" aria-hidden="true">📋</span>Build brief</span><button id="brief-close" class="icon-btn" aria-label="Close build brief" title="Close"><i data-icon="x"></i></button></div>
+        <div class="brief-top"><span class="eyebrow">Build brief</span><button id="brief-close" class="icon-btn" aria-label="Close build brief" title="Close"><i data-icon="x"></i></button></div>
         <div class="project-object"><div class="object-icon"><i data-icon="cube"></i></div><h2 id="brief-name">Your next idea</h2><p id="brief-folder"></p><p id="brief-goal"></p></div>
         <div id="brief-status" role="status">Ready when you are</div>
-        <section class="brief-section" id="agent-plan-section" hidden><h3><span class="emo" aria-hidden="true">🗺️</span>Plan</h3><ol id="agent-plan"></ol></section>
-        <section class="brief-section"><div class="brief-section-head"><h3><span class="emo" aria-hidden="true">🎯</span>Priorities</h3><span id="priority-count" title="Priorities included in the next message">0</span></div><p class="brief-muted">Sent with your next message, in order.</p><ol id="priorities"></ol><form id="priority-form"><input id="priority-input" aria-label="New build priority" placeholder="Add a priority" maxlength="240"/><button class="icon-btn sm" type="submit" aria-label="Add priority" title="Add priority"><i data-icon="plus" class="sm"></i></button></form></section>
-        <section class="brief-section"><h3 id="brief-files-title"><span class="emo" aria-hidden="true">🌱</span>Taking shape</h3><div id="brief-files"></div><button id="brief-preview" class="btn" hidden><span class="emo" aria-hidden="true">🌐</span>Open preview</button></section>
-        <div class="brief-foot"><span class="emo" aria-hidden="true">🔒</span>Stays on your computer</div>
+        <section class="brief-section" id="agent-plan-section" hidden><h3>Plan</h3><ol id="agent-plan"></ol></section>
+        <section class="brief-section"><div class="brief-section-head"><h3>Priorities</h3><span id="priority-count" title="Priorities included in the next message">0</span></div><p class="brief-muted">Sent with your next message, in order.</p><ol id="priorities"></ol><form id="priority-form"><input id="priority-input" aria-label="New build priority" placeholder="Add a priority" maxlength="240"/><button class="icon-btn sm" type="submit" aria-label="Add priority" title="Add priority"><i data-icon="plus" class="sm"></i></button></form></section>
+        <section class="brief-section"><h3 id="brief-files-title">Taking shape</h3><div id="brief-files"></div><button id="brief-preview" class="btn" hidden>Open preview</button></section>
+        <div class="brief-foot">Stays on your computer</div>
       </aside>
     </main>
 
     <main id="team-screen" hidden aria-label="Team Mode">
       <header class="team-head">
         <button class="icon-btn" id="team-hist-toggle" aria-label="Toggle navigation" title="Show or hide the sidebar"><i data-icon="sidebar"></i></button>
-        <h1 class="page-title"><span class="emo" aria-hidden="true">🤝</span>Team Mode</h1>
+        <h1 class="page-title">Team Mode</h1>
         <span class="grow"></span>
         <button class="btn" id="team-back" title="Back to chat"><i data-icon="arrowleft" class="sm"></i>Back to chat</button>
       </header>

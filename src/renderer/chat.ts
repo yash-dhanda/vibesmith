@@ -1,6 +1,7 @@
 import type { AgentEvent, ChatListItem, Mode, TranscriptItem } from '../preload'
 import { exportMarkdown, folderName, formatRate, formatTokens, matchesQuery, md, toolTarget, toolVerb } from './format'
-import { icon } from './icons'
+import { fileIcon, icon, type IconName } from './icons'
+import { STEP_GLYPH, TOOL_GLYPH } from './glyphs'
 import { renderHistory } from './history'
 import { initLibrary, openLibrary } from './library'
 import { initModels, noModels, selectedModel } from './models'
@@ -91,7 +92,7 @@ function startLive() {
     const secs = (performance.now() - live.start) / 1000
     if (!live.start || secs < 0.8) return
     rateChip.hidden = false
-    rateChip.replaceChildren(emo('⚡'), `~${formatRate(live.chars / 4 / secs)} tok/s`)
+    rateChip.textContent = `~${formatRate(live.chars / 4 / secs)} tok/s`
   }, 400)
 }
 function stopLive() {
@@ -104,11 +105,11 @@ function setUsageChips(ev: Extract<AgentEvent, { type: 'usage' }>) {
   live.start = 0
   if (ev.tps > 0) {
     rateChip.hidden = false
-    rateChip.replaceChildren(emo('⚡'), `${formatRate(ev.tps)} tok/s`)
+    rateChip.textContent = `${formatRate(ev.tps)} tok/s`
   }
   ctxChip.hidden = false
   const estimate = ev.estimated ? '~' : ''
-  ctxChip.replaceChildren(emo('🧠'), estimate + (ev.ctxLimit ? `${formatTokens(ev.input)} / ${Math.round(ev.ctxLimit / 1024)}k` : `${formatTokens(ev.input)}`))
+  ctxChip.textContent = (estimate + (ev.ctxLimit ? `${formatTokens(ev.input)} / ${Math.round(ev.ctxLimit / 1024)}k` : `${formatTokens(ev.input)}`))
   const full = !!ev.ctxLimit && ev.input / ev.ctxLimit > 0.8
   ctxChip.classList.toggle('warn', full)
   ctxChip.title = full
@@ -117,11 +118,11 @@ function setUsageChips(ev: Extract<AgentEvent, { type: 'usage' }>) {
 }
 
 // ---- empty state ----
-const STARTERS: { glyph: string; title: string; hint: string }[] = [
-  { glyph: '🤖', title: 'Build a Telegram bot', hint: 'Creates the files, then asks for what it still needs' },
-  { glyph: '🌐', title: 'Make a simple website', hint: 'HTML, CSS and a little JavaScript, ready to open' },
-  { glyph: '🔎', title: 'Explain this project', hint: 'Reads the folder and tells you how it works' },
-  { glyph: '🐞', title: 'Find and fix bugs', hint: 'Runs your tests and repairs what fails' },
+const STARTERS: { glyph: IconName; title: string; hint: string }[] = [
+  { glyph: 'bot', title: 'Build a Telegram bot', hint: 'Creates the files, then asks for what it still needs' },
+  { glyph: 'globe', title: 'Make a simple website', hint: 'HTML, CSS and a little JavaScript, ready to open' },
+  { glyph: 'search', title: 'Explain this project', hint: 'Reads the folder and tells you how it works' },
+  { glyph: 'bug', title: 'Find and fix bugs', hint: 'Runs your tests and repairs what fails' },
 ]
 
 function showEmpty() {
@@ -132,7 +133,7 @@ function showEmpty() {
   for (const t of STARTERS) {
     const b = h('button')
     b.title = t.hint
-    b.append(emo(t.glyph), t.title)
+    b.append(icon(t.glyph, 'sm'), t.title)
     b.onclick = () => {
       prompt.value = t.title
       prompt.focus()
@@ -145,7 +146,6 @@ function showEmpty() {
     const b = h('div', 'banner')
     b.append(h('div', '', 'No AI model found. Download one from the model library, or add an API key.'))
     const open = h('button', 'btn primary', 'Open the model library')
-    open.prepend(emo('🧩'))
     open.onclick = () => openLibrary()
     b.append(open)
     emptyEl.append(b)
@@ -157,7 +157,7 @@ function showEmpty() {
 function setProject(p: string | null) {
   project = p
   projectBrief(p)
-  projectBtn.replaceChildren(emo('📁'), document.createTextNode(p ? folderName(p) : 'Choose folder'))
+  projectBtn.replaceChildren(icon('folder', 'sm'), document.createTextNode(p ? folderName(p) : 'Choose folder'))
   projectBtn.title = hasMessages ? `This chat works in ${p}` : (p ?? 'Choose the folder the agent works in')
   projectBtn.classList.toggle('need', !p)
   projectBtn.disabled = hasMessages
@@ -193,10 +193,8 @@ const PHRASE: Record<string, (n: number) => string> = {
 function summarize(g: Group, working: boolean) {
   const text = [...g.counts].map(([v, n]) => (PHRASE[v] ?? ((k: number) => `${v.toLowerCase()} ×${k}`))(n)).join(', ')
   g.el.classList.toggle('working', working)
-  g.label.replaceChildren(emo(working ? '🔨' : g.failed ? '⚠️' : '✅'), working ? ` Building · ${text}…` : ` ${g.failed ? 'Needs attention' : 'Done'} · ${text}`)
+  g.label.replaceChildren(emo(working ? STEP_GLYPH.working : g.failed ? STEP_GLYPH.failed : STEP_GLYPH.done), working ? ` Building · ${text}…` : ` ${g.failed ? 'Needs attention' : 'Done'} · ${text}`)
 }
-// one emoji per kind of step, shown before the backend's plain-language label
-const TOOL_GLYPH: Record<string, string> = { read_file: '📖', list_dir: '📂', search: '🔍', edit_file: '✏️', create_file: '🆕', run_command: '🖥️', update_plan: '🗺️' }
 
 function ensureGroup(): Group {
   if (group) return group
@@ -204,7 +202,7 @@ function ensureGroup(): Group {
   const head = h('button', 'steps-head')
   const dot = h('span', 'dot run')
   const label = h('span', 'steps-label')
-  label.append(emo('🔎'), ' Getting to know your project…')
+  label.append(emo(TOOL_GLYPH.search), ' Getting to know your project…')
   const chev = h('span', 'chev')
   chev.append(icon('chevron', 'sm'))
   head.append(dot, label, chev)
@@ -252,7 +250,7 @@ function toolCard(ev: Extract<AgentEvent, { type: 'tool' }>) {
   const head = h('button', 'tool-head')
   const dot = h('span', 'dot run')
   const toolLabel = h('span', 'tool-label')
-  toolLabel.append(emo(TOOL_GLYPH[ev.name] ?? '🔧'), ev.label || story)
+  toolLabel.append(emo(TOOL_GLYPH[ev.name] ?? TOOL_GLYPH.other), ev.label || story)
   head.append(dot, toolLabel, h('span', 'tool-path', path))
   const body = h('div', 'tool-body')
   body.hidden = true
@@ -272,7 +270,7 @@ function toolCard(ev: Extract<AgentEvent, { type: 'tool' }>) {
     card.classList.add('needs-approval')
     const explanation = h('div', 'approval-summary')
     const ask = h('strong', '', 'A quick check before I continue')
-    ask.prepend(emo('✋'))
+    ask.prepend(emo(STEP_GLYPH.ask))
     explanation.append(ask, h('p', '', writes ? `${ev.name === 'create_file' ? 'Create' : 'Change'} ${path}. This updates files in your project folder.` : `Run this command in your project folder: ${path}`), h('span', '', 'Open the step above to inspect the exact details.'))
     card.append(explanation)
     g.body.hidden = false // an action that needs a yes must be visible
@@ -280,18 +278,16 @@ function toolCard(ev: Extract<AgentEvent, { type: 'tool' }>) {
     g.el.querySelector('button')?.setAttribute('aria-expanded', 'true')
     const actions = h('div', 'approve')
     const yes = h('button', 'yes', 'Allow')
-    yes.prepend(emo('✅'))
     yes.title = writes ? 'Allow this change' : 'Allow this command'
     yes.setAttribute('aria-label', yes.title)
     const no = h('button', '', 'Skip')
-    no.prepend(emo('⏭️'))
     no.title = 'Skip this step'
     no.setAttribute('aria-label', no.title)
     const answer = (ok: boolean) => {
       actions.remove()
       entry.actions = undefined
       dot.className = 'dot run'
-      explanation.replaceChildren(emo(ok ? '✅' : '⏭️'), ok ? ' Approved · continuing' : ' Skipped · files left unchanged by this step')
+      explanation.replaceChildren(emo(ok ? STEP_GLYPH.ok : STEP_GLYPH.skipped), ok ? ' Approved · continuing' : ' Skipped · files left unchanged by this step')
       window.forge.agentApprove(activeId, ev.id, ok)
     }
     yes.onclick = () => answer(true)
@@ -313,16 +309,15 @@ function changesCard(ev: Extract<AgentEvent, { type: 'changes' }>, replace?: HTM
   const sum = (k: 'added' | 'removed') => ev.files.reduce((n, f) => n + f[k], 0)
   const head = h('div', 'changes-head')
   const title = h('span', '', `${ev.files.length} file${ev.files.length === 1 ? '' : 's'} changed`)
-  title.prepend(emo('📝'))
   const stat = h('span', 'stat')
   stat.append(h('span', 'plus', `+${sum('added')}`), document.createTextNode(' '), h('span', 'minus', `−${sum('removed')}`))
   const undo = h('button', 'undo', 'Undo run') as HTMLButtonElement
-  undo.prepend(emo('↩️'))
+  undo.prepend(icon('undo', 'sm'))
   undo.title = 'Undo this run: restore every file in this checkpoint'
   const page = ev.files.find((f) => f.status !== 'deleted' && /\.html?$/i.test(f.path))
   if (page) {
     const open = h('button', 'undo')
-    open.append(emo('🌐'), document.createTextNode('Open page'))
+    open.append(icon('globe', 'sm'), document.createTextNode('Open page'))
     open.title = `Open ${page.path} in your browser`
     open.onclick = () => window.forge.openPath(chatId, page.path).catch((e) => toast(cleanErr(e), 4000))
     head.append(title, stat, open, undo)
@@ -331,7 +326,7 @@ function changesCard(ev: Extract<AgentEvent, { type: 'changes' }>, replace?: HTM
   for (const f of ev.files) {
     const row = h('button', 'file-row')
     const statusEl = h('span', 'file-status ' + f.status)
-    statusEl.append(emo(f.status === 'added' ? '🆕' : f.status === 'deleted' ? '🗑️' : '✏️'))
+    statusEl.append(fileIcon(f.status))
     statusEl.title = f.status === 'added' ? 'New' : f.status === 'deleted' ? 'Removed' : 'Updated'
     row.append(statusEl, h('span', 'tool-path', f.path))
     if (f.status !== 'deleted') row.onclick = async () => { await openWorkspace(); onFileChanged(f.path) }
@@ -347,7 +342,7 @@ function changesCard(ev: Extract<AgentEvent, { type: 'changes' }>, replace?: HTM
     const bridge = window.forge
     if (typeof bridge.agentUndoFile === 'function') {
       const one = h('button', 'undo only') as HTMLButtonElement
-      one.append(emo('↩️'))
+      one.append(icon('undo', 'sm'))
       one.title = 'Undo this file'
       one.setAttribute('aria-label', `Undo ${f.path}`)
       one.onclick = async () => {
@@ -358,7 +353,7 @@ function changesCard(ev: Extract<AgentEvent, { type: 'changes' }>, replace?: HTM
           onFilesRestored([f.path]); briefUndone([f.path])
           if (remaining.length) changesCard({ ...ev, files: remaining }, card)
           else card.replaceChildren(h('div', 'changes-done', 'All files in this run have been restored.'))
-          toast(`↩️ Restored ${f.path}`)
+          toast(`Restored ${f.path}`)
         }
         catch (e) { lock(false); toast(cleanErr(e), 4000) }
       }
@@ -373,7 +368,7 @@ function changesCard(ev: Extract<AgentEvent, { type: 'changes' }>, replace?: HTM
       if (activeId !== chatId) return
       onFilesRestored(restored)
       briefUndone(restored)
-      card.replaceChildren(h('div', 'note changes-done', `↩️ Undone: ${ev.files.length} file${ev.files.length === 1 ? '' : 's'} restored.`))
+      card.replaceChildren(h('div', 'note changes-done', `Undone: ${ev.files.length} file${ev.files.length === 1 ? '' : 's'} restored.`))
     } catch (e) {
       lock(false)
       card.append(h('div', 'errtext', cleanErr(e)))
@@ -421,7 +416,7 @@ function handle(ev: AgentEvent) {
         c.append(icon('copy', 'sm'))
         c.title = 'Copy reply'
         c.setAttribute('aria-label', 'Copy reply')
-        c.onclick = () => copy(text, '📋 Copied reply')
+        c.onclick = () => copy(text, 'Reply copied')
         actions.append(c)
         reply.el.append(actions)
       }
@@ -459,7 +454,7 @@ function handle(ev: AgentEvent) {
       const card = h('div', 'tool')
       const head = h('button', 'tool-head')
       const checkLabel = h('span', 'tool-label', ev.ok ? 'Check passed' : 'Check failed')
-      checkLabel.prepend(emo(ev.ok ? '✅' : '❌'))
+      checkLabel.prepend(emo(ev.ok ? STEP_GLYPH.ok : STEP_GLYPH.bad))
       head.append(h('span', 'dot ' + (ev.ok ? 'ok' : 'err')), checkLabel, h('span', 'tool-path', ev.command))
       const body = h('div', 'tool-body')
       body.hidden = ev.ok
@@ -485,16 +480,16 @@ function handle(ev: AgentEvent) {
       finishGroup()
       hideThinking()
       const msg = {
-        stopped: '⏹️ Stopped.',
-        stuck: '🔁 Stopped: the agent kept repeating a failing step.',
-        max_steps: '🧱 Stopped: step limit reached.',
+        stopped: 'Stopped.',
+        stuck: 'Stopped: the agent kept repeating a failing step.',
+        max_steps: 'Stopped: step limit reached.',
         finished: '',
-        unverified: '⚠️ Finished, but the project check still fails. Review the changes before keeping them.',
+        unverified: 'Finished, but the project check still fails. Review the changes before keeping them.',
       }[ev.reason]
       if (msg) add(h('div', 'note', msg))
       if (runUsage.calls) {
         const rate = runUsage.genSec > 0 ? ` · ${formatRate(runUsage.output / runUsage.genSec)} tok/s` : ''
-        const stats = add(h('div', 'runstats', `🪙 ${formatTokens(runUsage.input)} in · ${formatTokens(runUsage.output)} out${rate ? ` · ⚡ ${rate.slice(3)}` : ''} · ${plural(runUsage.calls, 'call', 'calls')}`))
+        const stats = add(h('div', 'runstats', `${formatTokens(runUsage.input)} in · ${formatTokens(runUsage.output)} out${rate} · ${plural(runUsage.calls, 'call', 'calls')}`))
         stats.title = `${runUsage.input.toLocaleString()} tokens read, ${runUsage.output.toLocaleString()} written, ${plural(runUsage.calls, 'model call', 'model calls')}`
       }
       setRunning(false)
@@ -684,16 +679,15 @@ function moreMenu() {
   const title = me?.title ?? 'Chat'
   const asMarkdown = () => exportMarkdown(title, project, log)
   showMenu($('more'), [
-    { label: 'Copy chat as Markdown', glyph: '📋', run: () => copy(asMarkdown(), 'Chat copied') },
+    { label: 'Copy chat as Markdown', run: () => copy(asMarkdown(), 'Chat copied') },
     {
       label: 'Export as Markdown…',
-      glyph: '💾',
       run: async () => {
         if (await window.forge.saveText(`${title.replace(/[^\w.-]+/g, '-').slice(0, 40) || 'chat'}.md`, asMarkdown())) toast('Exported')
       },
     },
-    ...(project ? [{ label: 'Open project folder', glyph: '📂', run: () => window.forge.openFolder(activeId).catch((e) => toast(cleanErr(e), 4000)) }] : []),
-    ...(me ? [{ label: 'Rename', glyph: '✏️', run: startTitleEdit }, { label: 'Delete chat', glyph: '🗑️', danger: true, run: () => toast(`Delete “${me.title}”? This cannot be undone.`, 6000, { label: 'Delete', run: () => removeChat(me.id) }) }] : []),
+    ...(project ? [{ label: 'Open project folder', run: () => window.forge.openFolder(activeId).catch((e) => toast(cleanErr(e), 4000)) }] : []),
+    ...(me ? [{ label: 'Rename', run: startTitleEdit }, { label: 'Delete chat', danger: true, run: () => toast(`Delete “${me.title}”? This cannot be undone.`, 6000, { label: 'Delete', run: () => removeChat(me.id) }) }] : []),
   ])
 }
 
@@ -717,18 +711,18 @@ export async function initChat(opts: {
   initBrief(async path => { await openWorkspace(); onFileChanged(path) })
   resetBrief(activeId, project)
   initPalette(() => [
-    { label: 'Start a new build', glyph: '✏️', detail: 'Ctrl N', run: newChat },
-    { label: 'Model library', glyph: '🧩', detail: 'Download models and check hardware fit', run: () => openLibrary() },
-    { label: 'Settings', glyph: '⚙️', detail: 'Appearance, models, agent and shortcuts', run: () => openSettings() },
-    { label: 'Usage and speed', glyph: '📊', run: () => openSettings('usage') },
-    { label: 'Toggle workspace', glyph: '💻', detail: 'Files, editor and terminal · Ctrl J', run: () => $('ws-toggle').click() },
-    { label: 'Toggle build brief', glyph: '📋', run: () => $('brief-toggle').click() },
-    { label: 'Focus message', glyph: '⌨️', detail: 'Ctrl L', run: () => prompt.focus() },
-    { label: 'Toggle chat history', glyph: '🗂️', detail: 'Ctrl B', run: () => $('hist-toggle').click() },
-    ...(['ask-all', 'auto-edit', 'full-auto'] as const).map((mode, i) => ({ label: `Autonomy: ${['Ask before edits', 'Auto-edit', 'Full auto'][i]}`, glyph: ['✋', '✏️', '🚀'][i], run: () => { modeSel.value = mode; localStorage.setItem('forge.mode', mode) } })),
-    ...(project ? [{ label: 'Open project folder', glyph: '📂', run: () => { window.forge.openFolder(activeId).catch(e => toast(cleanErr(e), 4000)) } }] : []),
-    ...chats.map(c => ({ label: c.title, glyph: '💬', detail: `Chat · ${folderName(c.project)}`, run: () => openChat(c.id) })),
-    ...Array.from($<HTMLSelectElement>('model').options).map(m => ({ label: `Use ${m.text}`, glyph: '🧠', detail: 'Model', run: () => { const sel = $<HTMLSelectElement>('model'); sel.value = m.value; sel.dispatchEvent(new Event('change')) } })),
+    { label: 'Start a new build', icon: 'edit', detail: 'Ctrl N', run: newChat },
+    { label: 'Model library', icon: 'cube', detail: 'Download models and check hardware fit', run: () => openLibrary() },
+    { label: 'Settings', icon: 'gear', detail: 'Appearance, models, agent and shortcuts', run: () => openSettings() },
+    { label: 'Usage and speed', icon: 'chart', run: () => openSettings('usage') },
+    { label: 'Toggle workspace', icon: 'code', detail: 'Files, editor and terminal · Ctrl J', run: () => $('ws-toggle').click() },
+    { label: 'Toggle build brief', icon: 'list', run: () => $('brief-toggle').click() },
+    { label: 'Focus message', icon: 'keyboard', detail: 'Ctrl L', run: () => prompt.focus() },
+    { label: 'Toggle chat history', icon: 'sidebar', detail: 'Ctrl B', run: () => $('hist-toggle').click() },
+    ...(['ask-all', 'auto-edit', 'full-auto'] as const).map((mode, i) => ({ label: `Autonomy: ${['Ask before edits', 'Auto-edit', 'Full auto'][i]}`, icon: 'sliders' as const, run: () => { modeSel.value = mode; localStorage.setItem('forge.mode', mode) } })),
+    ...(project ? [{ label: 'Open project folder', icon: 'folder' as const, run: () => { window.forge.openFolder(activeId).catch(e => toast(cleanErr(e), 4000)) } }] : []),
+    ...chats.map(c => ({ label: c.title, icon: 'edit' as const, detail: `Chat · ${folderName(c.project)}`, run: () => openChat(c.id) })),
+    ...Array.from($<HTMLSelectElement>('model').options).map(m => ({ label: `Use ${m.text}`, icon: 'cpu' as const, detail: 'Model', run: () => { const sel = $<HTMLSelectElement>('model'); sel.value = m.value; sel.dispatchEvent(new Event('change')) } })),
   ])
   showEmpty()
   window.forge.chatsViewing(activeId)

@@ -45,12 +45,11 @@ export async function copy(text: string, what = 'Copied') {
 }
 
 // A small popup under an element. It closes on the next click anywhere or on Escape.
-export function showMenu(anchor: HTMLElement, items: { label: string; glyph?: string; danger?: boolean; run: () => void }[]) {
+export function showMenu(anchor: HTMLElement, items: { label: string; danger?: boolean; run: () => void }[]) {
   const menu = $('menu')
   menu.replaceChildren(
     ...items.map((i) => {
       const b = h('button', i.danger ? 'danger' : '', i.label)
-      if (i.glyph) b.prepend(emo(i.glyph))
       b.onclick = () => {
         menu.hidden = true
         i.run()

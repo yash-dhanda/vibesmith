@@ -1,7 +1,7 @@
 import type { CatalogItem, InstalledModel, PullEvent } from '../preload'
 import { icon } from './icons'
 import { loadModels } from './models'
-import { $, cleanErr, emo, h, toast } from './ui'
+import { $, cleanErr, h, toast } from './ui'
 
 // The model library: what is installed, what could be, and the engine that runs them. Like LM Studio, inside the app.
 type Tab = 'installed' | 'discover' | 'hf'
@@ -203,7 +203,7 @@ async function renderInstalled(into: HTMLElement) {
   const list = await window.forge.modelsInstalled()
   if (!list.length) {
     const e = h('div', 'empty-box')
-    e.append(h('div', 'et', '📭 No models downloaded yet'), h('div', 'muted', 'Open the Discover tab and download one. Once it is here it works without internet.'))
+    e.append(h('div', 'et', 'No models downloaded yet'), h('div', 'muted', 'Open the Discover tab and download one. Once it is here it works without internet.'))
     const go = h('button', 'btn primary', 'Browse models')
     go.onclick = () => setTab('discover')
     e.append(go)
@@ -213,7 +213,7 @@ async function renderInstalled(into: HTMLElement) {
   const box = h('div', 'sbox')
   for (const m of list as InstalledModel[]) {
     const del = h('button', 'btn danger-quiet only')
-    del.append(emo('🗑️'))
+    del.append(icon('trash', 'sm'))
     del.title = 'Delete model'
     del.setAttribute('aria-label', `Delete ${m.name}`)
     let armed = false
@@ -221,7 +221,7 @@ async function renderInstalled(into: HTMLElement) {
       if (!armed) {
         armed = true
         del.textContent = 'Click again to delete'
-        setTimeout(() => ((armed = false), del.replaceChildren(emo('🗑️'))), 3000)
+        setTimeout(() => ((armed = false), del.replaceChildren(icon('trash', 'sm'))), 3000)
         return
       }
       try {
@@ -259,11 +259,11 @@ async function renderDiscover(into: HTMLElement) {
     g.append(box)
     into.append(g)
   }
-  section('⭐ Best for this computer', best)
+  section('Best for this computer', best)
   section(best.length ? 'More models' : 'Models', rest)
 
   const g = h('div', 'sgroup')
-  g.append(h('div', 'gt', '⬇️ Download any model by name'))
+  g.append(h('div', 'gt', 'Download any model by name'))
   const f = h('form', 'custom')
   const input = document.createElement('input')
   input.placeholder = 'for example llama3.1:8b'
@@ -348,7 +348,7 @@ export async function openLibrary(opts: { welcome?: boolean; tab?: Tab } = {}) {
   const wrap = h('div', 'lib')
   const head = h('div', 'lib-head')
   const titles = h('div')
-  titles.append(h('h3', '', welcome ? '👋 Welcome to Forge' : '🧩 Models'), h('div', 'muted', welcome ? 'Pick a model to download. It runs on your computer, so once it is here Forge works offline.' : 'Download models and run them on this computer.'))
+  titles.append(h('h3', '', welcome ? 'Welcome to Forge' : 'Models'), h('div', 'muted', welcome ? 'Pick a model to download. It runs on your computer, so once it is here Forge works offline.' : 'Download models and run them on this computer.'))
   const close = h('button', 'icon-btn')
   close.append(icon('x'))
   close.title = 'Close (Esc)'
@@ -360,9 +360,8 @@ export async function openLibrary(opts: { welcome?: boolean; tab?: Tab } = {}) {
   dlBox = h('div', 'downloads')
   dlBox.hidden = true
   const tabs = h('div', 'lib-tabs')
-  for (const [id, glyph, label] of [['installed', '📦', 'Installed'], ['discover', '🧭', 'Discover'], ['hf', '🤗', 'Hugging Face']] as [Tab, string, string][]) {
+  for (const [id, label] of [['installed', 'Installed'], ['discover', 'Discover'], ['hf', 'Hugging Face']] as [Tab, string][]) {
     const b = h('button', '', label)
-    b.prepend(emo(glyph))
     b.dataset.tab = id
     b.onclick = () => setTab(id)
     tabs.append(b)

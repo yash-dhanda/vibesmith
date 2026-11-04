@@ -1,6 +1,6 @@
 import type { UsageSummary } from '../preload'
 import { formatRate, formatTokens } from './format'
-import { $, emo, h } from './ui'
+import { $, h } from './ui'
 
 let last: UsageSummary | null = null
 
@@ -36,14 +36,14 @@ export async function renderUsage(into: HTMLElement) {
     c.append(h('div', 'k', k), h('div', 'v', v))
     cards.append(c)
   }
-  card('📅 Today', formatTokens(u.today.input + u.today.output))
-  card('🗓️ Last 7 days', formatTokens(u.last7.input + u.last7.output))
-  card('📥 Read', formatTokens(u.allTime.input))
-  card('📤 Written', formatTokens(u.allTime.output))
+  card('Today', formatTokens(u.today.input + u.today.output))
+  card('Last 7 days', formatTokens(u.last7.input + u.last7.output))
+  card('Read', formatTokens(u.allTime.input))
+  card('Written', formatTokens(u.allTime.output))
   into.append(cards)
 
   const chart = h('div', 'sgroup')
-  chart.append(h('div', 'gt', '📈 Last 14 days'))
+  chart.append(h('div', 'gt', 'Last 14 days'))
   const max = Math.max(1, ...u.byDay.map((d) => d.tokens))
   const bars = h('div', 'bars')
   for (const d of u.byDay) {
@@ -59,7 +59,7 @@ export async function renderUsage(into: HTMLElement) {
   into.append(chart)
 
   const models = h('div', 'sgroup')
-  models.append(h('div', 'gt', '🧠 By model'))
+  models.append(h('div', 'gt', 'By model'))
   if (!u.byModel.length) models.append(h('div', 'note', 'Nothing yet. Send a message and the numbers appear here.'))
   else {
     const t = document.createElement('table')

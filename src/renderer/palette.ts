@@ -1,6 +1,7 @@
-import { $, emo, h } from './ui'
+import { $, h } from './ui'
+import { icon, type IconName } from './icons'
 
-export type Command = { label: string; glyph?: string; detail?: string; run: () => void }
+export type Command = { label: string; icon?: IconName; detail?: string; run: () => void }
 export function initPalette(commands: () => Command[]) {
   const dialog = $<HTMLDialogElement>('palette')
   const input = $<HTMLInputElement>('command-search')
@@ -20,7 +21,7 @@ export function initPalette(commands: () => Command[]) {
       const text = h('span')
       text.append(h('strong', '', c.label))
       if (c.detail) text.append(h('small', '', c.detail))
-      b.append(emo(c.glyph ?? '⚡'), text)
+      b.append(icon(c.icon ?? 'chevron', 'sm'), text)
       b.onmousedown = e => e.preventDefault()
       b.onclick = () => { dialog.close(); c.run() }
       list.append(b)

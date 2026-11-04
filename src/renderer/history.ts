@@ -2,6 +2,7 @@ import type { ChatListItem } from '../preload'
 import { folderName, timeAgo, groupOf } from './format'
 import { icon } from './icons'
 import { h } from './ui'
+import { STEP_GLYPH } from './glyphs'
 
 const list = document.getElementById('chat-list')!
 const seen = new Set<string>() // only chats appearing for the first time animate in, so live re-renders stay still
@@ -34,7 +35,7 @@ export function renderHistory(chats: ChatListItem[], activeId: string, query: st
     if (c.status !== 'idle') row.append(h('span', 'st ' + c.status))
     const title = h('span', 't', c.title)
     row.append(title)
-    const sub = h('span', 's' + (c.status === 'waiting' ? ' wait' : ''), c.status === 'running' ? '🔨 Working…' : c.status === 'waiting' ? '✋ Needs your approval' : `${folderName(c.project)} · ${timeAgo(c.updatedAt)}`)
+    const sub = h('span', 's' + (c.status === 'waiting' ? ' wait' : ''), c.status === 'running' ? `${STEP_GLYPH.working} Working…` : c.status === 'waiting' ? `${STEP_GLYPH.ask} Needs your approval` : `${folderName(c.project)} · ${timeAgo(c.updatedAt)}`)
     const x = h('button', 'x')
     x.append(icon('x', 'sm'))
     x.title = 'Delete chat'

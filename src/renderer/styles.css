@@ -199,7 +199,8 @@ code.k { font: 12px var(--mono); background: var(--panel-2); border-radius: var(
 .code { margin: 12px 0; border: 1px solid var(--hair); border-radius: var(--r-md); background: var(--panel); overflow: hidden; }
 .code-head { display: flex; justify-content: space-between; align-items: center; padding: 3px 4px 3px 12px; color: var(--faint); font: 11.5px var(--mono); }
 .assistant .code pre { margin: 0; border: 0; border-radius: 0; background: none; padding: 4px 14px 12px; }
-.copy { background: none; border: 0; color: var(--muted); border-radius: var(--r-xs); padding: 2px 6px; font-size: 13px; line-height: 1.4; font-family: var(--emoji); }
+.copy { display: inline-grid; place-items: center; width: 24px; height: 24px; background: none; border: 0; color: var(--muted); border-radius: var(--r-xs); padding: 0; }
+.copy .ic { pointer-events: none; }
 .copy:hover { background: var(--panel-2); color: var(--text); }
 .msg-actions { display: flex; gap: 2px; margin-top: 6px; opacity: 0; transition: opacity var(--t1); }
 .assistant:hover .msg-actions, .msg-actions:focus-within { opacity: 1; }
@@ -262,7 +263,8 @@ code.k { font: 12px var(--mono); background: var(--panel-2); border-radius: var(
 .file-row:hover { background: var(--panel); }
 .file-row:active:not(:disabled) { transform: none; }
 .file-row .tool-path { flex: 1; color: var(--text); }
-.file-status { font-size: 12px; min-width: 18px; color: var(--muted); }
+.file-status { display: inline-grid; place-items: center; min-width: 18px; color: var(--faint); }
+.file-status.added { color: var(--ok); } .file-status.deleted { color: var(--err); }
 .file-impact { display: flex; gap: 10px; width: 100%; padding-left: 26px; color: var(--faint); font-size: 11.5px; }
 .file-impact strong { font-weight: 400; color: var(--muted); }
 .change-explainer { display: none; }
@@ -597,7 +599,6 @@ table.models td { text-align: right; padding: 7px 6px; border-top: 1px solid var
 .team-intro > .eyebrow { display: none; }
 .team-intro h1 { font-size: 26px; font-weight: 500; letter-spacing: -.025em; line-height: 1.2; margin: 0 0 6px; text-align: center; }
 .team-lede { max-width: 60ch; margin: 0 auto; color: var(--muted); font-size: 13.5px; line-height: 1.65; text-align: center; }
-.team-entry-mark { font-size: 32px; }
 .team-start-card { margin-top: 26px; padding: 12px 12px 10px 14px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--panel); transition: border-color var(--t2), box-shadow var(--t2); }
 .team-start-card:focus-within { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); box-shadow: 0 0 0 3px var(--accent-soft); }
 .team-start-card > textarea { display: block; width: 100%; min-height: 84px; resize: vertical; border: 0; outline: 0; background: transparent; padding: 2px 2px; font-size: 14px; line-height: 1.6; }

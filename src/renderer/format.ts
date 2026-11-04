@@ -1,4 +1,5 @@
 import type { TranscriptItem } from '../main/chatStore'
+import { iconSvg } from './icons'
 
 // Pure helpers, kept apart from the DOM code so they can be unit tested.
 const startOfDay = (t: number) => new Date(t).setHours(0, 0, 0, 0)
@@ -110,7 +111,7 @@ export function md(src: string): string {
       const nl = part.indexOf('\n') // first line is the language tag
       const lang = (nl === -1 ? part : part.slice(0, nl)).trim().replace(/[^\w+#.-]/g, '')
       const code = (nl === -1 ? '' : part.slice(nl + 1)).replace(/\n$/, '')
-      return `<div class="code"><div class="code-head"><span>${esc(lang || 'code')}</span><button class="copy" type="button" title="Copy code" aria-label="Copy code">📋</button></div><pre><code>${esc(code)}</code></pre></div>`
+      return `<div class="code"><div class="code-head"><span>${esc(lang || 'code')}</span><button class="copy" type="button" title="Copy code" aria-label="Copy code">${iconSvg('copy', 'sm')}</button></div><pre><code>${esc(code)}</code></pre></div>`
     })
     .join('')
 }

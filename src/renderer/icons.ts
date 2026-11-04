@@ -26,6 +26,10 @@ const PATHS = {
   spark: 'M12 3.5 13.8 10 20.5 12 13.8 14 12 20.5 10.2 14 3.5 12 10.2 10z',
   cpu: 'M8 8h8v8H8zM10 4.5V8M14 4.5V8M10 16v3.5M14 16v3.5M4.5 10H8M4.5 14H8M16 10h3.5M16 14h3.5',
   globe: 'M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17zM3.5 12h17M12 3.5c2.4 2.4 3.4 5.4 3.4 8.5s-1 6.1-3.4 8.5c-2.4-2.4-3.4-5.4-3.4-8.5s1-6.1 3.4-8.5z',
+  undo: 'M9 14 4.5 9.5 9 5M4.5 9.5h10a5 5 0 0 1 0 10H11',
+  pause: 'M9 6v12M15 6v12',
+  bug: 'M8.5 9.5a3.5 3.5 0 0 1 7 0v5a3.5 3.5 0 0 1-7 0zM12 9.5v8.5M4.5 13h4M15.5 13h4M5.5 8.5l3 1.5M18.5 8.5l-3 1.5M5.5 18l3-2M18.5 18l-3-2M10 6 9 4.5M14 6l1-1.5',
+  file: 'M6.5 3.5h7l4 4v13h-11zM13.5 3.5v4h4',
   edit: 'M4.5 19.5h4l10-10-4-4-10 10zM13 7l4 4',
   users: 'M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5M16 4.5a3.5 3.5 0 0 1 0 6.5M18 14.8c1.8.7 3 2.6 3 5.2',
   grid: 'M4.5 4.5h6v6h-6zM13.5 4.5h6v6h-6zM4.5 13.5h6v6h-6zM13.5 13.5h6v6h-6z',
@@ -68,5 +72,11 @@ export function hydrateIcons(root: ParentNode = document) {
     if (name in PATHS) el.replaceWith(icon(name, el.className))
   })
 }
+
+// The same drawing as markup, for HTML built as a string (code blocks in replies).
+export const iconSvg = (name: IconName, cls = '') => `<svg viewBox="0 0 24 24" class="ic ${cls}" aria-hidden="true"><path d="${PATHS[name]}"/></svg>`
+
+// A changed file's status: new, removed or updated.
+export function fileIcon(status: string) { const i = icon(status === 'added' ? 'plus' : status === 'deleted' ? 'trash' : 'edit', 'sm'); return i }
 
 export const hasIcon = (name: string): name is IconName => name in PATHS

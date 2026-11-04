@@ -1,7 +1,8 @@
 import type { AgentEvent } from '../preload'
 import { folderName } from './format'
-import { $, emo, h, cleanErr, toast } from './ui'
-import { icon } from './icons'
+import { $, h, cleanErr, toast } from './ui'
+import { STEP_GLYPH } from './glyphs'
+import { fileIcon, icon } from './icons'
 
 type Priority = { text: string; skipped: boolean }
 let chatId = ''
@@ -125,7 +126,7 @@ function render() {
   for (const item of plan) {
     const row = h('li', `plan-item ${item.status}`)
     row.setAttribute('aria-label', `${item.status === 'doing' ? 'In progress' : item.status === 'done' ? 'Complete' : 'To do'}: ${item.text}`)
-    const marker = h('span', 'plan-marker', item.status === 'done' ? '✅' : item.status === 'doing' ? '🔨' : '○')
+    const marker = h('span', 'plan-marker', item.status === 'done' ? STEP_GLYPH.done : item.status === 'doing' ? STEP_GLYPH.working : '○')
     marker.setAttribute('aria-hidden', 'true')
     row.append(marker, h('span', '', item.text))
     checklist.append(row)
@@ -134,13 +135,13 @@ function render() {
   $('brief-status').textContent = state
   const files = $('brief-files')
   files.replaceChildren()
-  $('brief-files-title').replaceChildren(emo('🌱'), changed.size ? `Taking shape · ${changed.size}` : 'Taking shape')
+  $('brief-files-title').textContent = changed.size ? `Taking shape · ${changed.size}` : 'Taking shape'
   if (!changed.size) files.append(h('p', 'brief-muted', 'Files you change will appear here as your idea takes shape.'))
   for (const [path, status] of [...changed].slice(-8)) {
     const b = h('button', 'artifact') as HTMLButtonElement
     const info = h('span')
     info.append(h('strong', '', folderName(path)), h('small', '', `${status === 'added' ? 'Created' : status === 'deleted' ? 'Removed' : 'Updated'} · ${path}`))
-    b.append(emo(status === 'added' ? '🆕' : status === 'deleted' ? '🗑️' : '✏️'), info, icon('chevron', 'sm'))
+    b.append(fileIcon(status), info, icon('chevron', 'sm'))
     b.disabled = status === 'deleted'
     b.onclick = () => openFile(path)
     files.append(b)
