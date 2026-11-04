@@ -78,7 +78,7 @@ export function replayRun(state = 'running'): { run: Run; events: { t: number; e
     messages: run.messages,
     handoffs: [{ taskId: 'foundation', title: 'Shape the shared data model', agent: 'claude', handoff: 'The data model is ready. Keep the controls usable with a keyboard.' }],
     errors: [{ id: 'e1', taskId: 'foundation', signature: 'worker failed to load', text: 'The diff worker initially failed to load.', fix: 'Use the bundled local Monaco worker.', at: now - 90_000 }],
-    project: { decisions: [{ id: 'pd1', text: 'Use warm neutrals and ember for intent.', by: 'user', at: now - 86_400_000 }], errors: [], stats: { 'claude:research': { ok: 4, fail: 0 }, 'codex:build': { ok: 7, fail: 1 } } },
+    project: { decisions: [{ id: 'pd1', text: 'Use neutral greys and one white primary action.', by: 'user', at: now - 86_400_000 }], errors: [], stats: { 'claude:research': { ok: 4, fail: 0 }, 'codex:build': { ok: 7, fail: 1 } } },
   }
   if (state === 'verifyfail') events.push({ t: now - 2_000, ev: { type: 'verify', runId: run.id, command: 'npm test', ok: false, output: '1 test failed: expected the button to be keyboard reachable.\nA fix task has started.' } })
   if (state === 'stress') {

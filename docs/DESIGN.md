@@ -1,6 +1,6 @@
 # Forge: a room for building
 
-The conversation is the way in. The project is the thing that stays. Forge puts a warm, quiet build brief next to the conversation so someone who cannot read code can still understand what is being made, what changed, and what needs a decision.
+The conversation is the way in. The project is the thing that stays. Forge puts a quiet build brief next to the conversation so someone who cannot read code can still understand what is being made, what changed, and what needs a decision.
 
 ## Principles
 
@@ -13,20 +13,26 @@ The conversation is the way in. The project is the thing that stays. Forge puts 
 
 Geist and Geist Mono are bundled locally. No remote fonts, assets, or renderer dependencies were added.
 
+The visual language follows a near-black, monochrome desktop style (2026-11-04): neutral greys only, quiet hairlines, and the primary action is white on black in dark and black on white in light. Values were read from a reference app's computed styles, not copied code or assets; Forge keeps its own wordmark.
+
 | Token | Dark | Light | Purpose |
 | --- | --- | --- | --- |
-| Background | `#1a1918` | `#fcfbf9` | Main canvas |
-| Panel | `#201f1d` | `#f5f3ef` | Sidebar, settings nav, code blocks |
-| Raised panel | `#2b2a27` | `#ece9e3` | Hover, selected rows, user messages |
-| Hairline | `#2c2b28` | `#ebe8e2` | 1px dividers and card borders |
-| Text | `#ecebe7` | `#1d1b18` | Primary information |
-| Secondary | `#a8a39a` | `#625d55` | Supporting information |
-| Faint | `#918c83` | `#6f6a60` | Meta text (still AA on the canvas) |
-| Ember | `#e38b68` | `#b4532f` | Intent, focus and action |
+| `--bg` | `#101010` | `#ffffff` | Main canvas, editor-adjacent surfaces |
+| `--side` | `#0c0d0e` | `#fafafa` | Sidebar and settings nav |
+| `--panel` | `#181818` | `#fafafa` | Cards, dialogs, composer, toasts |
+| `--panel-2` | `#242424` | `#f0f0f1` | Hover, selected rows, icon tiles |
+| `--hair` / `--border` | `#252525` / `#303030` | `#e5e5e5` / `#d4d4d8` | 1px dividers / control borders |
+| `--text` / `--muted` / `--faint` | `#d8d8d8` / `#a7a7a7` / `#858585` | `#18181b` / `#52525b` / `#71717a` | Text levels, all AA on the canvas |
+| `--accent` / `--accent-ink` | `#e8e8e8` / `#111111` | `#18181b` / `#ffffff` | Primary buttons, send, progress |
+| `--focus` | `#c8c8c8` | `#3f3f46` | Focus rings and focused field borders |
 
-Chrome is flat: 1px hairlines instead of cards and drop shadows, one accent, sentence case, no all-caps eyebrows. Radii are 5-10px, 16px on the composer and dialogs. Type is 13px for UI, 14px for messages, 11.5-12px for meta. Only floating surfaces (dialogs, menus, toasts) get a shadow.
+Agent colours (`--a-claude`, `--a-codex`, `--a-local`) appear only as small dots and in the live editor (carets, name tags, block rails). Semantic `--ok`, `--warn`, `--err` stay for diffs, errors and the few warnings. Radii: 8px rows and buttons, 12px dialogs, toasts and the composer. Type: 13px UI, 12.5px nav rows, 20px page titles, 15px settings section heads, 11.5px muted column heads.
 
-**Emoji for meaning, SVG for utility.** Statuses, step kinds, section heads, nav items and compact controls use emoji (`.emo`, sized 1.05em and centred on the line); plus, x, chevrons, arrows and dots stay SVG. Every emoji-only control keeps its words in `title` and `aria-label`. Agents keep their names (Claude, Codex, Local) with a colour dot. Long text, headings, errors and form help stay as words. The UI font stacks end with Noto Color Emoji, Apple Color Emoji and Segoe UI Emoji.
+Layout anatomy: a 224px sidebar (wordmark and collapse, nav rows with line icons, a muted "Chats" label with +, the chat list, then a usage avatar with Models and Settings icons); page headers with the title left and a compact control cluster right (view toggle, filter and sort selects, an expanding search, then the white primary button); boards as tables with muted column heads and hairline rows, or a card grid; centred empty states (line glyph, bold line, two muted lines, one white button). Settings is a full page with grouped nav, a search that filters rows across pages, and hairline sections of label-plus-description rows with Off | On pairs, chevron selects, outline buttons and preview cards. Dialogs have a 1px border, 12px radius, an icon + title + close header, a divider, and a footer with a muted hint left and actions right. Toasts are cards bottom-right. The Team run screen sits on a 14px dotted canvas.
+
+**Emoji only for meaning.** Emoji mark statuses (run, task, step), approvals and agent tool steps, plus the Chat / Team mode chips; they all come from one map in `glyphs.ts`. Headings, nav rows, buttons, menus, settings, dialogs, toasts, hints, table labels and file rows use words or the SVG set in `icons.ts`. Every icon-only control keeps its words in `title` and `aria-label`. The UI font stacks end with Noto Color Emoji, Apple Color Emoji and Segoe UI Emoji.
+
+**Team questions.** An agent's `team_ask` question is the loudest card in the Waiting-for-you tray: who asks, the question, option rows (radio or checkbox) with an "Other…" row and its own text field, keys 1-4, arrows and Enter, then Skip and a white "Send answer". The run header shows "Waiting for you" while one is pending, and answered questions stay as one-line "You answered: …" rows. A half-made answer survives live redraws.
 
 ## Components and behavior
 
@@ -40,7 +46,7 @@ Chrome is flat: 1px hairlines instead of cards and drop shadows, one accent, sen
 
 ## Motion and performance
 
-Motion is transform and opacity only, 150-300ms on `cubic-bezier(.2,.8,.2,1)`. Messages, chat rows, task cards, settings groups, palette results and model rows rise 6px as they arrive, staggered a few tens of ms. Lists that redraw live (chat history, task board, run list) only animate items seen for the first time. Dialogs scale from .97 and fade in and back out (`@starting-style` plus `allow-discrete`). The sidebar, workspace and brief slide in when shown; chat and Team screens cross-fade. Toasts slide in and out, running states pulse, progress bars fill with `scaleX` and carry a sheen, skeletons use a sliding sheen, focus rings ease in, and the token count nudges when it changes. `prefers-reduced-motion: reduce` turns every animation and transition off.
+Motion is transform and opacity only, 150-300ms on `cubic-bezier(.2,.8,.2,1)`. Messages, chat rows, task cards, settings groups, palette results and model rows rise 6px as they arrive, staggered a few tens of ms. Lists that redraw live (chat history, task board, run list) only animate items seen for the first time. Dialogs scale from .98 and fade in and out in 150ms (`@starting-style` plus `allow-discrete`); Settings fades in as a page and each settings page cross-fades. Toasts rise in from the bottom-right corner. The sidebar, workspace and brief slide in when shown; chat and Team screens cross-fade. Toasts slide in and out, running states pulse, progress bars fill with `scaleX` and carry a sheen, skeletons use a sliding sheen, focus rings ease in, and the token count nudges when it changes. `prefers-reduced-motion: reduce` turns every animation and transition off.
 
 Chat’s entry bundle is about 89 kB unminified after build, compared with roughly 7.7 MB before the redesign. Monaco and xterm load only when Workspace is requested; no hidden terminal starts with chat. Long threads use `content-visibility: auto` with remembered intrinsic sizes, keeping all messages available to search, selection, and accessibility tools. Streaming and export continue to use the existing escaping Markdown renderer.
 
