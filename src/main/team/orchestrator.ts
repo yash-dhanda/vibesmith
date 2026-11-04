@@ -586,7 +586,7 @@ export class TeamOrchestrator {
     this.out(run, { type: 'approval', runId: run.id, approval: a })
   }
 
-  private async ask(run: Run, p: { kind: ApprovalKind; title: string; detail: string; taskId?: string; agent?: AgentName }): Promise<{ allow: boolean; note?: string }> {
+  private async ask(run: Run, p: { kind: ApprovalKind; title: string; detail: string; options?: Approval['options']; multi?: boolean; taskId?: string; agent?: AgentName }): Promise<{ allow: boolean; note?: string }> {
     const live = this.liveOf(run)
     const a: Approval = { id: id('a'), status: 'pending', at: Date.now(), ...p }
     run.approvals.push(a)
@@ -1095,6 +1095,14 @@ export class TeamOrchestrator {
           this.touch(run, task)
         }
         return 'recorded'
+      }
+      case 'ask': {
+        if (run.config.askQuestions === false) return 'The user does not want questions in this run. Decide it yourself, pick the most sensible option and note your choice in your handoff.'
+        const options = (Array.isArray(args.options) ? args.options : []).slice(0, 6).map((o: any) => ({ label: str(o?.label, 80), description: o?.description ? str(o.description, 160) : undefined })).filter((o: { label: string }) => o.label)
+        const q = str(args.question, 300).trim()
+        if (!q) return 'No question was given.'
+        const r = await this.ask(run, { kind: 'question', taskId: ctx.taskId, agent: ctx.agent, title: q, detail: '', options: options.length ? options : undefined, multi: args.multi === true && options.length > 1 })
+        return r.allow && r.note ? `The user answered: ${r.note}` : 'The user chose not to answer. Decide it yourself, pick the most sensible option and note your choice in your handoff.'
       }
       case 'request_approval': {
         if (run.config.bypassPermissions !== false) return 'allowed (the user turned permission prompts off for this team)'

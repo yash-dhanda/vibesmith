@@ -53,6 +53,8 @@ export type Approval = {
   kind: ApprovalKind
   title: string
   detail: string
+  options?: { label: string; description?: string }[] // a question with choices (kind 'question')
+  multi?: boolean // more than one choice may be picked
   taskId?: string
   agent?: AgentName
   status: 'pending' | 'allowed' | 'denied' | 'expired'
@@ -72,6 +74,7 @@ export type TeamConfig = {
   claudeModel?: string
   bypassPermissions?: boolean // never ask the user to allow a command or file read (default on). Hard limits stay: no push, no sudo, no writes outside the task folder or to secrets
   claudeEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+  askQuestions?: boolean // agents may ask the user a question when they are really unsure (default on)
   codexEffort?: 'low' | 'medium' | 'high' | 'xhigh' // Codex's reasoning effort
   maxParallelPerAgent: number
   maxFixRounds: number

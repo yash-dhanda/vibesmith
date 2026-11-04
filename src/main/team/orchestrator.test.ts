@@ -604,6 +604,29 @@ describe('mailbox operations agents call', () => {
     await x.orch.cancel(run.id)
   })
 
+  it('lets an agent ask the user a question with options, even when permission prompts are off, and hands the answer back', async () => {
+    const x = h({ delayMs: 600, plan: { tasks: [T('a', { agent: 'claude' })] } })
+    const run = await x.orch.start(x.proj, 'ask', { bypassPermissions: true })
+    await until(x.orch, run.id, (r) => r.tasks.length === 1)
+    let settled = false
+    const p = call(x, run, 'ask', { question: 'Which database?', options: [{ label: 'SQLite', description: 'one file' }, { label: 'Postgres' }], multi: false }, 'claude').then((v: string) => ((settled = true), v))
+    const pending = await until(x.orch, run.id, (r) => r.approvals.some((a) => a.kind === 'question' && a.status === 'pending'))
+    const card = pending.approvals.find((a) => a.kind === 'question')!
+    expect(settled).toBe(false)
+    expect(card.title).toBe('Which database?')
+    expect(card.options).toEqual([{ label: 'SQLite', description: 'one file' }, { label: 'Postgres', description: undefined }])
+    x.orch.answerApproval(run.id, card.id, true, 'SQLite')
+    expect(await p).toBe('The user answered: SQLite')
+  })
+
+  it('tells agents to decide for themselves when the user turned questions off', async () => {
+    const x = h({ delayMs: 600, plan: { tasks: [T('a', { agent: 'claude' })] } })
+    const run = await x.orch.start(x.proj, 'noask', { askQuestions: false })
+    await until(x.orch, run.id, (r) => r.tasks.length === 1)
+    expect(await call(x, run, 'ask', { question: 'Which database?' }, 'claude')).toMatch(/decide it yourself/i)
+    expect(x.orch.get(run.id)!.approvals.some((a) => a.kind === 'question')).toBe(false)
+  })
+
   it('blocks an approval request until the user answers, and applies the policy to permission prompts', async () => {
     const x = h({ delayMs: 600, plan: { tasks: [T('a', { agent: 'claude' })] } })
     const run = await x.orch.start(x.proj, 'approve', { bypassPermissions: false })
