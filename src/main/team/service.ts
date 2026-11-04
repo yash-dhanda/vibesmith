@@ -132,11 +132,11 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
       return summarize(await orch.start(project, goal, { ...settings.get(project), ...config, ...(files.length ? { attachments: files } : {}), budget: { maxTasks: settings.get(project).budget?.maxTasks, ...config?.budget } }))
     },
     // Another message for a run: the run is one never-ending chat, so this always goes to the same run (see TeamOrchestrator.followUp).
-    async followUp(id: string, text: string, to: AgentName | 'all' = 'all') {
+    async followUp(id: string, text: string, to: AgentName | 'all' = 'all', attachments?: unknown) {
       if (!orch.get(id)) throw new Error('This run no longer exists.')
       const run = orch.get(id)!
       if (['done', 'failed', 'cancelled'].includes(run.status) && orch.list().some((r) => r.id !== id && r.project === run.project && ACTIVE.includes(r.status))) throw new Error('Another crew run in this project is in progress. Finish or cancel it first.')
-      await orch.followUp(id, text, to)
+      await orch.followUp(id, text, to, cleanAttachments(join(teamDir, 'attachments'), attachments))
     },
     list: () => orch.list().map(summarize),
     // A plain-text summary to paste into a bug report: versions, sign-ins, plan allowance, recent runs. No secrets, no file contents.

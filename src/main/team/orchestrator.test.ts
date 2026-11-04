@@ -191,6 +191,22 @@ describe('team orchestrator', () => {
     expect(x.orch.get(run.id)!.messages.some((m) => /was stopped/.test(m.body))).toBe(true)
   })
 
+  it('a message with pictures or files names them and gives every later turn of every agent access', async () => {
+    const x = h({ plan: { tasks: [T('a')] } })
+    const run = await x.orch.start(x.proj, 'with files')
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    const shot = { id: '1', name: 'screenshot-10-02.png', path: join(x.proj, 'shot.png'), kind: 'image' as const, size: 10 }
+    await x.orch.followUp(run.id, 'make it look like this', 'all', [shot])
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval' && r.tasks.length === 2)
+    expect(r.config.attachments?.map((f) => f.path)).toContain(shot.path)
+    expect(r.tasks[1].goal).toContain('make it look like this')
+    expect(r.tasks[1].goal).toContain(shot.path)
+    await x.orch.followUp(run.id, '', 'all', [shot]) // only a file: the text is filled in, and the same file is not stored twice
+    const r2 = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval' && r.tasks.length === 3)
+    expect(r2.tasks[2].goal).toContain('See the attached files.')
+    expect(r2.config.attachments?.filter((f) => f.path === shot.path)).toHaveLength(1)
+  })
+
   it('takes an applied result back out of the project with undo', async () => {
     const x = h({ plan: { tasks: [T('a'), T('b')] } })
     const run = await x.orch.start(x.proj, 'undo me')

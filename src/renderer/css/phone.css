@@ -142,7 +142,7 @@ button, a, summary, select, label { touch-action: manipulation; }
   .q-foot { margin-inline: -14px; padding-inline: 14px; flex-wrap: wrap; }
   .q-foot .modal-hint { flex: 1 1 0; } /* the hint wraps before Skip and Send answer are split up */
   .q-foot .grow { display: none; }
-  :root[data-theme] .team-composer > div { box-shadow: none; } /* it sits on the bottom bar: a soft shadow would grey the gap above it */
+  :root[data-theme] .team-composer > .team-steer-row { box-shadow: none; } /* it sits on the bottom bar: a soft shadow would grey the gap above it */
   .team-diff-host.open { height: 60vh; }
   .plan-edit-row { grid-template-columns: auto minmax(0, 1fr); }
   .plan-edit-row select, .plan-edit-row .plan-skip { grid-column: 2; justify-self: start; }
@@ -171,7 +171,7 @@ html.remote :is(.assistant, .user, pre, code, .stage-code, .feed-body, .errcard,
 html.remote :is(#ws-toggle, #brief-toggle, #build-brief, #workspace) { display: none !important; }
 html.remote :is(input, textarea, select) { font-size: 16px !important; }
 /* flat layers: hairlines instead of large blurred shadows, no repainting canvas behind a run */
-html.remote .question-card, :root.remote .toast, :root.remote dialog, html.remote[data-theme] :is(.team-start-card, .team-composer > div) { box-shadow: none; }
+html.remote .question-card, :root.remote .toast, :root.remote dialog, html.remote[data-theme] :is(.team-start-card, .team-composer > .team-steer-row) { box-shadow: none; }
 html.remote #app #history { box-shadow: none; border-right: 1px solid var(--hair); }
 html.remote #team-root:has(> .team-run) { background-image: none; }
 /* only the working indicators keep moving; every other loop plays once */

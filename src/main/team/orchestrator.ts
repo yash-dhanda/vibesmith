@@ -326,9 +326,9 @@ export class TeamOrchestrator {
   // The run is one never-ending chat: another message always goes to the same run.
   // Still going -> steer. Waiting for the final OK -> the old result stays and a new task builds on it. Finished/failed/cancelled -> the run is
   // reopened on a fresh team branch (cut from the project as it is now when the result was applied, else from the old branch) with a new task.
-  async followUp(runId: string, text: string, to: AgentName | 'all' = 'all') {
+  async followUp(runId: string, text: string, to: AgentName | 'all' = 'all', files?: import('./attach').TeamAttachment[]) {
     const run = this.runOf(runId)
-    const body = text.trim().slice(0, 2000)
+    let body = text.trim().slice(0, 2000) || (files?.length ? 'See the attached files.' : '')
     if (!run || !body) return
     // "run website" / "stop the website" are commands for Forge, not instructions for the agents: they start or stop the dev server and report the port.
     if (this.d.runApp && isRunAppWords(body)) {
@@ -345,6 +345,14 @@ export class TeamOrchestrator {
     const word = body.toLowerCase().replace(/[\s.!]+$/, '')
     if (/^(pause|stop|wait|hold on|stop it|pause it)$/.test(word)) return ['planning', 'running', 'verifying', 'paused'].includes(run.status) ? this.pause(runId, true) : void this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: 'Nothing is running right now.' })
     if (/^(resume|continue|go on|keep going|go|start again|unpause)$/.test(word)) return ['paused', 'interrupted'].includes(run.status) ? this.resume(runId) : void this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: 'Nothing is paused right now.' })
+    // Pictures, videos and files sent with the message: every later turn of every agent gets them (like the ones given at the start), and this
+    // message names where they are so an agent that is working now can open them at once.
+    if (files?.length) {
+      const have = new Set((run.config.attachments ?? []).map((f) => f.path))
+      run.config.attachments = [...(run.config.attachments ?? []), ...files.filter((f) => !have.has(f.path))].slice(-60)
+      body = `${body}\n\nAttached files (open and look at them):\n${files.map((f) => `- ${f.name}: ${f.path}${f.frames?.length ? ` (video, frames: ${f.frames.join(', ')})` : ''}`).join('\n')}`
+      this.save(run)
+    }
     if (['planning', 'running', 'paused', 'verifying', 'interrupted'].includes(run.status)) {
       // after the last task nobody is left to read a message: the final steps turn it into a task
       const finishing = run.status === 'verifying' || (['paused', 'interrupted'].includes(run.status) && run.tasks.length > 0 && run.tasks.every((t) => ['done', 'cancelled'].includes(t.status)))

@@ -460,9 +460,9 @@
 
 /* the run's message box: a chat composer pinned to the bottom of the run page in every state */
 .team-composer { position: sticky; bottom: 0; z-index: 5; margin-top: 2px; padding: 16px 0 12px; background: linear-gradient(to bottom, transparent, var(--bg) 20px); }
-.team-composer > div { display: flex; align-items: flex-end; gap: 4px; padding: 5px 5px 5px 14px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--panel); box-shadow: 0 14px 34px -16px rgba(0, 0, 0, .6); transition: border-color var(--t2), box-shadow var(--t2); }
-:root[data-theme='light'] .team-composer > div { box-shadow: 0 12px 30px -18px rgba(0, 0, 0, .25); }
-.team-composer > div:focus-within { border-color: color-mix(in srgb, var(--focus) 55%, var(--border)); }
+.team-composer > .team-steer-row { display: flex; align-items: flex-end; gap: 4px; padding: 5px 5px 5px 14px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--panel); box-shadow: 0 14px 34px -16px rgba(0, 0, 0, .6); transition: border-color var(--t2), box-shadow var(--t2); }
+:root[data-theme='light'] .team-composer > .team-steer-row { box-shadow: 0 12px 30px -18px rgba(0, 0, 0, .25); }
+.team-composer > .team-steer-row:focus-within { border-color: color-mix(in srgb, var(--focus) 55%, var(--border)); }
 .team-composer textarea { flex: 1; min-width: 0; min-height: 32px; max-height: 160px; resize: none; border: 0; background: transparent; color: inherit; padding: 6px 0; font: 13.5px/1.5 var(--sans); outline: none; }
 .team-composer textarea::placeholder { color: var(--faint); }
 .team-composer textarea:focus-visible { outline: 0; animation: none; }
@@ -472,3 +472,8 @@
 .team-send:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 86%, var(--bg)); transform: translateY(-1px); }
 .team-send:active:not(:disabled) { transform: translateY(1px) scale(.96); }
 .team-send:disabled { background: var(--panel-2); color: var(--faint); cursor: default; }
+/* files added to the run's message box: chips sit above the box, the paperclip inside it */
+.team-composer .att-strip { margin: 0 4px 6px; }
+.team-composer .att-btn { flex: none; align-self: flex-end; margin-bottom: 1px; }
+.team-composer.att-host { position: sticky; } /* attachments.css makes the drop host relative: the box must stay pinned to the bottom */
+.team-composer .att-strip:not(:empty) { background: var(--bg); border-radius: var(--r-md); padding: 4px 4px 2px; }

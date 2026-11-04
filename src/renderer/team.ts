@@ -388,8 +388,10 @@ function renderRun() {
   const answered = renderAnswered(); if (answered) page.append(answered)
   if (run.status === 'awaiting_approval' && run.final) page.append(renderFinal())
   if (run.status === 'done' && run.applied) page.append(renderApplied())
+  const hadFocus = !!steerUi && document.activeElement === steerUi.text
   page.append(renderBoard(), renderStory(), renderSteer())
   root.replaceChildren(page); root.scrollTop = scrollTop
+  if (hadFocus) steerUi?.text.focus({ preventScroll: true })
 }
 
 // The header: folder, the goal clamped to two lines (click or "Show all" to read it all), one line of status, time, tokens and
@@ -799,19 +801,44 @@ function renderVerify() {
 }
 // One chat box for the whole run, pinned at the bottom in every state. While the crew works the message steers it; after it finishes, the same
 // message reopens the run and puts the crew back to work — the run never "ends", you keep talking to it.
-function renderSteer() {
-  const over = ['done', 'failed', 'cancelled', 'awaiting_approval'].includes(run!.status)
-  const form = h('form', 'team-steer team-composer') as HTMLFormElement; const row = h('div')
-  const text = h('textarea') as HTMLTextAreaElement; text.rows = 1; text.value = steerDraft
-  text.placeholder = over ? 'Keep going: ask for more, a fix, or something new…' : ['paused', 'interrupted'].includes(run!.status) ? 'Paused. Type resume to continue, or add a note first…' : 'Message the crew, or type pause to stop it…'; text.setAttribute('aria-label', 'Message the crew')
-  const send = h('button', 'team-send') as HTMLButtonElement; send.append(icon('arrowup')); send.setAttribute('aria-label', 'Send to the crew'); send.title = 'Send'; send.type = 'submit'
-  const grow = () => { text.style.height = 'auto'; text.style.height = `${Math.min(text.scrollHeight, 160)}px`; send.disabled = !text.value.trim() }
+// The message box is built once per run and moved into every redraw, so a draft, files that are uploading and the focus survive live updates.
+// It takes pictures, videos and documents like the start card does: paperclip, paste, or drop them on the box.
+type SteerUi = { runId: string; form: HTMLFormElement; text: HTMLTextAreaElement; att: ReturnType<typeof attachmentStrip>; sync: () => void }
+let steerUi: SteerUi | null = null
+function buildSteer(runId: string): SteerUi {
+  const form = h('form', 'team-steer team-composer') as HTMLFormElement; const row = h('div', 'team-steer-row')
+  const text = h('textarea') as HTMLTextAreaElement; text.rows = 1; text.value = steerDraft; text.setAttribute('aria-label', 'Message the crew')
+  const send = h('button', 'team-send') as HTMLButtonElement; send.append(icon('arrowup')); send.setAttribute('aria-label', 'Send to the crew'); send.type = 'submit'
+  const att = attachmentStrip({
+    host: form, textarea: text, max: 12, maxBytes: 200 * 1024 * 1024, limits: 'Up to 12 files per message, 200 MB each.',
+    note: 'Agents get the file locations and look at pictures and video frames themselves.',
+    upload: async (file, progress) => {
+      if (replay) return { id: String(file.size), name: file.name, size: file.size, path: `/tmp/forge-replay/${file.name}`, kind: kindOf(file) }
+      return uploadCrewFile(file, progress)
+    },
+    onChange: () => sync(),
+  })
+  const sync = () => { send.disabled = (!text.value.trim() && !att.ready().length) || att.busy(); send.title = att.busy() ? 'Waiting for the files to finish uploading' : 'Send' }
+  const grow = () => { text.style.height = 'auto'; text.style.height = `${Math.min(text.scrollHeight, 160)}px`; sync() }
   text.oninput = () => { steerDraft = text.value; grow() }
   const to = select([['all', 'Everyone'], ['claude', 'Claude'], ['codex', 'Codex'], ['local', AGENT_NAME.local]], steerTarget); to.onchange = () => { steerTarget = to.value as typeof steerTarget }
-  row.append(text, selectButton('users', to, 'Send to'), send); form.append(row); queueMicrotask(grow)
+  row.append(att.button, att.input, text, selectButton('users', to, 'Send to'), send); form.append(att.strip, row); queueMicrotask(grow)
   text.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit() } }
-  form.onsubmit = e => { e.preventDefault(); const value = text.value.trim(); if (!value) return; if (replay) { run!.messages.push({ id: uuid(), from: 'user', to: steerTarget, kind: 'steer', body: value, at: Date.now(), readBy: [] }); steerDraft = ''; renderRun() } else void call(async () => { await window.forge.teamFollow(run!.id, value, steerTarget); steerDraft = ''; await refreshRun() }) }
-  return form
+  const sent = () => { steerDraft = ''; text.value = ''; att.clear(); grow() }
+  form.onsubmit = e => {
+    e.preventDefault(); const value = text.value.trim(); const files = att.ready() as TeamAttachment[]
+    if ((!value && !files.length) || att.busy()) return
+    if (replay) { run!.messages.push({ id: uuid(), from: 'user', to: steerTarget, kind: 'steer', body: value || 'See the attached files.', at: Date.now(), readBy: [] }); sent(); renderRun() }
+    else void call(async () => { await window.forge.teamFollow(runId, value, steerTarget, files.length ? files : undefined); sent(); await refreshRun() })
+  }
+  return { runId, form, text, att, sync }
+}
+function renderSteer() {
+  const over = ['done', 'failed', 'cancelled', 'awaiting_approval'].includes(run!.status)
+  if (!steerUi || steerUi.runId !== run!.id) steerUi = buildSteer(run!.id)
+  steerUi.text.placeholder = over ? 'Keep going: ask for more, add pictures or files, or something new…' : ['paused', 'interrupted'].includes(run!.status) ? 'Paused. Type resume to continue, or add a note first…' : 'Message the crew, add pictures or files, or type pause to stop it…'
+  steerUi.sync()
+  return steerUi.form
 }
 function renderDiffPanel() {
   const section = h('section', 'team-diff-panel')
