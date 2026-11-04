@@ -862,6 +862,7 @@ export async function initChat(opts: {
   })
   window.forge.onChatsChanged(refreshHistory)
   window.addEventListener('forge-crew-changed', () => void refreshHistory())
+  window.addEventListener('forge-open-chat-now', (e) => { const id = (e as CustomEvent<string>).detail; if (id) void openChat(id) }) // a search hit
   if (typeof window.forge.onTeamEvent === 'function') window.forge.onTeamEvent((ev) => { if (ev.type === 'run' || ev.type === 'task' || ev.type === 'approval' || ev.type === 'final') refreshRunsSoon() })
   window.forge.onChatsFocus((id) => openChat(id))
   window.addEventListener('forge-models', () => {

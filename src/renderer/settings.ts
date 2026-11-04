@@ -342,6 +342,10 @@ async function team(into: HTMLElement) {
     row('Plan approval', 'Stop after planning so you can edit, reassign or skip tasks before any agent works.', onOff(!!cfg.reviewPlan, (v) => put('reviewPlan', v))),
     row('Task review', 'Each agent checks the other’s work before it is merged.', onOff((cfg.review ?? 'cross') === 'cross', (v) => put('review', v ? 'cross' : 'off'))),
     row('Final review', 'Automatic checks the whole result only for runs of 3 or more tasks, which saves plan usage.', choose([['auto', 'Automatic'], ['true', 'Always'], ['false', 'Skip']], String(cfg.finalReview ?? 'auto'), (v) => put('finalReview', v === 'auto' ? 'auto' : v === 'true'))),
+    row('Security review', 'A final read-only check for secrets, injection, missing authorisation and unsafe input before landing. Automatic runs it when auth, payment, admin, secret or dependency files change.', choose([['auto', 'Automatic'], ['always', 'Always'], ['off', 'Off']], cfg.securityReview ?? 'auto', (v) => put('securityReview', v as TeamConfig['securityReview']))),
+    row('Write tests', 'After the build tasks, one agent writes or extends tests for the changed code when the project has a test command.', onOff(cfg.testTask !== false, (v) => put('testTask', v))),
+    row('Switch agents at a limit', 'When Claude or Codex reaches its plan limit, another ready agent takes over its tasks and the run keeps going.', onOff(cfg.autoSwitch !== false, (v) => put('autoSwitch', v))),
+    row('Effort', 'Automatic thinks less on reading and small reviews and keeps your chosen effort for building. Cheap uses the least and prefers Codex and the local model for building.', choose([['auto', 'Automatic'], ['fixed', 'As set below'], ['cheap', 'Cheap']], cfg.effortMode ?? 'auto', (v) => put('effortMode', v as TeamConfig['effortMode']))),
   )
   into.append(p.g)
 

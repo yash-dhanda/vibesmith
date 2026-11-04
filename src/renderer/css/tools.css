@@ -26,3 +26,5 @@
 .sa-snippet { color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .sa-snippet mark { background: color-mix(in srgb, var(--text) 18%, transparent); color: var(--text); border-radius: 3px; padding: 0 1px; }
 @media (max-width: 800px) { #search-all { width: 100%; max-width: 100%; margin: auto 0 0; border-radius: 16px 16px 0 0; border-width: 1px 0 0; padding-bottom: var(--safe-b, 0); } }
+/* the run's preview and page-check buttons sit in one row above the plan */
+.team-tools-row { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }

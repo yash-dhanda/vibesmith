@@ -9,6 +9,8 @@ import { historyButton } from './projectHistory'
 import { AGENT_FULL, AGENT_NAME, N } from './names'
 import { RUN_GLYPH, STEP_GLYPH, TASK_GLYPH, TOOL_GLYPH } from './glyphs'
 import { buildStage, pushCode, type StageCode } from './teamStage'
+import { renderCrewPreview, visualCheckButton } from './crewPreview'
+import { renderGitPanel } from './gitPanel'
 import { attachmentStrip, kindOf, sentChips, uploadCrewFile } from './attachments'
 import type { TeamAttachment } from '../main/team/attach'
 import { cacheGet, cacheSet, isRemote, onResync, phone, toggleDrawer } from './phone'
@@ -393,6 +395,7 @@ function renderRun() {
   if (run.status === 'awaiting_approval' && run.final) page.append(renderFinal())
   if (run.status === 'done' && run.applied) page.append(renderApplied())
   const hadFocus = !!steerUi && document.activeElement === steerUi.text
+  if (!isRemote() && run.tasks.some(t => t.status === 'done')) { const tools = h('div', 'team-tools-row'); tools.append(renderCrewPreview(run.id), visualCheckButton(run.id)); page.append(tools) } // the site beside the work, and the page screenshots
   page.append(renderBoard(), renderStory(), renderSteer())
   root.replaceChildren(page); root.scrollTop = scrollTop
   if (hadFocus) steerUi?.text.focus({ preventScroll: true })
@@ -888,6 +891,9 @@ function renderFinal() {
   actions.append(apply, reject); section.append(actions); return section
 }
 
+// Built once per landing: it asks git for its state when drawn, and the run screen redraws on every live event.
+let gitPanel: { key: string; el: HTMLElement } | null = null
+function gitPanelFor() { const key = `${run!.id}:${run!.applied}:${run!.undone}`; if (!gitPanel || gitPanel.key !== key) gitPanel = { key, el: renderGitPanel(run!) }; return gitPanel.el }
 function renderApplied() {
   const section = h('section', `team-applied ${run!.undone ? 'undone' : ''}`)
   const tag = h('div', 'eyebrow', run!.undone ? 'Changes undone' : 'Landed in your project'); tag.prepend(emo(run!.undone ? STEP_GLYPH.undone : STEP_GLYPH.done))
@@ -896,6 +902,7 @@ function renderApplied() {
   section.append(h('p', '', copy))
   if (undoResult) section.append(h('div', 'team-undo-result', undoResult))
   if (!run!.undone && run!.appliedCheckpoint && typeof window.forge.teamUndo === 'function') section.append(actionButton('Undo the landing', () => void undoApplied()))
+  if (!run!.undone && !isRemote() && typeof window.forge.teamGitState === 'function') section.append(gitPanelFor())
   return section
 }
 
@@ -970,6 +977,7 @@ export function initTeam(options: { project: () => string | null }) {
   $('team-hist-toggle').onclick = () => { if (phone.matches) toggleDrawer(); else $('hist-toggle').click() } // one toggle: same rail, labels and saved state as Solo
   if (typeof window.forge.onTeamEvent === 'function') window.forge.onTeamEvent(reduceEvent)
   if (localStorage.getItem('forge.teamReplay')) (window as unknown as { __forgeTeamEmit?: typeof reduceEvent }).__forgeTeamEmit = reduceEvent // lets the replay harness stream fake agent events
+  window.addEventListener('forge-open-chat', e => { setActiveRun(''); showChat(); window.dispatchEvent(new CustomEvent('forge-open-chat-now', { detail: (e as CustomEvent<string>).detail })) })
   window.addEventListener('forge-open-run', e => { showTeam(false); void openRun((e as CustomEvent<string>).detail).catch(err => toast(cleanErr(err), 5000)) })
   // a chat or a new chat from the sidebar leaves the Crew screen (it used to stay on it)
   $('history').addEventListener('click', e => { if (app.classList.contains('team-mode') && (e.target as HTMLElement).closest('.chat-open:not(.run-open), #new-chat, #side-new')) { setActiveRun(''); showChat() } })
