@@ -600,6 +600,7 @@ async function chooseFolder() {
 async function send() {
   const draft = prompt.value.trim()
   const text = withPriorities(draft)
+  if (running && /^(pause|stop|wait)[\s.!]*$/i.test(draft)) { window.forge.agentStop(activeId); prompt.value = ''; return } // typing pause stops the agent, like Esc
   if (!draft || running || sending) { if (!draft && att.items().length) { toast('Say what to do with the files.'); prompt.focus() } return }
   if (att.busy()) { toast('Wait for the files to finish uploading.'); return }
   if (!project) await chooseFolder() // like Codex: no folder, no run

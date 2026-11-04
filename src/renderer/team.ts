@@ -402,12 +402,9 @@ function renderRunHeader() {
 // `compact` shows only that icon; the label moves to the tooltip and the accessible name.
 function actionButton(label: string, runAction: () => void, cls = '', compact?: IconName) { const button = h('button', `btn ${cls}${compact ? ' only' : ''}`); if (compact) { button.append(icon(compact, 'sm')); button.title = label; button.setAttribute('aria-label', label) } else button.append(document.createTextNode(label)); button.onclick = runAction; return button }
 function pauseButton() {
-  const button = actionButton('Pause', () => {}, '', 'pause') as HTMLButtonElement; let timer: ReturnType<typeof setTimeout> | null = null, hard = false
-  button.title = 'Pause after the current step. Hold for one second to stop agents now.'
-  button.onpointerdown = () => { hard = false; timer = setTimeout(() => { hard = true; button.replaceChildren(icon('stop', 'sm'), 'Stopping agents…'); void teamAction(() => window.forge.teamPause(run!.id, true)) }, 900) }
-  button.onpointerup = () => { if (timer) clearTimeout(timer); timer = null; if (!hard) void teamAction(() => window.forge.teamPause(run!.id, false)) }
-  button.onpointerleave = () => { if (timer) clearTimeout(timer); timer = null }
-  button.onclick = e => e.preventDefault(); return button
+  const button = actionButton('Pause', () => { button.disabled = true; button.replaceChildren(icon('stop', 'sm')); void teamAction(() => window.forge.teamPause(run!.id, true)) }, '', 'pause') as HTMLButtonElement
+  button.title = 'Stop the agents now. Resume continues where they left off. You can also type pause.'
+  return button
 }
 async function teamAction(fn: () => Promise<unknown>) { if (replay) { toast('Replay mode: action recorded'); return } await call(fn); await refreshRun() }
 async function refreshRun() { if (!run || replay) return; const fresh = await window.forge.teamGet(run.id); if (fresh) { run = fresh; renderRun() } }
@@ -748,7 +745,7 @@ function renderSteer() {
   const over = ['done', 'failed', 'cancelled', 'awaiting_approval'].includes(run!.status)
   const form = h('form', 'team-steer team-composer') as HTMLFormElement; const row = h('div')
   const text = h('textarea') as HTMLTextAreaElement; text.rows = 1; text.value = steerDraft
-  text.placeholder = over ? 'Keep going: ask for more, a fix, or something new…' : 'Message the crew while it works…'; text.setAttribute('aria-label', 'Message the crew')
+  text.placeholder = over ? 'Keep going: ask for more, a fix, or something new…' : ['paused', 'interrupted'].includes(run!.status) ? 'Paused. Type resume to continue, or add a note first…' : 'Message the crew, or type pause to stop it…'; text.setAttribute('aria-label', 'Message the crew')
   const grow = () => { text.style.height = 'auto'; text.style.height = `${Math.min(text.scrollHeight, 160)}px` }
   text.oninput = () => { steerDraft = text.value; grow() }
   const to = select([['all', 'Everyone'], ['claude', 'Claude'], ['codex', 'Codex'], ['local', AGENT_NAME.local]], steerTarget); to.setAttribute('aria-label', 'Send to'); to.onchange = () => { steerTarget = to.value as typeof steerTarget }

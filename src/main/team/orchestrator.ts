@@ -162,9 +162,10 @@ export class TeamOrchestrator {
   pause(runId: string, hard = false) {
     const run = this.runOf(runId)
     const live = this.live.get(runId)
-    if (!run || !live || !['running', 'planning'].includes(run.status)) return
+    if (!run || !live || !['running', 'planning', 'verifying'].includes(run.status)) return
+    if (run.status === 'verifying') hard = true // the last checks and fixes cannot wait for a turn to end: stop them, resume runs them again
     live.paused = true
-    this.setStatus(run, 'paused', 'Paused by you.')
+    this.setStatus(run, 'paused', hard ? 'Stopped by you. Resume continues where the agents left off.' : 'Paused by you.')
     if (hard) {
       live.stop = 'pause'
       live.ctl.abort()
@@ -183,10 +184,12 @@ export class TeamOrchestrator {
       this.live.set(runId, live)
     }
     live.available = available
+    // a stop that is still unwinding: let the stopped turns mark their tasks interrupted before a fresh controller replaces the aborted one
+    if (live.stop && live.running.size) await Promise.allSettled([...live.running.values()])
     if (live.stop) (live.ctl = new AbortController()), (live.stop = null)
     live.paused = false
     for (const t of run.tasks) {
-      if (t.status === 'interrupted') (t.status = 'queued'), (t.phase = null)
+      if (t.status === 'interrupted' || (t.status === 'running' && !live.running.has(t.id))) (t.status = 'queued'), (t.phase = null) // the second case: a fix stopped during the last checks
       else if (t.status === 'blocked' && !/depends on failed/.test(t.error ?? '')) (t.status = 'queued'), (t.error = undefined) // blocked by a missing sign-in, which may be fixed now
     }
     this.setStatus(run, run.tasks.length ? 'running' : 'planning')
@@ -278,6 +281,10 @@ export class TeamOrchestrator {
     const run = this.runOf(runId)
     const body = text.trim().slice(0, 2000)
     if (!run || !body) return
+    // "pause" / "stop" typed in the box stops the agents now; "resume" / "continue" starts them again
+    const word = body.toLowerCase().replace(/[\s.!]+$/, '')
+    if (/^(pause|stop|wait|hold on|stop it|pause it)$/.test(word) && ['planning', 'running', 'verifying'].includes(run.status)) return this.pause(runId, true)
+    if (/^(resume|continue|go on|keep going|go|start again|unpause)$/.test(word) && ['paused', 'interrupted'].includes(run.status)) return this.resume(runId)
     if (['planning', 'running', 'paused', 'verifying', 'interrupted'].includes(run.status)) return this.steer(runId, body, to)
     if (run.status === 'awaiting_approval') {
       const a = run.approvals.find((x) => x.kind === 'final' && x.status === 'pending')
@@ -1090,6 +1097,7 @@ export class TeamOrchestrator {
       this.setStatus(run, 'paused', `The last steps failed: ${(e as Error).message.slice(0, 200)}. Resume to try again.`)
     } finally {
       live.finishing = false
+      if (run.status === 'running' && !live.paused) this.pump(run) // resumed while the stopped checks were still unwinding
     }
   }
 

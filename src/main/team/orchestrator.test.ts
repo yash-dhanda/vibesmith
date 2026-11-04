@@ -339,6 +339,31 @@ describe('team orchestrator', () => {
     expect(['awaiting_approval', 'paused', 'failed']).toContain(r.status)
   })
 
+  it('stops at once when the user types pause, and carries on when they type resume', async () => {
+    const x = h({ delayMs: 250, plan: { tasks: [T('a'), T('b')] } })
+    const run = await x.orch.start(x.proj, 'pause by typing')
+    await until(x.orch, run.id, (r) => r.tasks.some((t) => t.status === 'running'))
+    await x.orch.followUp(run.id, 'Pause')
+    expect(x.orch.get(run.id)?.status).toBe('paused')
+    await until(x.orch, run.id, (r) => r.tasks.some((t) => t.status === 'interrupted'))
+    expect(x.orch.get(run.id)!.messages.some((m) => m.from === 'user' && /pause/i.test(m.body))).toBe(false) // a command, not a note for the agents
+    await x.orch.followUp(run.id, 'resume')
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect(r.tasks.every((t) => t.status === 'done')).toBe(true)
+  })
+
+  it('can be stopped during the last checks and finishes them after resume', async () => {
+    const x = h({ delayMs: 120, plan: { tasks: [T('a')] } })
+    const run = await x.orch.start(x.proj, 'pause while verifying', { verify: 'sleep 1' })
+    await until(x.orch, run.id, (r) => r.status === 'verifying', 20000)
+    x.orch.pause(run.id) // soft pause is upgraded: checks cannot wait
+    expect(x.orch.get(run.id)?.status).toBe('paused')
+    await new Promise((r) => setTimeout(r, 200))
+    await x.orch.resume(run.id)
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval', 20000)
+    expect(r.final?.verifyOk).toBe(true)
+  })
+
   it('resumes a task interrupted during review without redoing its work', async () => {
     const x = h({ delayMs: 250, plan: { tasks: [T('a', { agent: 'codex' })] } })
     const run = await x.orch.start(x.proj, 'review interrupted')
