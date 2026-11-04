@@ -1,9 +1,9 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { attachmentsBlock, cleanAttachments, imagePaths, kindOf, saveAttachments, safeName } from './attach'
+import { attachmentsBlock, cleanAttachments, imagePaths, kindOf, saveAttachments, safeName, sweepAttachments } from './attach'
 import { codexArgs } from './codex'
 
 const b64 = (s: string) => Buffer.from(s).toString('base64')
@@ -53,5 +53,41 @@ describe('crew attachments', () => {
     const args = codexArgs({ cwd: '/p', prompt: 'x', write: true, model: 'm', images: ['/a/bug.png'] })
     expect(args.slice(args.indexOf('-i'), args.indexOf('-i') + 2)).toEqual(['-i', '/a/bug.png'])
     expect(args.at(-1)).toBe('-')
+  })
+
+  it('spreads the stills over the whole video and says how far apart they are', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'att-'))
+    const src = join(mkdtempSync(join(tmpdir(), 'vid-')), 'long.mp4')
+    try { // 30 s black, then 30 s white
+      execFileSync('ffmpeg', ['-loglevel', 'error', '-f', 'lavfi', '-i', 'color=black:s=64x48:r=2:d=30', '-f', 'lavfi', '-i', 'color=white:s=64x48:r=2:d=30', '-filter_complex', 'concat=n=2:v=1:a=0', '-pix_fmt', 'yuv420p', src])
+    } catch { return } // no ffmpeg here: nothing to check
+    const [v] = await saveAttachments(root, [{ name: 'long.mp4', data: readFileSync(src).toString('base64') }])
+    expect(v.frames).toHaveLength(12)
+    expect([v.duration, v.frameEvery]).toEqual([60, 5])
+    const grey = (f: string) => execFileSync('ffmpeg', ['-loglevel', 'error', '-i', f, '-vf', 'scale=1:1', '-f', 'rawvideo', '-pix_fmt', 'gray', '-'])[0]
+    expect(grey(v.frames![0])).toBeLessThan(60)
+    expect(grey(v.frames!.at(-1)!)).toBeGreaterThan(200) // the last still is from the end of the video, not from second 22
+    expect(attachmentsBlock([v])).toContain('about 5 seconds apart, covering all 60 seconds')
+    expect(cleanAttachments(root, [v])[0].frameEvery).toBe(5)
+  })
+
+  it('records the length of a clip shorter than a second', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'att-'))
+    const src = join(mkdtempSync(join(tmpdir(), 'vid-')), 'short.mp4')
+    try { execFileSync('ffmpeg', ['-loglevel', 'error', '-f', 'lavfi', '-i', 'color=black:s=64x48:r=10:d=0.4', '-pix_fmt', 'yuv420p', src]) } catch { return }
+    const [v] = await saveAttachments(root, [{ name: 'short.mp4', data: readFileSync(src).toString('base64') }])
+    expect(v.duration).toBeGreaterThan(0)
+    expect(attachmentsBlock([v])).toContain(`covering all ${v.duration} seconds`)
+  })
+
+  it('deletes old uploads that no run uses and keeps the rest', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'att-'))
+    const [used] = await saveAttachments(root, [{ name: 'used.png', data: b64('x') }])
+    const [fresh] = await saveAttachments(root, [{ name: 'fresh.png', data: b64('x') }])
+    const [stale] = await saveAttachments(root, [{ name: 'stale.png', data: b64('x') }])
+    const old = new Date(Date.now() - 3 * 24 * 3600_000)
+    for (const a of [used, stale]) utimesSync(join(a.path, '..'), old, old)
+    sweepAttachments(root, [used])
+    expect([used, fresh, stale].map((a) => existsSync(a.path))).toEqual([true, true, false])
   })
 })

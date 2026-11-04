@@ -1,15 +1,22 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, existsSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addAll, AUTHOR, git, snapshotTree } from '../checkpoint'
+import { addAll, AUTHOR, git, inTempIndex, restorePaths, savePaths, SECRET_PATH, undoTo, withTempIndex } from '../checkpoint'
+import { HISTORY_DIR } from './history'
 import type { Task } from './types'
 
 // Isolation for parallel agents: one branch and one working folder (git worktree) per task, merged one at a time into a run branch.
 // The user's own folder is not touched until the final approval.
 
-// Never committed, whatever the agent does: real secrets and dependencies. Templates like .env.example are still shared.
-const SECRET_FILES = ['.env', '.env.local', '.env.production', '.env.development', '.env.staging', '.env.test', '.env.*.local', '*.pem', 'id_rsa', 'id_ed25519', '.npmrc', '.pypirc']
-const NOT_COMMITTED = [':(exclude)node_modules', ':(exclude)**/node_modules', ':(exclude).forge-team', ...SECRET_FILES.map((f) => `:(exclude,glob)**/${f}`)]
+// Never committed, whatever the agent does: dependencies and Forge's own notes. Secrets (SECRET_PATH) are taken out of the index afterwards,
+// because a pathspec cannot say "all .env.* except .env.example".
+const NOT_COMMITTED = [':(exclude)node_modules', ':(exclude)**/node_modules', ':(exclude).forge-team', `:(exclude)${HISTORY_DIR}`]
+
+// Puts every staged secret back to what HEAD has (or removes it when HEAD has none), so a tracked .env is neither deleted nor changed by a snapshot.
+async function dropSecrets(root: string, env?: Record<string, string>): Promise<void> {
+  const staged = (await git(root, ['diff', '--cached', '--name-only', '-z', '--no-renames'], env)).split('\0').filter((p) => SECRET_PATH.test(p))
+  if (staged.length) await git(root, ['reset', '-q', ...((await head(root)) ? ['HEAD'] : []), '--', ...staged.map((p) => `:(top,literal)${p}`)], env)
+}
 
 export async function head(cwd: string): Promise<string | null> {
   try {
@@ -20,25 +27,19 @@ export async function head(cwd: string): Promise<string | null> {
 }
 
 // A commit holding the project exactly as it is now (uncommitted and new files included, secrets and node_modules not), on top of HEAD.
+// With no commit yet the snapshot has no parent: nothing is committed on the user's branch.
 export async function snapshotCommit(root: string): Promise<string> {
-  if (!(await head(root))) await git(root, ['commit', '--allow-empty', '--no-verify', '-m', 'forge: initial commit'], AUTHOR)
   const tree = await snapshotTreeWithoutSecrets(root)
-  const parent = (await head(root))!
-  return (await git(root, ['commit-tree', tree, '-p', parent, '-m', 'forge: team run start'], AUTHOR)).trim()
+  const parent = await head(root)
+  return (await git(root, ['commit-tree', tree, ...(parent ? ['-p', parent] : []), '-m', 'forge: team run start'], AUTHOR)).trim()
 }
 
-export async function snapshotTreeWithoutSecrets(root: string): Promise<string> {
-  const dir = mkdtempSync(join(tmpdir(), 'forge-team-idx-'))
-  const env = { GIT_INDEX_FILE: join(dir, 'index') }
-  try {
+export const snapshotTreeWithoutSecrets = (root: string): Promise<string> =>
+  inTempIndex(root, async (env) => {
     await addAll(root, NOT_COMMITTED, env)
+    await dropSecrets(root, env)
     return (await git(root, ['write-tree'], env)).trim()
-  } catch {
-    return snapshotTree(root)
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
-}
+  })
 
 export async function createRunBranch(root: string, branch: string, baseCommit: string, worktree: string) {
   mkdirSync(join(worktree, '..'), { recursive: true })
@@ -55,25 +56,27 @@ export async function addTaskWorktree(root: string, worktree: string, branch: st
 // Commits whatever the agent left in its worktree. Returns the commit, or null when nothing changed.
 export async function commitAll(wt: string, message: string): Promise<string | null> {
   await addAll(wt, NOT_COMMITTED)
+  await dropSecrets(wt)
   if (!(await git(wt, ['diff', '--cached', '--name-only'])).trim()) return null // untracked secrets we refused to add do not count
-  await git(wt, ['commit', '--no-verify', '-m', message], AUTHOR)
+  await git(wt, ['-c', 'commit.gpgsign=false', 'commit', '--no-verify', '-m', message], AUTHOR)
   return head(wt)
 }
 
 export type Changed = Task['changed']
 export async function changedSince(wt: string, base: string, tip = 'HEAD'): Promise<Changed> {
-  const [names, nums] = await Promise.all([git(wt, ['diff', '--name-status', '--no-renames', base, tip]), git(wt, ['diff', '--numstat', '--no-renames', base, tip])])
+  const [names, nums] = await Promise.all([git(wt, ['diff', '-z', '--name-status', '--no-renames', base, tip]), git(wt, ['diff', '-z', '--numstat', '--no-renames', base, tip])])
   const counts = new Map<string, [number, number]>()
-  for (const l of nums.split('\n').filter(Boolean)) {
+  for (const l of nums.split('\0').filter(Boolean)) {
     const [a, r, ...p] = l.split('\t')
     counts.set(p.join('\t'), [a === '-' ? 0 : +a, r === '-' ? 0 : +r])
   }
-  return names.split('\n').filter(Boolean).map((l) => {
-    const [s, ...p] = l.split('\t')
-    const path = p.join('\t')
-    const [added, removed] = counts.get(path) ?? [0, 0]
-    return { path, status: s === 'A' ? 'added' : s === 'D' ? 'deleted' : 'modified', added, removed } as Changed[number]
-  })
+  const t = names.split('\0').filter(Boolean)
+  const out: Changed = []
+  for (let i = 0; i + 1 < t.length; i += 2) {
+    const [added, removed] = counts.get(t[i + 1]) ?? [0, 0]
+    out.push({ path: t[i + 1], status: t[i] === 'A' ? 'added' : t[i] === 'D' ? 'deleted' : 'modified', added, removed })
+  }
+  return out
 }
 
 export async function diffText(wt: string, base: string, tip = 'HEAD', max = 40_000, path?: string): Promise<string> {
@@ -84,7 +87,7 @@ export async function diffText(wt: string, base: string, tip = 'HEAD', max = 40_
 export type MergeResult = { ok: true } | { ok: false; conflicts: string[] }
 export async function mergeBranch(wt: string, branch: string, message: string): Promise<MergeResult> {
   try {
-    await git(wt, ['merge', '--no-ff', '--no-verify', '-m', message, branch], AUTHOR)
+    await git(wt, ['-c', 'commit.gpgsign=false', 'merge', '--no-ff', '--no-verify', '-m', message, branch], AUTHOR)
     return { ok: true }
   } catch (e) {
     const conflicts = await conflictFiles(wt)
@@ -103,7 +106,10 @@ export async function finishMerge(wt: string): Promise<{ ok: boolean; left: stri
   const left = [...new Set([...marked, ...stillConflicted])]
   if (left.length) return { ok: false, left }
   await addAll(wt, NOT_COMMITTED)
-  await git(wt, ['commit', '--no-verify', '--no-edit'], AUTHOR).catch(() => '')
+  await dropSecrets(wt)
+  const failed = await git(wt, ['-c', 'commit.gpgsign=false', 'commit', '--no-verify', '--no-edit'], AUTHOR).then(() => '', (e: Error) => e.message)
+  // The merge only counts once it is committed: a half-finished one is thrown away before the next task is merged.
+  if (await git(wt, ['rev-parse', '-q', '--verify', 'MERGE_HEAD']).then(() => true, () => false)) return { ok: false, left: [`the merge commit (${failed.slice(0, 200) || 'git left the merge open'})`] }
   return { ok: true, left: [] }
 }
 
@@ -115,23 +121,51 @@ export async function removeWorktree(root: string, wt: string, branch?: string) 
 
 export const pruneWorktrees = (root: string) => git(root, ['worktree', 'prune']).then(() => undefined, () => undefined)
 
-// Puts the team's result into the user's folder as ordinary uncommitted changes (nothing is committed for them).
-export async function applyResult(root: string, baseCommit: string, branch: string): Promise<{ ok: boolean; message: string }> {
-  const patch = await git(root, ['diff', '--binary', '--no-renames', baseCommit, branch])
-  if (!patch.trim()) return { ok: true, message: 'The team made no changes.' }
-  const f = join(mkdtempSync(join(tmpdir(), 'forge-patch-')), 'result.patch')
-  writeFileSync(f, patch)
-  try {
-    await git(root, ['apply', '--whitespace=nowarn', f])
-    return { ok: true, message: 'Applied.' }
-  } catch {
+// Three-way apply for when the files changed since the run started. It runs in a throwaway index and the folder is written only when it is clean,
+// so a conflict leaves no markers behind, and the user's own index is never touched.
+async function applyThreeWay(root: string, patch: string): Promise<void> {
+  await withTempIndex(root, async (env) => {
+    await addAll(root, [':(exclude)node_modules', ':(exclude)**/node_modules'], env)
+    const before = (await git(root, ['write-tree'], env)).trim()
+    await git(root, ['apply', '--3way', '--cached', '--whitespace=nowarn', patch], env)
+    const after = (await git(root, ['write-tree'], env)).trim()
+    const t = (await git(root, ['diff-tree', '-r', '-z', '--no-renames', '--relative', '--name-status', before, after])).split('\0').filter(Boolean)
+    const gone: string[] = []
+    const write: string[] = []
+    for (let i = 0; i + 1 < t.length; i += 2) (t[i] === 'D' ? gone : write).push(t[i + 1])
     try {
-      await git(root, ['apply', '--3way', '--whitespace=nowarn', f])
-      return { ok: true, message: 'Applied with a three-way merge because your files changed since the run started.' }
+      for (const p of gone) rmSync(join(root, p), { force: true })
+      if (write.length) await restorePaths(root, after, write)
     } catch (e) {
-      return { ok: false, message: `Could not apply cleanly: ${(e as Error).message.slice(0, 300)}. The result is still on branch ${branch}.` }
+      await undoTo(root, { id: '', tree: before, paths: [...gone, ...write] }).catch(() => [])
+      throw e
     }
+  })
+}
+
+// Puts the team's result into the user's folder as ordinary uncommitted changes (nothing is committed or staged for them).
+// With the id of the checkpoint taken just before, Undo of that checkpoint is limited to the files written here.
+export async function applyResult(root: string, baseCommit: string, branch: string, checkpointId?: string): Promise<{ ok: boolean; message: string }> {
+  const dir = mkdtempSync(join(tmpdir(), 'forge-patch-'))
+  const f = join(dir, 'result.patch')
+  try {
+    await git(root, ['diff', '--binary', '--no-renames', `--output=${f}`, baseCommit, branch]) // to a file: a big binary does not fit in git()'s buffer
+    if (!statSync(f).size) return { ok: true, message: 'The team made no changes.' }
+    const paths = (await git(root, ['diff', '--name-only', '-z', '--no-renames', '--relative', baseCommit, branch])).split('\0').filter(Boolean)
+    let message = 'Applied.'
+    try {
+      await git(root, ['apply', '--whitespace=nowarn', f])
+    } catch {
+      try {
+        await applyThreeWay(root, f)
+        message = 'Applied with a three-way merge because your files changed since the run started.'
+      } catch (e) {
+        return { ok: false, message: `Could not apply cleanly: ${(e as Error).message.slice(0, 300)}. Nothing in your folder was changed. The result is still on branch ${branch}.` }
+      }
+    }
+    if (checkpointId) await savePaths(root, checkpointId, paths).catch(() => undefined)
+    return { ok: true, message }
   } finally {
-    rmSync(join(f, '..'), { recursive: true, force: true })
+    rmSync(dir, { recursive: true, force: true })
   }
 }

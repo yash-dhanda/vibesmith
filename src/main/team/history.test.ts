@@ -1,4 +1,5 @@
-import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -46,5 +47,68 @@ describe('project history', () => {
     expect(block).toContain('entry 59')
     expect(block).not.toContain('entry 10')
     expect(readFileSync(historyPath(p), 'utf8')).not.toContain('sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789')
+  })
+
+  it('does not follow a link for .forge or for the file, and does not hand the target to agents', () => {
+    const outside = mkdtempSync(join(tmpdir(), 'out-'))
+    const bashrc = join(outside, 'bashrc')
+    writeFileSync(bashrc, 'export KEY=secret-body\n'.repeat(5))
+    const a = mkdtempSync(join(tmpdir(), 'hist-'))
+    symlinkSync(outside, join(a, '.forge'))
+    writeHistory(a, 'one')
+    expect(existsSync(join(outside, 'what-happened.txt'))).toBe(false)
+    const b = mkdtempSync(join(tmpdir(), 'hist-'))
+    mkdirSync(join(b, '.forge'))
+    symlinkSync(bashrc, historyPath(b))
+    writeHistory(b, 'two')
+    expect(readFileSync(bashrc, 'utf8')).not.toContain('two')
+    expect(historyBlock(b)).toBe('')
+    const c = mkdtempSync(join(tmpdir(), 'hist-'))
+    mkdirSync(join(c, '.forge'))
+    symlinkSync(join(outside, 'new-file'), historyPath(c)) // points nowhere yet
+    writeHistory(c, 'three')
+    expect(existsSync(join(outside, 'new-file'))).toBe(false)
+  })
+
+  it('does not follow a linked info/exclude file', () => {
+    const p = mkdtempSync(join(tmpdir(), 'hist-'))
+    execFileSync('git', ['init', '-q', p])
+    const victim = join(mkdtempSync(join(tmpdir(), 'out-')), 'victim.txt')
+    writeFileSync(victim, 'V\n')
+    rmSync(join(p, '.git', 'info', 'exclude'), { force: true })
+    symlinkSync(victim, join(p, '.git', 'info', 'exclude'))
+    writeHistory(p, 'one')
+    expect(readFileSync(victim, 'utf8')).toBe('V\n')
+  })
+
+  it('does not make a project folder that was moved away', () => {
+    const p = join(mkdtempSync(join(tmpdir(), 'hist-')), 'app')
+    writeHistory(p, 'late line')
+    expect(existsSync(p)).toBe(false)
+  })
+
+  it('hides .forge from git in a linked worktree, also when the file already exists', () => {
+    const base = mkdtempSync(join(tmpdir(), 'hist-'))
+    const main = join(base, 'main')
+    const wt = join(base, 'wt')
+    mkdirSync(main)
+    const git = (cwd: string, ...a: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd, stdio: 'pipe' }).toString()
+    git(main, 'init', '-q')
+    git(main, 'commit', '-q', '--allow-empty', '-m', 'x')
+    git(main, 'worktree', 'add', '-q', wt)
+    mkdirSync(join(wt, '.forge'))
+    writeFileSync(historyPath(wt), 'old file\n')
+    writeHistory(wt, 'hello')
+    expect(git(wt, 'status', '--porcelain')).toBe('')
+  })
+
+  it('stamps lines with local time and its offset', () => {
+    const old = process.env.TZ
+    process.env.TZ = 'Asia/Kolkata'
+    try {
+      const p = mkdtempSync(join(tmpdir(), 'hist-'))
+      writeHistory(p, 'now')
+      expect(readFileSync(historyPath(p), 'utf8')).toMatch(/\[\d{4}-\d\d-\d\d \d\d:\d\d \+05:30\] now/)
+    } finally { if (old === undefined) delete process.env.TZ; else process.env.TZ = old }
   })
 })

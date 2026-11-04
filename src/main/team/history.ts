@@ -1,52 +1,78 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, readFileSync, statSync, writeSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { redact } from './redact'
 import type { Run, RunEvent, Task } from './types'
 
 // The project's running history: a plain text file in the project folder, written by Forge, that says what has happened so far
 // (goals, plans, who did what, reviews, decisions, answers from the user, results). It only grows; agents are pointed at it and read it.
-// It sits in .forge/ and is hidden from git through .git/info/exclude (local to this computer), so it never shows up in a diff.
+// It sits in .forge/ and is hidden from git through the repository's info/exclude (local to this computer), so it never shows up in a diff.
+// A project is not trusted: .forge or the file may be a symlink to somewhere else, so neither is ever followed.
 
 export const HISTORY_DIR = '.forge'
 export const HISTORY_FILE = 'what-happened.txt'
-const stamp = (t = Date.now()) => new Date(t).toISOString().slice(0, 16).replace('T', ' ')
+// Local time with its offset, because people and agents read these lines as the clock on the wall.
+const stamp = (t = Date.now()) => {
+  const off = -new Date(t).getTimezoneOffset()
+  const pad = (n: number) => String(Math.floor(Math.abs(n))).padStart(2, '0')
+  return `${new Date(t + off * 60_000).toISOString().slice(0, 16).replace('T', ' ')} ${off < 0 ? '-' : '+'}${pad(off / 60)}:${pad(off % 60)}`
+}
 const oneLine = (s: string, n: number) => redact(s).replace(/\s+/g, ' ').trim().slice(0, n)
 const AGENT = { claude: 'Claude', codex: 'Codex', local: 'Local' } as const
+const NOFOLLOW = constants.O_NOFOLLOW ?? 0
 
 export const historyPath = (project: string) => join(project, HISTORY_DIR, HISTORY_FILE)
+
+const isLink = (p: string) => { try { return lstatSync(p).isSymbolicLink() } catch { return false } }
+// O_NOFOLLOW makes the open fail if the last part of the path is a link, even one that points nowhere yet.
+function appendFile(file: string, text: string) {
+  const fd = openSync(file, constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | NOFOLLOW, 0o644)
+  try { writeSync(fd, text) } finally { closeSync(fd) }
+}
+const hidden = new Set<string>() // projects whose exclude entry is known to be in place
+
+function hideFromGit(project: string) {
+  if (hidden.has(project) || !existsSync(join(project, '.git'))) return
+  let exclude = ''
+  try { exclude = resolve(project, execFileSync('git', ['rev-parse', '--git-path', 'info/exclude'], { cwd: project, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, GIT_CEILING_DIRECTORIES: resolve(project, '..') } }).toString().trim()) } catch {}
+  if (!exclude && statSync(join(project, '.git')).isDirectory()) exclude = join(project, '.git', 'info', 'exclude')
+  if (!exclude) return
+  const have = existsSync(exclude) ? readFileSync(exclude, 'utf8') : ''
+  if (!have.split('\n').includes(`${HISTORY_DIR}/`)) {
+    mkdirSync(join(exclude, '..'), { recursive: true })
+    appendFile(exclude, `${have && !have.endsWith('\n') ? '\n' : ''}${HISTORY_DIR}/\n`)
+  }
+  hidden.add(project)
+}
 
 function ensure(project: string): string {
   const dir = join(project, HISTORY_DIR)
   const file = join(dir, HISTORY_FILE)
-  if (!existsSync(file)) {
-    mkdirSync(dir, { recursive: true })
-    writeFileSync(file, `WHAT HAPPENED IN THIS PROJECT\nKept by Forge. New entries are added at the bottom. Started ${stamp()}.\n`)
-    try {
-      const exclude = join(project, '.git', 'info', 'exclude')
-      if (existsSync(join(project, '.git')) && statSync(join(project, '.git')).isDirectory()) {
-        const have = existsSync(exclude) ? readFileSync(exclude, 'utf8') : ''
-        if (!have.split('\n').includes(`${HISTORY_DIR}/`)) {
-          mkdirSync(join(project, '.git', 'info'), { recursive: true })
-          appendFileSync(exclude, `${have && !have.endsWith('\n') ? '\n' : ''}${HISTORY_DIR}/\n`)
-        }
-      }
-    } catch {}
-  }
+  if (isLink(dir) || isLink(file)) throw new Error('The history folder is a link.')
+  const fresh = !existsSync(file)
+  if (fresh) mkdirSync(dir, { recursive: true })
+  try { hideFromGit(project) } catch {}
+  if (fresh) appendFile(file, `WHAT HAPPENED IN THIS PROJECT\nKept by Forge. New entries are added at the bottom. Started ${stamp()}.\n`)
   return file
 }
 
 export function writeHistory(project: string, lines: string | string[]) {
   const list = (Array.isArray(lines) ? lines : [lines]).filter(Boolean)
-  if (!list.length) return
-  try { appendFileSync(ensure(project), list.map((l) => `[${stamp()}] ${redact(l)}\n`).join('')) } catch {}
+  if (!list.length || !existsSync(project)) return // a project that was moved or deleted is not made again for a log line
+  try { appendFile(ensure(project), list.map((l) => `[${stamp()}] ${redact(l)}\n`).join('')) } catch {}
 }
 
 // The end of the file, for an agent prompt: the pointer to the whole file plus the newest lines.
+export function readHistory(project: string): string {
+  const file = historyPath(project)
+  if (isLink(join(project, HISTORY_DIR))) return ''
+  try { return readFileSync(file, { encoding: 'utf8', flag: constants.O_RDONLY | NOFOLLOW }) } catch { return '' }
+}
+
 export function historyBlock(project: string, tail = 40): string {
   const file = historyPath(project)
-  if (!existsSync(file)) return ''
-  let text = ''
-  try { text = readFileSync(file, 'utf8') } catch { return '' }
+  const text = readHistory(project)
+  if (!text) return ''
   const lines = text.split('\n').filter(Boolean)
   if (lines.length < 3) return ''
   return `PROJECT HISTORY: Forge keeps a log of everything that has happened in this project so far (goals, plans, who did what, reviews, decisions, the user's answers, results). It is at ${file} and only grows; the newest entries are at the end. Read the end of it if you need to know what was already done or decided, and search it for names you need. Do not edit it. Newest entries:\n${lines.slice(-tail).join('\n')}`

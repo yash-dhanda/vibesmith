@@ -18,16 +18,34 @@ export function rewindChat(chat: Chat, userIndex: number): Rewound | null {
   if (t < 0) return null
   const text = (chat.transcript[t] as { type: 'user'; text: string }).text
 
-  let restore: Checkpoint | null = null
+  const cps: Checkpoint[] = []
   for (const x of chat.transcript.slice(t)) {
     if (x.type !== 'changes') continue
-    restore ??= chat.checkpoints[x.checkpoint] ?? null
+    const cp = chat.checkpoints[x.checkpoint]
+    if (cp) cps.push(cp)
     delete chat.checkpoints[x.checkpoint]
   }
+  // Going back past several runs puts back what all of them changed, from the state before the first.
+  let restore: Checkpoint | null = null
+  if (cps.length) {
+    const { paths, ...first } = cps[0]
+    restore = cps.every((c) => c.paths) ? { ...first, paths: [...new Set(cps.flatMap((c) => c.paths!))] } : first
+  }
+  const users = chat.transcript.slice(0, t + 1).filter((x) => x.type === 'user') as { text: string; attachments?: unknown[] }[]
   chat.transcript = chat.transcript.slice(0, t)
 
-  let turns = -1
-  const m = chat.messages.findIndex((x) => isUserTurn(x) && ++turns === userIndex)
+  // Find the message by its text, in order: a real message that starts with "Verification failed" or "[Forge" would
+  // otherwise be taken for an injected one and shift the count. Forge's own notes are never the exact text of a user turn.
+  let m = -1
+  for (const u of users) {
+    const from = m + 1 // attachments are appended to the message, so only then is a prefix match enough
+    m = chat.messages.findIndex((x, i) => i >= from && x.role === 'user' && (x.content === u.text || (!!u.attachments?.length && x.content.startsWith(u.text))))
+    if (m < 0) break
+  }
+  if (m < 0) {
+    let turns = -1
+    m = chat.messages.findIndex((x) => isUserTurn(x) && ++turns === userIndex)
+  }
   if (m >= 0) chat.messages = chat.messages.slice(0, m)
   return { text, restore }
 }
