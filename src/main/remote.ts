@@ -77,13 +77,24 @@ const ipcRenderer = {
   on: (c, fn) => { if (!listeners.has(c)) listeners.set(c, new Set()); listeners.get(c).add(fn); return ipcRenderer },
   removeListener: (c, fn) => { listeners.get(c)?.delete(fn); return ipcRenderer },
 }
+let es = null
+let last = Date.now()
+let online = false
+const setOnline = (v) => { if (v !== online) { online = v; window.dispatchEvent(new Event(v ? 'forge-remote-online' : 'forge-remote-offline')) } }
 const connect = () => {
-  const es = new EventSource('/events')
-  es.onmessage = (m) => { try { const { c, a } = JSON.parse(m.data); listeners.get(c)?.forEach((fn) => fn({}, ...a)) } catch {} }
-  es.onopen = () => window.dispatchEvent(new Event('forge-remote-online'))
+  if (es) es.close()
+  es = new EventSource('/events')
+  es.onopen = () => { last = Date.now(); setOnline(true) }
+  es.onerror = () => setOnline(false)
+  es.onmessage = (m) => {
+    last = Date.now(); setOnline(true)
+    try { const { c, a } = JSON.parse(m.data); if (c !== '__ping') listeners.get(c)?.forEach((fn) => fn({}, ...a)) } catch {}
+  }
 }
+// iOS freezes a page in the background; when it wakes the link may be dead without saying so, so a silent link is replaced.
+setInterval(() => { if (Date.now() - last > 40000) { setOnline(false); connect() } }, 5000)
 connect()
-document.addEventListener('visibilitychange', () => { if (!document.hidden) window.dispatchEvent(new Event('forge-remote-resume')) })
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { if (Date.now() - last > 20000) connect(); window.dispatchEvent(new Event('forge-remote-resume')) } })
 window.__forgeRemote = true
 window.__forgeElectron = { contextBridge: { exposeInMainWorld: (n, api) => { window[n] = api } }, ipcRenderer }
 })();
@@ -298,7 +309,7 @@ export class RemoteServer {
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive', 'x-accel-buffering': 'no' })
       res.write(': ok\n\n')
       this.clients.add(res)
-      const beat = setInterval(() => res.write(': ping\n\n'), 20_000)
+      const beat = setInterval(() => res.write('data: {"c":"__ping","a":[]}\n\n'), 15_000) // a real message, so the phone can tell the link is alive
       req.on('close', () => { clearInterval(beat); this.clients.delete(res) })
       return
     }

@@ -147,6 +147,7 @@ describe('remote access', () => {
   it('builds the phone script from the preload file', () => {
     const s = shimSource('import { contextBridge, ipcRenderer } from "electron";\ncontextBridge.exposeInMainWorld("forge", {});')
     expect(s).toContain('const { contextBridge, ipcRenderer } = window.__forgeElectron;')
+    expect(() => new Function(s)).not.toThrow() // a plain script must parse
     expect(shimSource('import { contextBridge, ipcRenderer } from "electron";\nexposeIt();\nexport {};\n')).not.toMatch(/export\s*\{/)
   })
 })
