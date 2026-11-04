@@ -376,6 +376,7 @@ async function team(into: HTMLElement) {
   const verify = field('text', cfg.verify ?? '', 'Detect from project')
   verify.onchange = () => put('verify', verify.value.trim() || undefined)
   perm.box.append(
+    row('Questions', 'Agents may stop and ask you when they are really unsure.', onOff(cfg.askQuestions !== false, (v) => put('askQuestions', v))),
     row('Never ask me', 'Agents run commands and read files without asking. They still cannot push to git, use sudo, or write outside their own task folder.', onOff(cfg.bypassPermissions !== false, (v) => put('bypassPermissions', v))),
     row('Project check', 'The command that verifies the result. Leave blank to detect it from the project.', verify),
   )

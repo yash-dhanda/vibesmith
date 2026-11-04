@@ -31,6 +31,7 @@ let runSearchOpen = false
 let runSort = 'opened'
 let runView: 'list' | 'grid' = (() => { try { return localStorage.getItem('forge.teamRunView') === 'grid' ? 'grid' : 'list' } catch { return 'list' } })()
 let steerDraft = ''
+const questionDrafts = new Map<string, { picked: number[]; other: string }>() // a live redraw must not lose a half-made answer
 let steerTarget: 'all' | 'claude' | 'codex' | 'local' = 'all'
 const AGENT_NAME = { claude: 'Claude', codex: 'Codex', local: 'Local model' } as const
 let laneDetails = (() => { try { return localStorage.getItem('forge.teamLaneDetails') === '1' } catch { return false } })()
@@ -179,6 +180,8 @@ async function showEntry() {
   const runs = input('number', ''); runs.min = '1'; runs.placeholder = 'No limit'
   const maxTasks = input('number', String(defaults.budget?.maxTasks ?? 12)); maxTasks.min = '1'; maxTasks.max = '30'
   const limit = input('number', String(defaults.maxLimitPercent ?? 0)); limit.min = '0'; limit.max = '100'
+  const ask = select([['ask', 'Ask me when unsure'], ['never', 'Never ask me']], defaults.askQuestions === false ? 'never' : 'ask'); ask.setAttribute('aria-label', 'Questions')
+  const askRow = h('label', 'team-ask'); askRow.append(h('span', '', 'Questions'), ask, h('small', '', 'Agents can stop and ask you when they are really unsure.'))
   const grid = h('div', 'team-config-grid')
   grid.append(field('Planner', planner, 'Chooses who splits the goal into tasks.'), field('Parallel tasks per agent', parallel, 'More tasks can finish sooner, but use more allowance.'), field('Task review', review), field('Final review', finalReview, 'Automatic checks the whole result only for runs of 3 or more tasks, which saves plan usage.'), field('Permissions', permissions, 'Bypass lets the agents run commands and read files without asking. They still cannot push to git, use sudo, or write outside their own task folder.'), field('Plan approval', reviewPlan, 'Stops after planning so you can edit, reassign or skip tasks before any agent works.'), field('Fix attempts per task', fixRounds), field('Project check', verify, 'Leave blank to detect it from the project.'), field('Codex connection', codexMode, 'Live sessions support streaming and immediate steering.'), field('Time limit (minutes)', minutes, 'Empty means no limit.'), field('Token limit', tokens, 'Empty means no limit.'), field('Agent runs limit', runs, 'Empty means no limit.'), field('Maximum tasks', maxTasks), field('Pause at plan usage %', limit, '0 disables this limit.'))
   const validation = h('div', 'team-config-error'); validation.setAttribute('role', 'alert')
@@ -186,9 +189,9 @@ async function showEntry() {
   const readConfig = (): Partial<TeamConfig> | null => {
     if (numeric.some(item => !item.checkValidity() || !Number.isFinite(Number(item.value)))) { validation.textContent = 'Check the highlighted team settings.'; numeric.find(item => !item.checkValidity())?.focus(); return null }
     validation.textContent = ''
-    return { planner: planner.value as TeamConfig['planner'], maxParallelPerAgent: Number(parallel.value), review: review.value as TeamConfig['review'], finalReview: finalReview.value === 'auto' ? 'auto' : finalReview.value === 'true', reviewPlan: reviewPlan.value === 'true', bypassPermissions: permissions.value === 'bypass', maxFixRounds: Number(fixRounds.value), codexMode: codexMode.value as TeamConfig['codexMode'], verify: verify.value.trim() || undefined, codexModel: codexModel.value, localModel: localModel.value || undefined, claudeModel: claudeModel.value.trim() || undefined, claudeEffort: effort.value as TeamConfig['claudeEffort'], codexEffort: codexEffort.value as TeamConfig['codexEffort'], maxLimitPercent: Number(limit.value), budget: { maxMinutes: Number(minutes.value) || undefined, maxTokens: Number(tokens.value) || undefined, maxAgentRuns: Number(runs.value) || undefined, maxTasks: Number(maxTasks.value) } }
+    return { askQuestions: ask.value === 'ask', planner: planner.value as TeamConfig['planner'], maxParallelPerAgent: Number(parallel.value), review: review.value as TeamConfig['review'], finalReview: finalReview.value === 'auto' ? 'auto' : finalReview.value === 'true', reviewPlan: reviewPlan.value === 'true', bypassPermissions: permissions.value === 'bypass', maxFixRounds: Number(fixRounds.value), codexMode: codexMode.value as TeamConfig['codexMode'], verify: verify.value.trim() || undefined, codexModel: codexModel.value, localModel: localModel.value || undefined, claudeModel: claudeModel.value.trim() || undefined, claudeEffort: effort.value as TeamConfig['claudeEffort'], codexEffort: codexEffort.value as TeamConfig['codexEffort'], maxLimitPercent: Number(limit.value), budget: { maxMinutes: Number(minutes.value) || undefined, maxTokens: Number(tokens.value) || undefined, maxAgentRuns: Number(runs.value) || undefined, maxTasks: Number(maxTasks.value) } }
   }
-  const reset = h('button', 'btn', 'Reset defaults') as HTMLButtonElement; reset.type = 'button'; reset.onclick = () => { planner.value = 'auto'; parallel.value = '2'; review.value = 'cross'; finalReview.value = 'auto'; reviewPlan.value = 'false'; permissions.value = 'bypass'; fixRounds.value = '3'; verify.value = ''; codexMode.value = 'app-server'; claudeModel.value = ''; effort.value = 'high'; codexEffort.value = 'high'; minutes.value = ''; tokens.value = ''; runs.value = ''; maxTasks.value = '12'; limit.value = '0'; validation.textContent = 'Defaults restored. They will save when you start a run.' }
+  const reset = h('button', 'btn', 'Reset defaults') as HTMLButtonElement; reset.type = 'button'; reset.onclick = () => { ask.value = 'ask'; planner.value = 'auto'; parallel.value = '2'; review.value = 'cross'; finalReview.value = 'auto'; reviewPlan.value = 'false'; permissions.value = 'bypass'; fixRounds.value = '3'; verify.value = ''; codexMode.value = 'app-server'; claudeModel.value = ''; effort.value = 'high'; codexEffort.value = 'high'; minutes.value = ''; tokens.value = ''; runs.value = ''; maxTasks.value = '12'; limit.value = '0'; validation.textContent = 'Defaults restored. They will save when you start a run.' }
   const saveDefaults = h('button', 'btn', 'Save defaults') as HTMLButtonElement; saveDefaults.type = 'button'; saveDefaults.onclick = () => void call(async () => { const config = readConfig(); if (!config || typeof window.forge.teamSettingsSet !== 'function') return; await window.forge.teamSettingsSet(config); validation.textContent = 'Team defaults saved for this project.' })
   const settingActions = h('div', 'team-setting-actions'); settingActions.append(reset, saveDefaults)
   advanced.append(summary, grid, validation, settingActions)
@@ -224,7 +227,7 @@ async function showEntry() {
   agentsBox.append(agentCard('claude', claudeModel, effort), agentCard('codex', codexModel, codexEffort))
   if (health.localModels.length) agentsBox.append(agentCard('local', localModel))
   agentsBox.querySelectorAll<HTMLElement>('.team-agent-card').forEach(card => { const a = (['claude', 'codex', 'local'] as const).find(x => card.classList.contains(x)); if (a && !readyAgents.has(a) && !replay) card.classList.add('off') })
-  form.append(goal, folderFinder(goal, project), agentsBox, healthBox, advanced, actions)
+  form.append(goal, folderFinder(goal, project), agentsBox, askRow, healthBox, advanced, actions)
   form.onsubmit = async e => {
     e.preventDefault(); const text = goal.value.trim(); if (!text || start.disabled) return
     const config = readConfig(); if (!config) return
@@ -321,6 +324,7 @@ function renderRun() {
   if ((run.pausedReason || run.status === 'interrupted') && !run.approvals.some(a => a.kind === 'plan' && a.status === 'pending')) page.append(renderPauseBanner())
   const pending = run.approvals.filter(a => a.status === 'pending')
   if (pending.length) page.append(renderApprovals(pending))
+  const answered = renderAnswered(); if (answered) page.append(answered)
   if (run.status === 'awaiting_approval' && run.final) page.append(renderFinal())
   if (run.status === 'done' && run.applied) page.append(renderApplied())
   page.append(renderBoard(), renderStory())
@@ -332,7 +336,8 @@ function renderRunHeader() {
   const back = h('button', 'icon-btn'); back.append(icon('arrowright')); back.classList.add('back'); back.title = 'All team runs'; back.onclick = () => void showEntry()
   const where = h('div', 'eyebrow', folderName(run!.project)); where.prepend(icon('folder', 'sm')); where.title = run!.project
   const identity = h('div', 'team-run-identity'); identity.append(where, h('h1', '', run!.goal))
-  const status = statusTag(run!.status); status.setAttribute('role', 'status')
+  const asking = run!.approvals.some(a => a.kind === 'question' && a.status === 'pending')
+  const status = asking ? h('span', 'status-pill awaiting_approval asking') : statusTag(run!.status); if (asking) status.append(emo(RUN_GLYPH.awaiting_approval), 'Waiting for you'); status.setAttribute('role', 'status')
   const elapsed = h('span', 'team-elapsed', fmtTime(Math.floor((Date.now() - run!.createdAt) / 1000))); elapsed.id = 'team-elapsed'
   const controls = h('div', 'team-controls')
   const planPending = run!.approvals.some(a => a.kind === 'plan' && a.status === 'pending')
@@ -389,8 +394,9 @@ function renderPauseBanner() {
 
 function renderApprovals(items: Run['approvals']) {
   const tray = h('section', 'approval-tray'); tray.setAttribute('role', 'alert'); tray.setAttribute('aria-live', 'assertive'); tray.append(sectionHead('Waiting for you', `${items.length} blocking`))
-  for (const approval of items) {
+  for (const approval of [...items].sort((a, b) => Number(b.kind === 'question') - Number(a.kind === 'question'))) {
     if (approval.kind === 'plan') { tray.append(renderPlanReview(approval)); continue }
+    if (approval.kind === 'question') { tray.append(renderQuestion(approval)); continue }
     const card = h('article', 'team-approval-card'); const copy = h('div', 'approval-copy')
     const kind = h('span', 'approval-kind', approval.kind.replace('_', ' '))
     copy.append(kind, h('h3', '', approval.title), h('p', '', approval.detail))
@@ -403,6 +409,75 @@ function renderApprovals(items: Run['approvals']) {
     card.append(copy, note, actions); tray.append(card)
   }
   return tray
+}
+
+// A question from an agent: options as rows (radio or checkbox), always an "Other…" row with its own text, then Skip and Send.
+// Keys: up/down move between rows, 1-4 pick, Enter sends.
+function renderQuestion(approval: Run['approvals'][number]) {
+  const who = approval.agent ? AGENT_NAME[approval.agent] : 'The team'
+  const card = h('article', 'question-card'); card.setAttribute('aria-label', `${who} asks: ${approval.title}`)
+  const top = h('div', 'q-who'); top.append(h('span', `agent-orb ${approval.agent ?? ''}`), h('strong', '', who), h('span', '', 'asks'))
+  card.append(top, h('h3', 'q-title', approval.title))
+  if (approval.detail && approval.detail !== approval.title) card.append(h('p', 'q-detail', approval.detail))
+  const options = approval.options ?? [], multi = !!approval.multi, OTHER = options.length
+  const draft = questionDrafts.get(approval.id)
+  const picked = new Set<number>(draft?.picked)
+  const other = input('text', draft?.other ?? ''); other.className = 'q-other'; other.placeholder = options.length ? 'Type your own answer' : 'Type your answer'; other.setAttribute('aria-label', 'Your answer')
+  const list = h('div', 'q-options'); list.setAttribute('role', multi ? 'group' : 'radiogroup'); list.setAttribute('aria-label', 'Choices')
+  const rows: HTMLButtonElement[] = []
+  const choice = (index: number, label: string, desc = '') => {
+    const b = h('button', 'q-opt') as HTMLButtonElement; b.type = 'button'; b.setAttribute('role', multi ? 'checkbox' : 'radio')
+    const text = h('span', 'q-text'); text.append(h('strong', '', label)); if (desc) text.append(h('small', '', desc))
+    b.append(h('span', `q-mark ${multi ? 'box' : 'radio'}`), text); if (index < 4 && index < OTHER) b.append(h('kbd', '', String(index + 1)))
+    b.onclick = () => pick(index); rows.push(b); list.append(b)
+  }
+  const answerText = () => [...[...picked].filter(i => i !== OTHER).sort((a, b) => a - b).map(i => options[i].label), ...(picked.has(OTHER) || !options.length ? [other.value.trim()] : [])].filter(Boolean).join(', ')
+  const send = h('button', 'btn primary', 'Send answer') as HTMLButtonElement; send.append(icon('arrowright', 'sm'))
+  const sync = () => {
+    rows.forEach((b, i) => { const on = picked.has(i); b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)) })
+    other.hidden = options.length > 0 && !picked.has(OTHER)
+    send.disabled = !answerText()
+    questionDrafts.set(approval.id, { picked: [...picked], other: other.value })
+  }
+  const pick = (index: number) => {
+    if (multi) { if (picked.has(index)) picked.delete(index); else picked.add(index) } else { picked.clear(); picked.add(index) }
+    sync(); if (index === OTHER && picked.has(OTHER)) other.focus()
+  }
+  options.forEach((o, i) => choice(i, o.label, o.description))
+  if (options.length) { choice(OTHER, 'Other…', 'Write your own answer'); card.append(list) }
+  card.append(other)
+  const finish = async (allow: boolean) => {
+    const text = answerText(); if (allow && !text) return
+    send.disabled = true
+    if (replay) { approval.status = allow ? 'allowed' : 'denied'; if (allow) approval.answer = text; approval.answeredAt = Date.now(); renderRun(); return }
+    await call(async () => { const accepted = await window.forge.teamAnswer(run!.id, approval.id, allow, allow ? text : undefined); if (!accepted) toast('The team is no longer waiting on this question.'); await refreshRun() })
+    send.disabled = !answerText()
+  }
+  other.oninput = sync
+  card.onkeydown = e => {
+    const inField = e.target === other
+    if (e.key === 'Enter' && !e.shiftKey) { if (!send.disabled) { e.preventDefault(); void finish(true) } else if (!inField && rows.includes(e.target as HTMLButtonElement)) { e.preventDefault(); (e.target as HTMLButtonElement).click() } return }
+    if (inField) return
+    const at = rows.indexOf(e.target as HTMLButtonElement)
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && rows.length) { e.preventDefault(); rows[(Math.max(at, 0) + (e.key === 'ArrowDown' ? 1 : at < 0 ? 0 : -1) + rows.length) % rows.length].focus() }
+    else if (/^[1-4]$/.test(e.key) && Number(e.key) <= options.length) { e.preventDefault(); pick(Number(e.key) - 1); rows[Number(e.key) - 1].focus() }
+  }
+  const foot = h('div', 'q-foot'); const hint = h('span', 'modal-hint', `Answering unblocks ${who}`)
+  const skip = h('button', 'btn', 'Skip') as HTMLButtonElement; skip.title = 'Skip this question; the agent decides on its own'; skip.onclick = () => void finish(false)
+  send.onclick = () => void finish(true)
+  foot.append(hint, h('span', 'grow'), skip, send); card.append(foot)
+  sync(); return card
+}
+// Questions already answered in this run, one line each.
+function renderAnswered() {
+  const done = run!.approvals.filter(a => a.kind === 'question' && a.status !== 'pending')
+  const box = h('section', 'q-answered'); if (!done.length) return null
+  for (const a of done) {
+    const line = h('div', 'q-line'); line.append(h('span', `agent-orb ${a.agent ?? ''}`), h('span', 'q-asked', a.title))
+    line.append(h('strong', '', a.status === 'allowed' && a.answer ? `You answered: ${a.answer}` : a.status === 'denied' ? 'You skipped this' : 'No longer needed'))
+    box.append(line)
+  }
+  return box
 }
 
 function renderPlanReview(approval: Run['approvals'][number]) {

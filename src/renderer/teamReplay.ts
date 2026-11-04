@@ -47,6 +47,14 @@ export function replayRun(state = 'running'): { run: Run; events: { t: number; e
   if (state === 'cancelled') { run.status = 'cancelled'; run.pausedReason = 'You cancelled this run. No changes reached your project.' }
   if (state === 'planningfail') { run.status = 'failed'; run.tasks = []; run.pausedReason = 'The team could not create a plan because the project could not be read.' }
   if (state === 'applyfail') { run.status = 'awaiting_approval'; run.final = { report: '## Ready, but the project moved\n\nThe result is complete. Applying it will re-check the project first.', files: [{ path: 'hello.js', status: 'added', added: 1, removed: 0 }], verifyOk: true, verifyOutput: 'Passed', reviewNotes: ['The final reviewer found no blocking issues.'] } }
+  if (state === 'question') {
+    run.status = 'running'
+    run.approvals = [
+      { id: 'q-db', kind: 'question', title: 'Which database should the lobby use?', detail: 'The plan works with any of these. This decides how saved lobbies survive a restart.', agent: 'codex', taskId: 'interface', status: 'pending', at: now - 9_000, options: [{ label: 'SQLite', description: 'One file next to the app. No server to run.' }, { label: 'Postgres', description: 'A real server. Best if many people share it.' }, { label: 'In memory', description: 'Fastest, but lobbies vanish when the app restarts.' }] },
+      { id: 'q-platforms', kind: 'question', title: 'Which platforms should the first release support?', detail: 'Pick every one that should work on day one.', agent: 'claude', taskId: 'verify', status: 'pending', at: now - 6_000, multi: true, options: [{ label: 'Web', description: 'Any modern browser.' }, { label: 'Desktop', description: 'Windows, macOS and Linux.' }, { label: 'Mobile', description: 'iOS and Android.' }] },
+      { id: 'q-theme', kind: 'question', title: 'Should the lobby keep the current colours?', detail: '', agent: 'claude', taskId: 'foundation', status: 'allowed', answer: 'Keep the current palette', at: now - 80_000, answeredAt: now - 75_000 },
+    ]
+  }
   if (state === 'planning') run.messages = []
   const events: { t: number; ev: RunEvent }[] = [
     { t: now - 132_000, ev: { type: 'agent', runId: run.id, taskId: 'foundation', phase: 'work', ev: { type: 'prompt', agent: 'claude', text: 'Goal: Build a shared planning space.\n\nTask: Shape the shared data model.\n\nAcceptance: keep every state restart-safe and keyboard reachable.\n\nShared context: Codex will build the interface after this handoff.' } } },
