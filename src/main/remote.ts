@@ -11,7 +11,7 @@ import { dirname, extname, join, resolve, sep } from 'node:path'
 
 export type Handler = (e: unknown, ...args: unknown[]) => unknown
 export type Device = { id: string; name: string; hash: string; createdAt: number; lastSeen: number }
-export type RemoteState = { enabled: boolean; lan: boolean; port: number; devices: Device[] }
+export type RemoteState = { enabled: boolean; lan: boolean; port: number; devices: Device[]; pairing: string[] } // pairing: hashes of links not used yet
 export type RemoteStatus = { enabled: boolean; lan: boolean; listening: boolean; host: string; port: number; url: string; tailscale: boolean; devices: Omit<Device, 'hash'>[]; error?: string }
 export type RemoteDeps = {
   dir: string // where remote.json lives (the user data folder)
@@ -26,7 +26,7 @@ const BLOCKED = (c: string) => c.startsWith('remote:') || c === 'project:pick' |
 const MIME: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf', '.map': 'application/json', '.webmanifest': 'application/manifest+json' }
 const sha = (s: string) => createHash('sha256').update(s).digest('hex')
 const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
-const PAIR_TTL = 10 * 60_000
+const SESSION_SECONDS = 10 * 365 * 24 * 3600 // a paired phone stays paired until the user removes it
 const MAX_BODY = 90_000_000 // photos and short videos are uploaded through the same call
 
 // The address Tailscale gave this computer, if it is on a tailnet.
@@ -74,7 +74,6 @@ ${body}
 export class RemoteServer {
   private server: Server | null = null
   private state: RemoteState
-  private pairing = new Map<string, number>() // sha(token) -> expires
   private clients = new Set<ServerResponse>()
   private fails = new Map<string, { n: number; at: number }>()
   private host = '127.0.0.1'
@@ -86,7 +85,7 @@ export class RemoteServer {
     this.file = join(d.dir, 'remote.json')
     let s: Partial<RemoteState> = {}
     try { s = JSON.parse(readFileSync(this.file, 'utf8')) } catch {}
-    this.state = { enabled: !!s.enabled, lan: !!s.lan, port: Number(s.port) || 8787, devices: Array.isArray(s.devices) ? s.devices : [] }
+    this.state = { enabled: !!s.enabled, lan: !!s.lan, port: Number(s.port) || 8787, devices: Array.isArray(s.devices) ? s.devices : [], pairing: Array.isArray(s.pairing) ? s.pairing.slice(-20) : [] }
   }
 
   private save() {
@@ -138,10 +137,11 @@ export class RemoteServer {
     if (s) await new Promise<void>((r) => { s.close(() => r()); s.closeAllConnections?.() })
   }
 
-  // A one-time link for a new device. It is only good for ten minutes and for one device.
+  // A one-time link for a new device. It does not expire, but it works for one device only and is gone once used (or when a newer one pushes it out).
   async pairLink(): Promise<{ url: string; qr: string }> {
     const token = randomBytes(24).toString('hex')
-    this.pairing.set(sha(token), Date.now() + PAIR_TTL)
+    this.state.pairing = [...this.state.pairing, sha(token)].slice(-20)
+    this.save()
     const url = `${this.status().url}/__pair?t=${token}`
     let qr = ''
     try { qr = await (await import('qrcode')).toDataURL(url, { margin: 1, width: 280, errorCorrectionLevel: 'M' }) } catch {}
@@ -198,16 +198,16 @@ export class RemoteServer {
     if (url.pathname === '/__pair') {
       const t = url.searchParams.get('t') ?? ''
       const key = sha(t)
-      const exp = this.pairing.get(key)
-      this.pairing.delete(key) // one use, whatever happens
-      if (!t || !exp || exp < Date.now()) { this.fail(ip); res.writeHead(403, { 'content-type': 'text/html; charset=utf-8' }); return void res.end('<meta name=viewport content="width=device-width"><body style="font:16px system-ui;padding:24px;background:#101010;color:#eee">This link has expired or was already used. Make a new one in Forge: Settings, Remote access.') }
+      const known = this.state.pairing.includes(key)
+      if (known) { this.state.pairing = this.state.pairing.filter((x) => x !== key); this.save() } // one use
+      if (!t || !known) { this.fail(ip); res.writeHead(403, { 'content-type': 'text/html; charset=utf-8' }); return void res.end('<meta name=viewport content="width=device-width"><body style="font:16px system-ui;padding:24px;background:#101010;color:#eee">This link has already been used or was replaced. Make a new one in Forge: Settings, Remote access.') }
       const secret = randomBytes(32).toString('hex')
       const id = randomBytes(6).toString('hex')
       const ua = String(req.headers['user-agent'] ?? '')
       const name = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android phone' : 'Browser'
       this.state.devices.push({ id, name, hash: sha(secret), createdAt: Date.now(), lastSeen: Date.now() })
       this.save()
-      res.writeHead(302, { location: '/', 'set-cookie': `forge_session=${id}.${secret}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000`, 'cache-control': 'no-store' })
+      res.writeHead(302, { location: '/', 'set-cookie': `forge_session=${id}.${secret}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${SESSION_SECONDS}`, 'cache-control': 'no-store' })
       return void res.end()
     }
 

@@ -64,6 +64,27 @@ describe('remote access', () => {
     expect((await rpc(t.base, cookie, 'hello', ['x'])).status).toBe(401)
   })
 
+  it('keeps pairing links and paired phones across restarts, with no expiry', async () => {
+    const t = await boot()
+    const link = await t.srv.pairLink()
+    const dir = (t.srv as unknown as { d: { dir: string; rendererDir: string; preloadFile: string; handlers: Map<string, any>; listeners: Map<string, any> } }).d
+    await t.srv.stop()
+    const again = new RemoteServer({ ...dir, bind: '127.0.0.1' })
+    srv = again
+    await again.start(0)
+    const url = link.url.replace(/^(http:\/\/)[^:]+:\d+/, `$1127.0.0.1:${again.status().port}`)
+    const first = await fetch(url, { redirect: 'manual' })
+    expect(first.status).toBe(302)
+    expect(first.headers.get('set-cookie')).toMatch(/Max-Age=315360000/)
+    await again.stop()
+    const third = new RemoteServer({ ...dir, bind: '127.0.0.1' })
+    srv = third
+    await third.start(0)
+    expect(third.status().devices).toHaveLength(1) // still paired after another restart
+    const cookie = (first.headers.get('set-cookie') ?? '').split(';')[0]
+    expect((await rpc(`http://127.0.0.1:${third.status().port}`, cookie, 'hello', ['x'])).status).toBe(200)
+  })
+
   it('cannot be used to read files outside the app folder', async () => {
     const t = await boot()
     const { cookie } = await pair(t)
