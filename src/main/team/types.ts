@@ -36,6 +36,7 @@ export type Task = {
   diff?: string // the task's change as the reviewer saw it (capped), kept for the diff view after the worktree is gone
   proposedBy?: string
   lastStep?: boolean // a fix made during the last checks or the final review, not part of the plan
+  escalated?: boolean // the local model failed this task and a cloud agent took it over (once)
   resumeFrom?: TaskPhase // where an interrupted task stopped, so resuming does not redo finished work
   error?: string
   startedAt?: number

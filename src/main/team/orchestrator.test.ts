@@ -239,6 +239,22 @@ describe('team orchestrator', () => {
     expect(done.messages.some((m) => /Page check skipped: no dev server/.test(m.body))).toBe(true)
   })
 
+  it('when the local model fails a task, a cloud agent takes it over once instead of pausing the run', async () => {
+    const lost = { ok: false, text: '', usage: { input: 0, output: 0, cached: 0, costUsd: 0 }, events: [], error: { kind: 'other' as const, message: 'The local model gave up (too many steps).' } }
+    const x = h({ plan: { tasks: [T('a', { agent: 'local' })] }, fail: (agent, kind) => (agent === 'local' && kind === 'work' ? lost : null) }, { available: ['claude', 'codex', 'local'] })
+    const run = await x.orch.start(x.proj, 'local fails')
+    const r = await until(x.orch, run.id, (v) => v.status === 'awaiting_approval' || v.status === 'paused')
+    expect(r.status).toBe('awaiting_approval')
+    expect(r.tasks[0]).toMatchObject({ status: 'done', escalated: true })
+    expect(r.tasks[0].agent).not.toBe('local')
+    expect(r.messages.some((m) => /local model could not finish/.test(m.body))).toBe(true)
+    // only once: a task the cloud agent also fails is a real failure
+    const y = h({ plan: { tasks: [T('a', { agent: 'local' })] }, fail: (agent, kind) => (kind === 'work' ? lost : null) }, { available: ['claude', 'codex', 'local'] })
+    const run2 = await y.orch.start(y.proj, 'everyone fails', { autoSwitch: true })
+    const r2 = await until(y.orch, run2.id, (v) => v.status === 'paused' || v.status === 'awaiting_approval')
+    expect(r2.tasks[0].status).toBe('failed')
+  })
+
   it('takes an applied result back out of the project with undo', async () => {
     const x = h({ plan: { tasks: [T('a'), T('b')] } })
     const run = await x.orch.start(x.proj, 'undo me')

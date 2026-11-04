@@ -1084,6 +1084,17 @@ export class TeamOrchestrator {
 
   private failTask(run: Run, task: Task, message: string) {
     if (this.stopKind(run)) return this.interrupted(run, task)
+    // The local model gave up or failed its job: a cloud agent takes it over once (the task keeps whatever the local model already wrote), instead of the run waiting for the owner.
+    const live = this.liveOf(run)
+    const cloud = this.pool(live).filter((a) => a !== 'local')
+    if (task.agent === 'local' && run.config.autoSwitch !== false && !task.escalated && cloud.length && task.id !== 'plan') {
+      const to = strongest(cloud)
+      this.memory(run).recordOutcome('local', task.kind, false)
+      this.post(run, { from: 'orchestrator', to: 'all', kind: 'note', taskId: task.id, body: `The local model could not finish "${task.title}" (${message.slice(0, 160)}): ${label(to)} took it over.` })
+      Object.assign(task, { escalated: true, agent: to, status: 'queued', phase: null, error: undefined, attempts: 0, fixRounds: 0, resumeFrom: undefined })
+      this.touch(run, task)
+      return
+    }
     task.status = 'failed'
     task.phase = null
     task.error = message.slice(0, 500)
