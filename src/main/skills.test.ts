@@ -49,4 +49,15 @@ describe('skill libraries', () => {
     expect(store.catalog().block).toBe('')
     expect(() => store.remove('../../etc')).toThrow()
   })
+
+  it('describes big libraries instead of listing every skill', () => {
+    const root = mkdtempSync(join(tmpdir(), 'skills-store-'))
+    mkdirSync(join(root, 'big__lib'), { recursive: true })
+    const skills = Array.from({ length: 200 }, (_, i) => ({ name: `skill-${i}`, description: 'x', path: join(root, 'big__lib', `s${i}`, 'SKILL.md') }))
+    writeFileSync(join(root, 'index.json'), JSON.stringify([{ id: 'big__lib', url: 'https://github.com/big/lib', name: 'big/lib', enabled: true, addedAt: 1, updatedAt: 1, skills }]))
+    const c = new SkillStore(root).catalog()
+    expect(c.block).toContain('big/lib: 200 skills')
+    expect(c.block).not.toContain('skill-150')
+    expect(c.block.length).toBeLessThan(1500)
+  })
 })

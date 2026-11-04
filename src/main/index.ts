@@ -29,6 +29,7 @@ import { getVerify, setVerify } from './settings'
 import { registerLibrary } from './library'
 import { rankProjects, scanProjects, type ProjectHit } from './projectScan'
 import { SkillStore, type SkillRepo } from './skills'
+import { CATEGORY_LABEL, SKILL_CATALOG, SKILL_PACKS } from './skillCatalog'
 import { historyPath } from './team/history'
 import { RemoteServer, type Handler } from './remote'
 import { UsageStore } from './usageStore'
@@ -246,6 +247,7 @@ let skillStoreInst: SkillStore | null = null
 const skillStore = () => (skillStoreInst ??= new SkillStore(join(app.getPath('userData'), 'skills')))
 const skillId = (v: unknown) => String(v ?? '').slice(0, 200)
 ipcMain.handle('skills:list', () => skillStore().list())
+ipcMain.handle('skills:catalog', () => ({ entries: SKILL_CATALOG, packs: SKILL_PACKS, categories: CATEGORY_LABEL }))
 ipcMain.handle('skills:add', (_e, url: unknown) => skillStore().add(String(url ?? '')))
 ipcMain.handle('skills:update', (_e, id: unknown) => skillStore().update(skillId(id)))
 ipcMain.handle('skills:toggle', (_e, id: unknown, enabled: unknown) => skillStore().setEnabled(skillId(id), enabled === true))
