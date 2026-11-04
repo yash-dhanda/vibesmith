@@ -7,12 +7,12 @@ import { icon, type IconName } from './icons'
 import { openLibrary } from './library'
 import { renderUsage } from './usage'
 import { timeAgo } from './format'
+import { isRemote } from './phone'
 import { AGENT_NAME, N } from './names'
 
 // Settings is a full page: grouped pages in a nav column on the left, one column of sections on the right.
 export type Page = 'general' | 'appearance' | 'shortcuts' | 'models' | 'agent' | 'team' | 'skills' | 'remote' | 'usage' | 'privacy' | 'about'
 // Inside the phone's browser some pages make no sense (and the server refuses their calls): they are left out.
-export const isRemote = () => (window as { __forgeRemote?: boolean }).__forgeRemote === true
 const NAV: [string, [Page, IconName, string][]][] = [
   ['Personal', [['general', 'sliders', 'General'], ['appearance', 'contrast', 'Appearance'], ['shortcuts', 'keyboard', 'Keyboard']]],
   ['Forge', [['models', 'cube', 'Models & engine'], ['agent', 'bot', 'Agent'], ['team', 'users', N.crew], ['skills', 'spark', 'Skills'], ...(isRemote() ? [] : [['remote', 'phone', 'Remote access'] as [Page, IconName, string]]), ['usage', 'chart', 'Usage & spend'], ['privacy', 'shield', 'Privacy'], ['about', 'help', 'Help & about']]],
@@ -413,7 +413,6 @@ async function about(into: HTMLElement) {
 }
 
 // Remote access: the same window, served to a paired phone over Tailscale.
-let pairTimer: ReturnType<typeof setInterval> | null = null
 async function remote(into: HTMLElement) {
   if (isRemote() || typeof window.forge.remoteStatus !== 'function') return
   const st = await window.forge.remoteStatus()
@@ -431,7 +430,7 @@ async function remote(into: HTMLElement) {
   g.box.append(lan)
   into.append(g.g)
 
-  const p = group('Pair a phone', 'Each code works once, for one phone, for 10 minutes.')
+  const p = group('Pair a phone', 'This code works once, for one phone, and does not expire.')
   const show = action('Show pairing code', 'phone', async () => {
     show.disabled = true
     try {
@@ -440,12 +439,7 @@ async function remote(into: HTMLElement) {
       if (qr) { const img = document.createElement('img'); img.src = qr; img.alt = 'QR code for the pairing link'; img.width = 280; img.height = 280; card.append(img) }
       const link = h('div', 'pair-link')
       link.append(h('code', 'k', url), action('Copy', 'copy', () => void copy(url, 'Link copied')))
-      const left = h('div', 'pair-left')
-      const until = Date.now() + 10 * 60_000
-      const tick = () => { const s = Math.max(0, Math.round((until - Date.now()) / 1000)); left.textContent = s ? `Valid for ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}, one use` : 'This code has expired. Show a new one.'; if ((!s || !left.isConnected) && pairTimer) { clearInterval(pairTimer); pairTimer = null } }
-      if (pairTimer) clearInterval(pairTimer)
-      pairTimer = setInterval(tick, 1000); tick()
-      card.append(link, left)
+      card.append(link, h('div', 'pair-left', 'Works once, for one phone. Showing a new code makes a fresh one.'))
       slot.replaceChildren(card)
       show.replaceChildren(icon('phone', 'sm'), document.createTextNode('Show a new code'))
     } catch (e) { slot.replaceChildren(h('div', 'errtext', cleanErr(e))) }
@@ -455,9 +449,9 @@ async function remote(into: HTMLElement) {
   show.title = st.listening ? 'Show a QR code and link for your phone' : 'Turn on “Use Forge from your phone” first'
   const slot = h('div', 'pair-slot')
   const steps = h('ol', 'pair-steps')
-  for (const t of ['Install Tailscale on the phone and sign in to the same account.', 'Scan this code with the phone camera.', 'In Safari tap Share, then “Add to Home Screen” to get a Forge app icon.']) steps.append(h('li', '', t))
+  for (const t of ['Install Tailscale on the phone and sign in to the same account as this computer (this is what lets it work from anywhere in the world).', 'Scan the code with the camera.', 'In Safari tap Share, then Add to Home Screen, and open Forge from the home screen (this keeps it paired).']) steps.append(h('li', '', t))
   const pr = h('div', 'srow stack')
-  pr.append(show, slot, steps)
+  pr.append(show, slot, steps, h('div', 'pair-left', 'Forge must be open on this computer for the phone to reach it.'))
   p.box.append(pr)
   into.append(p.g)
 
@@ -538,7 +532,9 @@ async function show(page: Page) {
   await rerender()
 }
 
-export async function openSettings(page: Page = 'general') {
+// On a phone the page list is the first screen; a page opened from it (or asked for directly) gets a Back arrow.
+export async function openSettings(asked?: Page) {
+  const page = asked ?? 'general'
   const dlg = $<HTMLDialogElement>('settings')
   query = ''
   const nav = h('nav', 'set-nav')
@@ -552,7 +548,7 @@ export async function openSettings(page: Page = 'general') {
   searchEl = input
   input.setAttribute('aria-label', 'Search settings')
   let timer: ReturnType<typeof setTimeout> | null = null
-  input.oninput = () => { if (timer) clearTimeout(timer); timer = setTimeout(() => { query = input.value; void show(current) }, 140) }
+  input.oninput = () => { if (timer) clearTimeout(timer); timer = setTimeout(() => { query = input.value; wrap.classList.toggle('show-page', !!query || wrap.classList.contains('show-page')); void show(current) }, 140) }
   input.onkeydown = (e) => { if (e.key === 'Escape' && input.value) { e.preventDefault(); e.stopPropagation(); input.value = ''; query = ''; void show(current) } }
   search.append(icon('search', 'sm'), input, h('kbd', '', 'Ctrl F'))
   nav.append(back, search)
@@ -563,7 +559,7 @@ export async function openSettings(page: Page = 'general') {
       b.dataset.page = id
       b.append(icon(glyph, 'sm'), h('span', 'lbl', text))
       b.title = text
-      b.onclick = () => { if (query) { query = ''; input.value = '' } void show(id) }
+      b.onclick = () => { if (query) { query = ''; input.value = '' } wrap.classList.add('show-page'); void show(id) }
       nav.append(b)
     }
   }
@@ -571,11 +567,16 @@ export async function openSettings(page: Page = 'general') {
   const inner = h('div', 'set-inner')
   const head = h('div', 'set-head')
   headTitle = h('h3')
-  head.append(headTitle)
+  const up = h('button', 'icon-btn set-up phone-only') as HTMLButtonElement
+  up.append(icon('arrowleft'))
+  up.title = 'All settings'
+  up.setAttribute('aria-label', 'All settings')
+  up.onclick = () => { wrap.classList.remove('show-page'); nav.querySelector<HTMLElement>(`[data-page="${current}"]`)?.focus() }
+  head.append(up, headTitle)
   body = h('div', 'set-body')
   inner.append(head, body)
   main.append(inner)
-  const wrap = h('div', 'set')
+  const wrap = h('div', asked ? 'set show-page' : 'set')
   wrap.append(nav, main)
   wrap.onkeydown = (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); input.focus() } }
   dlg.replaceChildren(wrap)

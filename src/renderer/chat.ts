@@ -6,11 +6,12 @@ import { renderHistory } from './history'
 import { initLibrary, openLibrary } from './library'
 import { initModels, noModels, selectedModel } from './models'
 import { openSettings } from './settings'
-import { $, agentLimits, cleanErr, copy, emo, h, numCtxPref, showMenu, toast } from './ui'
+import { $, agentLimits, cleanErr, copy, emo, h, numCtxPref, showMenu, toast, uuid } from './ui'
 import { initUsage } from './usage'
 import { initBrief, resetBrief, projectBrief, briefGoal, briefEvent, briefUndone, withPriorities } from './brief'
 import { initPalette } from './palette'
 import { attachmentStrip, sentChips, type Kind } from './attachments'
+import { isRemote, phone, toggleDrawer } from './phone'
 
 const thread = $('thread')
 const scroller = $('thread-scroll')
@@ -37,7 +38,7 @@ const att = attachmentStrip({
   note: 'Pictures go to the model; text and code files are added to your message.',
   upload: async (file) => {
     // The phone link sends calls as JSON, which cannot carry raw bytes yet: Crew takes files there.
-    if ((window as { __forgeRemote?: boolean }).__forgeRemote) throw new Error('Attach files to Solo chats on the computer, or use Crew on this phone.')
+    if (isRemote()) throw new Error('Attach files to Solo chats on the computer, or use Crew on this phone.')
     const [a] = await window.forge.attachmentsAdd(activeId, [{ name: file.name, data: new Uint8Array(await file.arrayBuffer()) }])
     if (!a) throw new Error(`Forge did not keep ${file.name}.`)
     return { id: a.id, name: a.name, size: a.size, kind: a.kind }
@@ -52,7 +53,7 @@ const att = attachmentStrip({
 })
 
 // ---- what the screen is showing ----
-let activeId: string = crypto.randomUUID() // a new chat gets its id up front, so live events can be matched to it
+let activeId: string = uuid() // a new chat gets its id up front, so live events can be matched to it
 let chats: ChatListItem[] = []
 let project: string | null = null
 let query = ''
@@ -188,7 +189,8 @@ function setProject(p: string | null) {
   projectBtn.replaceChildren(icon('folder', 'sm'), document.createTextNode(p ? folderName(p) : 'Choose folder'))
   projectBtn.title = hasMessages ? `This chat works in ${p}` : (p ?? 'Choose the folder the agent works in')
   projectBtn.classList.toggle('need', !p)
-  projectBtn.disabled = hasMessages
+  projectBtn.disabled = hasMessages || isRemote() // the phone cannot open the computer's folder dialog
+  projectBtn.hidden = isRemote() && !p
   if (emptySub) emptySub.textContent = p ? `Working in ${folderName(p)}. Say what it should do.` : 'A website, a small tool, something just for you.'
 }
 
@@ -546,6 +548,7 @@ function grow() {
 }
 
 async function chooseFolder() {
+  if (isRemote()) { toast('Pick the folder in Crew with Find folder, or choose it on the computer.', 5000); return }
   try {
     const p = await window.forge.pickProject(activeId)
     if (p && p !== project) {
@@ -662,7 +665,7 @@ async function openChat(id: string) {
 }
 
 async function newChat() {
-  activeId = crypto.randomUUID()
+  activeId = uuid()
   window.forge.chatsViewing(activeId)
   setRunning(false)
   resetView()
@@ -813,6 +816,7 @@ export async function initChat(opts: {
     else if (!matches && autoHidden) { $('app').classList.remove('no-hist'); autoHidden = false }
   })
   $('hist-toggle').onclick = () => {
+    if (phone.matches) return toggleDrawer()
     autoHidden = false
     const off = $('app').classList.toggle('no-hist')
     try {

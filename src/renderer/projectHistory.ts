@@ -42,6 +42,7 @@ export async function openProjectHistory() {
   const copyPath = h('button', 'btn', 'Copy path') as HTMLButtonElement
   const open = h('button', 'btn primary', 'Open file') as HTMLButtonElement
   open.onclick = () => window.forge.teamHistoryOpen().catch((e) => toast(cleanErr(e), 4000))
+  open.hidden = (window as { __forgeRemote?: boolean }).__forgeRemote === true // it opens on the computer, not here
   foot.append(where, h('span', 'grow'), copyPath, open)
   dlg.replaceChildren(head, bar, body, foot)
   if (!dlg.open) dlg.showModal()

@@ -2,7 +2,7 @@ import type { Run, RunEvent, Task, TeamConfig } from '../main/team/types'
 import type { RunSummary, TeamMemory } from '../main/team/service'
 import { md, folderName, formatTokens, timeAgo } from './format'
 import { fileIcon, icon, type IconName } from './icons'
-import { $, cleanErr, emo, h, toast } from './ui'
+import { $, cleanErr, emo, h, toast, uuid, writeClipboard } from './ui'
 import { replayRun } from './teamReplay'
 import { enabledSkillCount } from './skillsPanel'
 import { historyButton } from './projectHistory'
@@ -11,6 +11,7 @@ import { RUN_GLYPH, STEP_GLYPH, TASK_GLYPH, TOOL_GLYPH } from './glyphs'
 import { buildStage, pushCode, type StageCode } from './teamStage'
 import { attachmentStrip, kindOf, readBase64, sentChips } from './attachments'
 import type { TeamAttachment } from '../main/team/attach'
+import { isRemote, phone, toggleDrawer } from './phone'
 import { normaliseTeamEventsAsync, reduceTeamView, type LoggedTeamEvent } from './teamReducer'
 
 type Logged = LoggedTeamEvent
@@ -176,6 +177,7 @@ async function showEntry() {
   })
   const project = h('button', 'pill team-project') as HTMLButtonElement; project.type = 'button'; project.append(icon('folder', 'sm'), document.createTextNode(currentProject ? folderName(currentProject) : 'Choose folder')); project.title = currentProject || 'Choose the project folder'
   project.onclick = () => $('project').click()
+  project.hidden = isRemote() // the folder dialog opens on the computer; Find folder works everywhere
   const advanced = h('details', 'team-advanced') as HTMLDetailsElement
   const summary = h('summary'); summary.append(icon('sliders', 'sm'), document.createTextNode(N.moreOptions))
   const planner = select([['auto', 'Choose for me'], ['claude', 'Claude'], ['codex', 'Codex'], ['local', AGENT_NAME.local]], defaults.planner ?? 'auto')
@@ -235,7 +237,7 @@ async function showEntry() {
   const start = h('button', 'btn primary team-start', startLabel) as HTMLButtonElement
   start.disabled = !ready.length
   const diagnostics = h('button', 'icon-btn') as HTMLButtonElement; diagnostics.type = 'button'; diagnostics.append(icon('info')); diagnostics.setAttribute('aria-label', 'Copy diagnostics'); diagnostics.title = 'Copy diagnostics: versions, agent status and recent runs for a bug report. No secrets or file contents.'
-  diagnostics.onclick = () => void call(async () => { const text = replay ? 'Forge replay diagnostics' : await window.forge.teamDiagnostics(); await navigator.clipboard.writeText(text); toast('Diagnostics copied') })
+  diagnostics.onclick = () => void call(async () => { const text = replay ? 'Forge replay diagnostics' : await window.forge.teamDiagnostics(); await writeClipboard(text); toast('Diagnostics copied') })
   const actions = h('div', 'team-start-actions'); actions.append(project, att.button, att.input, diagnostics, historyButton(), h('span', 'grow'), start)
   const agentsBox = h('section', 'team-agents'); agentsBox.setAttribute('aria-label', 'Models and effort')
   const agentCard = (agent: 'claude' | 'codex' | 'local', model: HTMLSelectElement, effortSel?: HTMLSelectElement) => {
@@ -275,7 +277,7 @@ function emptyState(glyph: IconName, title: string, copy: string, action?: [stri
 
 // Previous runs as a sessions board: a header with view, filter, sort, search and New; then a table (or cards) of runs.
 function renderRunList() {
-  const section = h('section', `team-runs ${runView}`)
+  const section = h('section', `team-runs ${phone.matches ? 'grid' : runView}`) // a phone shows runs as cards
   const redraw = (focusSearch = false) => { const next = renderRunList(); section.replaceWith(next); if (focusSearch) queueMicrotask(() => { const field = next.querySelector<HTMLInputElement>('input[type="search"]'); field?.focus(); field?.setSelectionRange(field.value.length, field.value.length) }) }
   const head = h('div', 'page-head'); const title = h('h2', 'page-title', N.recentRuns); title.append(h('span', 'page-count', String(summaries.length))); head.append(title, h('span', 'grow'))
   const tools = h('div', 'head-tools')
@@ -731,7 +733,7 @@ function renderSteer() {
   const to = select([['all', 'Everyone'], ['claude', 'Claude'], ['codex', 'Codex'], ['local', AGENT_NAME.local]], steerTarget); to.setAttribute('aria-label', 'Send to'); to.onchange = () => { steerTarget = to.value as typeof steerTarget }
   const send = h('button', 'icon-btn'); send.append(icon('arrowup')); send.setAttribute('aria-label', 'Send to the crew'); send.title = 'Send'
   row.append(text, to, send); form.append(label, row)
-  form.onsubmit = e => { e.preventDefault(); const value = text.value.trim(); if (!value) return; if (replay) { run!.messages.push({ id: crypto.randomUUID(), from: 'user', to: steerTarget, kind: 'steer', body: value, at: Date.now(), readBy: [] }); steerDraft = ''; renderRun() } else void call(async () => { await window.forge.teamSteer(run!.id, value, steerTarget); steerDraft = ''; await refreshRun() }) }
+  form.onsubmit = e => { e.preventDefault(); const value = text.value.trim(); if (!value) return; if (replay) { run!.messages.push({ id: uuid(), from: 'user', to: steerTarget, kind: 'steer', body: value, at: Date.now(), readBy: [] }); steerDraft = ''; renderRun() } else void call(async () => { await window.forge.teamSteer(run!.id, value, steerTarget); steerDraft = ''; await refreshRun() }) }
   return form
 }
 function renderDiffPanel() {
@@ -822,7 +824,7 @@ export function initTeam(options: { project: () => string | null }) {
   currentProject = options.project() ?? ''
   const enabled = apiReady(); $('mode-team').hidden = !enabled; $('team-nav').hidden = !enabled
   $('mode-team').onclick = () => showTeam(); $('team-nav').onclick = () => showTeam(); $('team-back').onclick = showChat; $('mode-chat').onclick = showChat
-  $('team-hist-toggle').onclick = () => $('app').classList.toggle('no-hist')
+  $('team-hist-toggle').onclick = () => { if (phone.matches) toggleDrawer(); else $('app').classList.toggle('no-hist') }
   if (typeof window.forge.onTeamEvent === 'function') window.forge.onTeamEvent(reduceEvent)
   if (localStorage.getItem('forge.teamReplay')) (window as unknown as { __forgeTeamEmit?: typeof reduceEvent }).__forgeTeamEmit = reduceEvent // lets the replay harness stream fake agent events
   if (typeof window.forge.onTeamFocus === 'function') window.forge.onTeamFocus(id => { showTeam(false); void openRun(id).catch(e => toast(cleanErr(e), 5000)) })

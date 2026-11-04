@@ -91,7 +91,7 @@ code.k { font: 12px var(--mono); background: var(--panel-2); border-radius: var(
 .menu button.danger { color: var(--err); }
 
 /* ---- layout: history | chat | workspace (hidden until asked for) ---- */
-#app { display: grid; grid-template-columns: 224px minmax(0, 1fr); height: 100%; }
+#app { display: grid; grid-template-columns: 224px minmax(0, 1fr); height: 100%; height: var(--vvh, 100dvh); }
 #app.ws-open { grid-template-columns: 220px minmax(0, 1fr) minmax(360px, 42%); }
 #app.no-hist { grid-template-columns: minmax(0, 1fr); }
 #app.no-hist.ws-open { grid-template-columns: minmax(0, 1fr) minmax(360px, 42%); }
@@ -431,7 +431,7 @@ dialog[open]::backdrop { background: var(--scrim); }
 .palette-empty { padding: 18px 12px; color: var(--muted); margin: 0; }
 
 /* settings: a full page. Grouped nav on the left, one column of hairline-separated sections on the right */
-#settings { width: 100vw; height: 100vh; max-width: none; max-height: none; margin: 0; border-radius: 0; box-shadow: none; overflow: hidden; background: var(--bg); scale: 1; }
+#settings { width: 100vw; height: 100vh; height: var(--vvh, 100dvh); max-width: none; max-height: none; margin: 0; border-radius: 0; box-shadow: none; overflow: hidden; background: var(--bg); scale: 1; }
 #settings[open] { display: block; }
 @starting-style { #settings[open] { opacity: 0; scale: 1; } }
 #settings::backdrop { background: var(--bg); }
@@ -448,6 +448,7 @@ dialog[open]::backdrop { background: var(--scrim); }
 .set-group-label { padding: 14px 8px 6px; color: var(--side-faint); font-size: 11.5px; }
 .set-main { min-height: 0; min-width: 0; overflow-y: auto; }
 .set-inner { max-width: 920px; margin: 0 auto; padding: 28px 32px 64px; }
+.set-head { display: flex; align-items: center; gap: 4px; }
 .set-head h3 { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; font-size: 20px; font-weight: 600; letter-spacing: -.02em; }
 .set-head h3 .ic { color: var(--muted); }
 .set-body.turn { animation: fade var(--t2) ease-out; }
@@ -667,11 +668,6 @@ table.models td { text-align: right; padding: 7px 6px; border-top: 1px solid var
   #app.ws-open, #app.no-hist.ws-open { grid-template-columns: minmax(0, 1fr); }
   #app.ws-open #chat { display: none; }
   #workspace { position: relative; }
-  .set { grid-template-columns: 56px minmax(0, 1fr); }
-  .set-nav .lbl, .set-group-label, .set-search { display: none; }
-  .set-back { font-size: 0; }
-  .set-nav button { justify-content: center; }
-  .set-inner { padding-inline: 16px; }
   .srow { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .srow .ctl { justify-content: flex-start; }
   .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1099,6 +1095,126 @@ table.models td { text-align: right; padding: 7px 6px; border-top: 1px solid var
 .user .att-chip.image .att-thumb { width: 132px; height: 96px; border-radius: 10px; }
 .user .att-chip.image .att-text { display: none; }
 .team-run-identity .att-chips { margin-top: 8px; }
+
+/* ---- phones, tablets and touch. The same renderer is served to a paired phone (viewport-fit=cover). ---- */
+html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; }
+button, a, summary, select, label { touch-action: manipulation; }
+#thread-scroll, #chat-list, #team-root, .set-main, .set-nav, .lib-body, #command-results, .history-body, #build-brief { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.phone-only { display: none !important; }
+#scrim { position: fixed; inset: 0; z-index: 29; background: var(--scrim); animation: fade var(--t2) ease-out; }
+/* touch screens have no hover: everything a pointer would reveal is shown, and controls are a finger wide */
+@media (hover: none) {
+  .chat-item .x, .msg-actions, .run-acts .icon-btn { opacity: 1; }
+  .chat-item { padding-right: 44px; }
+  .chat-item .x { top: 50%; translate: 0 -50%; width: 44px; height: 44px; right: 0; }
+  .side-btn kbd, .set-search kbd, #commands kbd, .palette-search kbd, .palette-foot, .composer-note > span:last-child, .q-opt kbd { display: none; }
+  .task-card[data-task]:hover, .suggest button:hover, #send:hover:not(:disabled) { transform: none; }
+  .icon-btn, .head-btn, .icon-btn.sm, .view-toggle .icon-btn, .copy, .msg-actions button, .att-x, .toast-x { min-width: 44px; min-height: 44px; }
+  .btn, .link-btn, .pill, .bar select, .seg button, .side-btn, .set-nav button, .chat-open, .composer-mode, .att-act, .lane-details, .steps-head, .tool-head, .file-row, .undo, .approve button, .q-opt, .menu button, .command { min-height: 44px; }
+  #send { width: 44px; height: 44px; }
+  #chat-title, .suggest button, .usage-badge, .skill-chip, .team-agent-field select, .team-ask select, .team-field input, .team-field select, .team-folder-chip, .team-folder-row-item, .team-steer input, .team-steer select, .team-approval-card > input, .plan-edit-row input[type='text'], .plan-edit-row select, #chat-search, .q-other, .team-folder-panel input, summary { min-height: 44px; }
+  .icon-btn.xs { width: 36px; height: 36px; }
+}
+@media (max-width: 800px) {
+  .phone-only { display: revert !important; }
+  .ic.phone-only { display: block !important; }
+  .no-phone { display: none !important; }
+  input, textarea, select, #prompt, #command-search { font-size: 16px !important; } /* below 16px iOS zooms the page on focus */
+  html, body { overflow-x: hidden; }
+  /* the sidebar is a drawer: the header button opens it, the scrim, a swipe left, Escape or going somewhere closes it */
+  #app, #app.no-hist, #app.ws-open, #app.no-hist.ws-open, #app.team-mode, #app.team-mode.ws-open, #app.team-mode.no-hist { grid-template-columns: minmax(0, 1fr); }
+  #app #history, #app.no-hist #history, #app:not(.no-hist) #history, #app.team-mode #history, #app.ws-open #history { display: flex; position: fixed; inset: 0 auto 0 0; width: min(300px, 86vw); z-index: 30; box-shadow: 18px 0 50px -24px rgba(0, 0, 0, .55); padding: calc(10px + env(safe-area-inset-top)) 8px calc(8px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left)); transform: translateX(-105%); visibility: hidden; animation: none; transition: transform var(--t2) var(--ease), visibility 0s linear var(--t2); }
+  #app.drawer #history { transform: none; visibility: visible; transition: transform var(--t2) var(--ease), visibility 0s; }
+  #app:not(.no-hist) #chat, #app.ws-open #chat { margin-left: 0; }
+  /* headers sit under the status bar; side insets keep landscape notches clear */
+  #chat { grid-template-columns: minmax(0, 1fr); grid-template-rows: calc(52px + env(safe-area-inset-top)) minmax(0, 1fr) auto; }
+  #app.ws-open #chat, #app.brief-open #chat { display: grid; grid-template-columns: minmax(0, 1fr); }
+  #chat-head { padding: env(safe-area-inset-top) calc(8px + env(safe-area-inset-right)) 0 calc(6px + env(safe-area-inset-left)); gap: 2px; }
+  #chat-title { font-size: 15px; }
+  #thread { padding: 20px calc(14px + env(safe-area-inset-right)) 28px calc(14px + env(safe-area-inset-left)); gap: 16px; }
+  .user { max-width: 88%; }
+  .empty h2 { font-size: 22px; }
+  .suggest { margin-top: 18px; }
+  #composer-wrap { padding: 6px calc(8px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left)); }
+  :root.kb #composer-wrap { padding-bottom: 6px; }
+  #composer { padding: 8px 8px 6px 10px; }
+  .composer-note > span:last-child { display: none; }
+  .bar { gap: 0; }
+  .bar select { max-width: 42vw; }
+  .pill { max-width: 40vw; }
+  .att-text { max-width: 52vw; }
+  /* desktop-only: the code workspace and the side brief */
+  #workspace, #app.ws-open #workspace, #ws-toggle, #brief-toggle, #app.brief-open #build-brief { display: none !important; }
+  #rate, #ctx { display: none; }
+  /* toasts: full width, above the home indicator */
+  #toasts { left: calc(10px + env(safe-area-inset-left)); right: calc(10px + env(safe-area-inset-right)); bottom: calc(10px + env(safe-area-inset-bottom)); align-items: stretch; }
+  .toast { width: 100%; }
+  .menu { max-width: calc(100vw - 16px); }
+  .menu button { padding: 10px 12px; }
+  /* dialogs are bottom sheets */
+  dialog:not(#settings), #palette, #library, #project-history { width: 100%; max-width: 100%; margin: auto 0 0; max-height: calc(var(--vvh, 100dvh) - env(safe-area-inset-top) - 24px); border-radius: 16px 16px 0 0; border-width: 1px 0 0; padding-bottom: env(safe-area-inset-bottom); translate: 0 0; scale: 1; }
+  dialog:not(#settings)[open] { translate: 0 0; }
+  @starting-style { dialog:not(#settings)[open] { translate: 0 24px; opacity: 0; } }
+  #library, #project-history { height: calc(var(--vvh, 100dvh) - env(safe-area-inset-top) - 24px); }
+  #palette { margin-top: auto; }
+  .modal-foot, .lib-head { flex-wrap: wrap; }
+  /* settings: the page list first, then one page with a Back arrow */
+  .set { grid-template-columns: minmax(0, 1fr); }
+  .set-nav { padding: calc(10px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left)); gap: 0; }
+  .set-nav button { height: 48px; font-size: 15px; }
+  .set-nav .set-search { height: 44px; margin: 8px 0 4px; }
+  .set-group-label { font-size: 13px; padding: 18px 8px 6px; }
+  .set.show-page .set-nav, .set:not(.show-page) .set-main { display: none; }
+  .set:not(.show-page) .set-nav button.on { background: none; }
+  .set-inner { padding: calc(12px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(40px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left)); }
+  .set-head h3 { font-size: 18px; margin: 0; }
+  .set-card { flex-direction: column; align-items: flex-start; }
+  .srow { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .srow .ctl { justify-content: flex-start; }
+  .srow input[type='text'], .srow input[type='password'], .srow input[type='number'], .srow input:not([type]), .sselect { width: 100%; height: 44px; }
+  .scards { justify-content: flex-start; }
+  .scard { width: calc(50% - 4px); }
+  .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pair-card img { width: min(280px, 100%); }
+  /* Crew */
+  #team-screen { grid-template-rows: calc(56px + env(safe-area-inset-top)) minmax(0, 1fr); }
+  .team-head { padding: env(safe-area-inset-top) calc(10px + env(safe-area-inset-right)) 0 calc(6px + env(safe-area-inset-left)); }
+  .team-head .page-title { font-size: 18px; }
+  #team-root { padding-bottom: env(safe-area-inset-bottom); }
+  .team-entry { width: calc(100% - 20px - env(safe-area-inset-left) - env(safe-area-inset-right)); padding-top: 18px; }
+  .team-intro h1 { font-size: 21px; }
+  .team-lede { font-size: 13px; }
+  .team-start-card { margin-top: 16px; padding: 10px; }
+  .team-folder-row { flex-wrap: wrap; }
+  .team-folder-hint { flex-basis: 100%; white-space: normal; overflow-wrap: anywhere; }
+  .team-folder-chip { max-width: 100%; }
+  .team-agents { grid-template-columns: minmax(0, 1fr); }
+  .team-ask small { flex-basis: 100%; }
+  .team-health { flex-direction: column; }
+  .team-start-actions { flex-wrap: wrap; row-gap: 6px; }
+  .team-start { flex: 1 0 100%; justify-content: center; min-height: 44px; }
+  .team-config-grid { grid-template-columns: minmax(0, 1fr); }
+  .team-runs { margin-top: 36px; }
+  .team-runs .view-toggle { display: none; }
+  .head-search input { width: 40vw; }
+  .run-row .run-acts .icon-btn { opacity: 1; }
+  .team-run { width: calc(100% - 16px - env(safe-area-inset-left) - env(safe-area-inset-right)); padding-top: 12px; }
+  .team-run-header { box-shadow: none; }
+  .team-run-identity h1 { font-size: 15.5px; }
+  .team-board { grid-template-columns: minmax(0, 1fr); }
+  .team-story, .team-side-story, .team-lanes { grid-template-columns: minmax(0, 1fr); }
+  .stage-editor { height: 62vh; height: 62dvh; min-height: 320px; }
+  .stage-doc { padding-right: 16px; }
+  .stage-scroll, .live-code-body, .lane-body, .assistant pre, .tool-body { -webkit-overflow-scrolling: touch; }
+  .team-approval-card { grid-template-columns: minmax(0, 1fr); }
+  .question-card { padding: 14px 14px 0; }
+  .q-foot { margin-inline: -14px; padding-inline: 14px; flex-wrap: wrap; }
+  .team-steer > div { flex-wrap: wrap; }
+  .team-steer input { flex-basis: 100%; }
+  .team-diff-host.open { height: 60vh; }
+  .plan-edit-row { grid-template-columns: auto minmax(0, 1fr); }
+  .plan-edit-row select, .plan-edit-row .plan-skip { grid-column: 2; justify-self: start; }
+}
 
 /* ---- keyframes ---- */
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }

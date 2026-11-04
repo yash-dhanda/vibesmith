@@ -4,6 +4,7 @@ import { applyTheme, $, cleanErr, toast } from './ui'
 import { hydrateIcons } from './icons'
 import { applyNames } from './names'
 import { initTeam, setTeamProject } from './team'
+import { initPhone } from './phone'
 import '@fontsource-variable/geist/index.css'
 import '@fontsource-variable/geist-mono/index.css'
 
@@ -32,6 +33,7 @@ async function openWorkspace() {
 hydrateIcons()
 applyNames()
 applyTheme()
+initPhone()
 initChat({
   onFileChanged: path => { if (workspace) workspace.agentChangedFile(path).catch(e => toast(cleanErr(e), 4000)) },
   onFilesRestored: paths => { if (workspace) workspace.filesRestored(paths).catch(e => toast(cleanErr(e), 4000)) },

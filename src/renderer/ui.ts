@@ -75,9 +75,33 @@ export function seg<T extends string>(options: [T, string][], value: T, onPick: 
 // Booleans are an Off | On pair, not a checkbox.
 export const onOff = (on: boolean, onChange: (v: boolean) => void) => seg<'off' | 'on'>([['off', 'Off'], ['on', 'On']], on ? 'on' : 'off', (v) => onChange(v === 'on'))
 
+// The phone link is plain http on the Tailscale address, which browsers do not count as secure: no crypto.randomUUID and no
+// navigator.clipboard there. These fall back to what works everywhere.
+export const uuid = (): string => {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  const b = crypto.getRandomValues(new Uint8Array(16))
+  b[6] = (b[6] & 0x0f) | 0x40
+  b[8] = (b[8] & 0x3f) | 0x80
+  const x = [...b].map((n) => n.toString(16).padStart(2, '0')).join('')
+  return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20)}`
+}
+export async function writeClipboard(text: string) {
+  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text)
+  const t = document.createElement('textarea')
+  t.value = text
+  t.setAttribute('readonly', '')
+  t.style.cssText = 'position:fixed;top:0;left:0;opacity:0;font-size:16px'
+  document.body.append(t)
+  t.select()
+  t.setSelectionRange(0, text.length)
+  const ok = document.execCommand('copy')
+  t.remove()
+  if (!ok) throw new Error('copy refused')
+}
+
 export async function copy(text: string, what = 'Copied') {
   try {
-    await navigator.clipboard.writeText(text)
+    await writeClipboard(text)
     toast(what)
   } catch {
     toast('Could not copy')
