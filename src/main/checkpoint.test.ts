@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { changesSince, createCheckpoint, diffOf, fileAt, initRepo, isRepo, restorePaths, undoFile, undoTo } from './checkpoint'
+import { changesSince, createCheckpoint, diffOf, fileAt, initRepo, isRepo, restorePaths, treeChanges, undoFile, undoTo } from './checkpoint'
 
 let dir: string
 const w = (f: string, t: string) => {
@@ -291,5 +291,13 @@ describe('checkpoint', () => {
     w('.env', 'KEY=other\n')
     expect((await changesSince(dir, cp)).map((c) => c.path)).toEqual(['.env'])
     expect(await diffOf(dir, cp, '.env')).toBe('')
+  })
+
+  it('treeChanges compares any two checkpoints, and a checkpoint can carry its own message', async () => {
+    const a = await createCheckpoint(dir)
+    w('edit.txt', 'one\nTWO\n')
+    const b = await createCheckpoint(dir, 'custom message')
+    expect(await treeChanges(dir, a.tree, b.tree)).toEqual([{ path: 'edit.txt', status: 'modified', added: 1, removed: 1 }])
+    expect(git('log', '-1', '--format=%s', `refs/forge/${b.id}`).trim()).toBe('custom message')
   })
 })

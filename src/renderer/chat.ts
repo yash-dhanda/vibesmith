@@ -3,6 +3,8 @@ import { exportMarkdown, folderName, formatRate, formatTokens, matchesQuery, md,
 import { fileIcon, icon, type IconName } from './icons'
 import { STEP_GLYPH, TOOL_GLYPH } from './glyphs'
 import { renderHistory } from './history'
+import { openDashboard } from './dashboard'
+import { openRestorePoints } from './restorePanel'
 import { initLibrary, openLibrary } from './library'
 import { initModels, noModels, selectedModel } from './models'
 import type { Page } from './settings'
@@ -845,6 +847,8 @@ export async function initChat(opts: {
     { label: 'Model library', icon: 'cube', detail: 'Download models and check hardware fit', run: () => openLibrary() },
     { label: 'Settings', icon: 'gear', detail: 'Appearance, models, agent and shortcuts', run: () => openSettings() },
     { label: 'Usage and speed', icon: 'chart', run: () => openSettings('usage') },
+    ...(isRemote() ? [] : [{ label: 'Projects dashboard', icon: 'list' as const, detail: 'Every project, its runs and what needs you', run: () => void openDashboard() }]),
+    ...(project && !isRemote() ? [{ label: 'Restore points for this project', icon: 'undo' as const, detail: 'Browse and restore earlier states', run: () => void openRestorePoints(project!) }] : []),
     ...(isRemote() ? [] : [{ label: 'Toggle workspace', icon: 'code' as const, detail: 'Files, editor and terminal · Ctrl J', run: () => $('ws-toggle').click() }, { label: 'Toggle build brief', icon: 'list' as const, detail: 'Ctrl .', run: () => $('brief-toggle').click() }]),
     { label: 'Focus message', icon: 'keyboard', detail: 'Ctrl L', run: () => prompt.focus() },
     { label: 'Collapse or expand the sidebar', icon: 'sidebar', detail: 'Ctrl B', run: () => $('hist-toggle').click() },

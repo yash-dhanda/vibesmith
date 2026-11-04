@@ -11,6 +11,7 @@ import { RUN_GLYPH, STEP_GLYPH, TASK_GLYPH, TOOL_GLYPH } from './glyphs'
 import { buildStage, pushCode, type StageCode } from './teamStage'
 import { renderCrewPreview, visualCheckButton } from './crewPreview'
 import { renderGitPanel } from './gitPanel'
+import { openDiffReview } from './diffReview'
 import { attachmentStrip, kindOf, sentChips, uploadCrewFile } from './attachments'
 import type { TeamAttachment } from '../main/team/attach'
 import { cacheGet, cacheSet, isRemote, onResync, phone, toggleDrawer } from './phone'
@@ -861,7 +862,8 @@ function renderDiffPanel() {
     section.append(files)
   }
   const button = h('button', 'btn', 'Review all changes'); button.onclick = () => void openDiff()
-  section.append(button, h('div', 'team-diff-host')); return section
+  const comments = h('button', 'btn', 'Review with comments'); comments.title = 'Comment on lines; the comments go to the crew as one message'; comments.onclick = () => void openDiffReview({ runId: run!.id })
+  section.append(button, comments, h('div', 'team-diff-host')); return section
 }
 async function openDiff(taskId?: string, path?: string, live = false) {
   const host = document.querySelector<HTMLElement>('.team-diff-host'); if (!host || !run) return
@@ -978,6 +980,8 @@ export function initTeam(options: { project: () => string | null }) {
   if (typeof window.forge.onTeamEvent === 'function') window.forge.onTeamEvent(reduceEvent)
   if (localStorage.getItem('forge.teamReplay')) (window as unknown as { __forgeTeamEmit?: typeof reduceEvent }).__forgeTeamEmit = reduceEvent // lets the replay harness stream fake agent events
   window.addEventListener('forge-open-chat', e => { setActiveRun(''); showChat(); window.dispatchEvent(new CustomEvent('forge-open-chat-now', { detail: (e as CustomEvent<string>).detail })) })
+  // the dashboard's Start a Crew run: use that folder, then the start screen
+  window.addEventListener('forge-start-crew', e => { const path = (e as CustomEvent<string>).detail; if (path) void window.forge.setProject(path).then(root => { currentProject = root; window.dispatchEvent(new CustomEvent('forge-project-picked', { detail: root })); showTeam() }).catch(err => toast(cleanErr(err), 5000)) })
   window.addEventListener('forge-open-run', e => { showTeam(false); void openRun((e as CustomEvent<string>).detail).catch(err => toast(cleanErr(err), 5000)) })
   // a chat or a new chat from the sidebar leaves the Crew screen (it used to stay on it)
   $('history').addEventListener('click', e => { if (app.classList.contains('team-mode') && (e.target as HTMLElement).closest('.chat-open:not(.run-open), #new-chat, #side-new')) { setActiveRun(''); showChat() } })

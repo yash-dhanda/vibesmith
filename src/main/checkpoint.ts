@@ -106,9 +106,9 @@ function emptyDirs(root: string): string[] {
 // A landing from the team is looked up by id instead (see savePaths).
 export type Checkpoint = { id: string; tree: string; paths?: string[]; emptyDirs?: string[] }
 
-export async function createCheckpoint(root: string): Promise<Checkpoint> {
+export async function createCheckpoint(root: string, message = 'forge checkpoint'): Promise<Checkpoint> {
   const tree = await snapshotTree(root)
-  const commit = (await git(root, ['commit-tree', tree, '-m', 'forge checkpoint'], AUTHOR)).trim()
+  const commit = (await git(root, ['commit-tree', tree, '-m', message], AUTHOR)).trim()
   const id = `${Date.now()}`
   await git(root, ['update-ref', `refs/forge/${id}`, commit])
   const dirs = emptyDirs(root)
@@ -129,16 +129,10 @@ export const restorePaths = (root: string, tree: string, paths: string[]) =>
 
 export type Change = { path: string; status: 'added' | 'modified' | 'deleted'; added: number; removed: number }
 
-// What the run changed, relative to the project folder.
-export async function changesSince(root: string, cp: Checkpoint): Promise<Change[]> {
-  const now = await snapshotTree(root)
-  const scope = cp.paths ?? (await savedPaths(root, cp.id))
-  if (now === cp.tree) {
-    cp.paths ??= scope ?? []
-    return []
-  }
+// What differs between two trees, relative to the project folder.
+export async function treeChanges(root: string, from: string, to: string): Promise<Change[]> {
   const base = ['diff-tree', '-r', '-z', '--relative', '--no-renames']
-  const [names, nums] = await Promise.all([git(root, [...base, '--name-status', cp.tree, now]), git(root, [...base, '--numstat', cp.tree, now])])
+  const [names, nums] = await Promise.all([git(root, [...base, '--name-status', from, to]), git(root, [...base, '--numstat', from, to])])
   const counts = new Map<string, [number, number]>()
   for (const entry of nums.split('\0').filter(Boolean)) {
     const [a, r, ...p] = entry.split('\t')
@@ -150,6 +144,18 @@ export async function changesSince(root: string, cp: Checkpoint): Promise<Change
     const [added, removed] = counts.get(t[i + 1]) ?? [0, 0]
     all.push({ path: t[i + 1], status: t[i] === 'A' ? 'added' : t[i] === 'D' ? 'deleted' : 'modified', added, removed })
   }
+  return all
+}
+
+// What the run changed, relative to the project folder.
+export async function changesSince(root: string, cp: Checkpoint): Promise<Change[]> {
+  const now = await snapshotTree(root)
+  const scope = cp.paths ?? (await savedPaths(root, cp.id))
+  if (now === cp.tree) {
+    cp.paths ??= scope ?? []
+    return []
+  }
+  const all = await treeChanges(root, cp.tree, now)
   if (!scope) {
     cp.paths = all.map((c) => c.path)
     return all
@@ -178,7 +184,7 @@ const escapes = (p: string) => {
   return n === '..' || n.startsWith('..' + sep)
 }
 
-async function revert(root: string, cp: Checkpoint, list: Change[]): Promise<string[]> {
+export async function revert(root: string, cp: Checkpoint, list: Change[]): Promise<string[]> {
   const back = list.filter((c) => c.status !== 'added' && !escapes(c.path)).map((c) => c.path)
   if (back.length) await restorePaths(root, cp.tree, back)
   const kept = new Set(cp.emptyDirs)
