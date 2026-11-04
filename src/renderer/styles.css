@@ -272,8 +272,8 @@ code.k { font: 12px var(--mono); background: var(--panel-2); border-radius: var(
 
 /* ---- composer ---- */
 #composer-wrap { grid-column: 1; padding: 6px 28px 14px; }
-#composer { max-width: 760px; margin: 0 auto; background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 10px 10px 8px 12px; box-shadow: 0 6px 24px -18px rgba(0, 0, 0, .5); transition: border-color var(--t2), box-shadow var(--t2); }
-#composer:focus-within { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); box-shadow: 0 6px 24px -18px rgba(0, 0, 0, .5), 0 0 0 3px var(--accent-soft); }
+#composer { max-width: 760px; margin: 0 auto; background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 10px 10px 8px 12px; transition: border-color var(--t1), box-shadow var(--t1); }
+#composer:focus-within, .team-start-card:focus-within { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
 .composer-modes { display: inline-flex; gap: 2px; padding: 2px; margin: 0 0 6px -2px; border-radius: var(--r-sm); background: var(--bg); }
 .composer-mode { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: var(--muted); border-radius: 5px; padding: 2px 9px; font-size: 12px; }
 .composer-mode:hover { color: var(--text); }
@@ -289,7 +289,6 @@ code.k { font: 12px var(--mono); background: var(--panel-2); border-radius: var(
 .bar select { background: none; border: 0; color: var(--muted); border-radius: var(--r-sm); padding: 4px 4px; max-width: 160px; font-size: 12px; cursor: pointer; transition: background-color var(--t1), color var(--t1); }
 .bar select:hover { background: var(--panel-2); color: var(--text); }
 .bar select option, .bar select optgroup { background: var(--panel); color: var(--text); }
-:root[data-theme='light'] #composer, :root[data-theme='light'] .team-start-card { background: #fff; }
 #send { margin-left: auto; flex: none; width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; }
 #send:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 86%, var(--bg)); transform: translateY(-1px); }
 #send:active:not(:disabled) { transform: translateY(1px) scale(.96); }
@@ -641,6 +640,10 @@ table.models td { text-align: right; padding: 7px 6px; border-top: 1px solid var
 #team-screen { min-width: 0; min-height: 0; display: grid; grid-template-rows: 60px minmax(0, 1fr); background: var(--bg); animation: page-in var(--t2) var(--ease); }
 .team-head { display: flex; align-items: center; gap: 8px; padding: 0 20px 0 10px; }
 #team-root { min-width: 0; min-height: 0; overflow: auto; }
+/* the run screen sits on a dotted canvas; cards and panels are solid on top of it */
+#team-root:has(> .team-run) { background-image: radial-gradient(var(--border) 1px, transparent 1px); background-size: 14px 14px; background-attachment: local; }
+.team-run .task-card, .team-run .team-side-story > *, .team-run .agent-lane, .team-run .approval-tray, .team-run .team-pause-banner, .team-run .team-final, .team-run .team-applied { background-color: var(--bg); }
+.team-run-header { background: var(--bg); box-shadow: 0 0 0 20px var(--bg); }
 #team-root > * { animation: fade var(--t2) ease-out both; }
 .team-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-weight: 550; font-size: 12.5px; margin-bottom: 10px; }
 .team-section-head > div { display: inline-flex; align-items: center; gap: 6px; }
@@ -654,7 +657,6 @@ table.models td { text-align: right; padding: 7px 6px; border-top: 1px solid var
 .team-intro h1 { font-size: 26px; font-weight: 500; letter-spacing: -.025em; line-height: 1.2; margin: 0 0 6px; text-align: center; }
 .team-lede { max-width: 60ch; margin: 0 auto; color: var(--muted); font-size: 13.5px; line-height: 1.65; text-align: center; }
 .team-start-card { margin-top: 26px; padding: 12px 12px 10px 14px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--panel); transition: border-color var(--t2), box-shadow var(--t2); }
-.team-start-card:focus-within { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); box-shadow: 0 0 0 3px var(--accent-soft); }
 .team-start-card > textarea { display: block; width: 100%; min-height: 84px; resize: vertical; border: 0; outline: 0; background: transparent; padding: 2px 2px; font-size: 14px; line-height: 1.6; }
 .team-start-card > textarea:focus-visible { outline: 0; animation: none; }
 .team-start-card > textarea::placeholder { color: var(--faint); }
@@ -825,9 +827,9 @@ table.models td { text-align: right; padding: 7px 6px; border-top: 1px solid var
 .task-card h3 { margin: 10px 0 6px; font-size: 13px; font-weight: 550; line-height: 1.4; }
 .task-top { display: flex; align-items: center; gap: 8px; }
 .task-number { font: 11px var(--mono); color: var(--faint); }
-.agent-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; color: var(--a-claude); }
-.agent-badge::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-.agent-badge.codex { color: var(--a-codex); } .agent-badge.local { color: var(--a-local); }
+.agent-badge { --agent: var(--a-claude); display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; color: var(--muted); }
+.agent-badge::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--agent); }
+.agent-badge.codex { --agent: var(--a-codex); } .agent-badge.local { --agent: var(--a-local); }
 .task-state { margin-left: auto; color: var(--muted); font-size: 12px; display: inline-flex; align-items: center; gap: 4px; }
 .task-state .emo { font-size: 13px; }
 .task-state.running .emo { animation: pulse 1.6s ease-in-out infinite; }
@@ -840,7 +842,7 @@ table.models td { text-align: right; padding: 7px 6px; border-top: 1px solid var
 .team-story { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(290px, .7fr); gap: 12px; align-items: start; }
 .team-lanes { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; min-width: 0; }
 .team-lanes.single { grid-template-columns: minmax(0, 1fr); }
-.agent-lane { min-width: 0; border: 1px solid var(--hair); border-radius: var(--r-md); overflow: hidden; animation: rise var(--t2) var(--ease) both; }
+.agent-lane { --agent: var(--a-claude); min-width: 0; border: 1px solid var(--hair); border-radius: var(--r-md); overflow: hidden; animation: rise var(--t2) var(--ease) both; }
 .agent-lane > header { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--hair); font-weight: 550; font-size: 12.5px; }
 .lane-live { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--faint); font-size: 11.5px; font-weight: 450; }
 .lane-live.on::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--err); animation: pulse 1.4s ease-in-out infinite; }
@@ -860,13 +862,13 @@ table.models td { text-align: right; padding: 7px 6px; border-top: 1px solid var
 .activity-result summary, .verify-card summary, .agent-output summary, .agent-prompt summary, .agent-thinking summary { cursor: pointer; padding: 6px 0; color: var(--muted); font-size: 12px; }
 .activity-result pre, .verify-card pre, .agent-output pre, .agent-prompt pre { max-height: 220px; overflow: auto; margin: 0; white-space: pre-wrap; word-break: break-word; background: var(--panel); padding: 10px; border-radius: var(--r-sm); font: 11.5px/1.55 var(--mono); }
 .agent-typing { position: relative; white-space: pre-wrap; }
-.typing-cursor { display: inline-block; width: 5px; height: 1em; margin-left: 3px; vertical-align: -.12em; background: var(--accent); animation: team-blink 1s steps(2, jump-none) infinite; }
+.typing-cursor { display: inline-block; width: 5px; height: 1em; margin-left: 3px; vertical-align: -.12em; background: var(--agent, var(--text)); animation: team-blink 1s steps(2, jump-none) infinite; }
 .agent-thinking { margin-top: 6px; color: var(--muted); }
 .agent-thinking p { margin: 6px 0 0; padding-left: 10px; border-left: 1px solid var(--border); font-size: 12px; font-style: italic; }
 .agent-prompt { margin-top: 6px; }
-.live-code { margin-top: 8px; overflow: hidden; border: 1px solid var(--hair); border-left: 2px solid var(--accent); border-radius: var(--r-sm); background: var(--panel); }
+.live-code { margin-top: 8px; overflow: hidden; border: 1px solid var(--hair); border-left: 2px solid var(--agent, var(--border)); border-radius: var(--r-sm); background: var(--panel); }
 .live-code.done { border-left-color: var(--ok); }
-.agent-lane.local .live-code.writing { border-left-color: var(--a-local); }
+.agent-lane.codex { --agent: var(--a-codex); } .agent-lane.local { --agent: var(--a-local); }
 .live-code > summary { list-style: none; cursor: pointer; }
 .live-code > summary::-webkit-details-marker { display: none; }
 .live-code > summary::before { content: '▸'; color: var(--faint); font-size: 11px; margin-right: 2px; display: inline-block; transition: transform var(--t1); }
@@ -879,8 +881,8 @@ table.models td { text-align: right; padding: 7px 6px; border-top: 1px solid var
 .live-code.done .live-code-state { color: var(--ok); }
 .live-code-body { max-height: min(56vh, 520px); overflow: auto; margin: 0; padding: 10px; white-space: pre; font: 11.5px/1.55 var(--mono); tab-size: 2; }
 .live-code-body span { display: inline; }
-.live-code-body .diff-add { color: var(--ok); } .live-code-body .diff-remove { color: var(--err); } .live-code-body .diff-hunk { color: var(--accent); }
-.code-cursor { display: inline-block; width: 7px; height: 1.1em; vertical-align: text-bottom; margin-left: 1px; background: var(--accent); animation: cursor-blink 1s steps(2, start) infinite; }
+.live-code-body .diff-add { color: var(--ok); } .live-code-body .diff-remove { color: var(--err); } .live-code-body .diff-hunk { color: var(--faint); }
+.code-cursor { display: inline-block; width: 7px; height: 1.1em; vertical-align: text-bottom; margin-left: 1px; background: var(--agent, var(--text)); animation: cursor-blink 1s steps(2, start) infinite; }
 
 /* side story: hairline sections, no heavy cards */
 .team-side-story { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
@@ -970,8 +972,7 @@ table.models td { text-align: right; padding: 7px 6px; border-top: 1px solid var
 /* ---- live coding: one editor for the whole team (typing engine in teamStage.ts) ---- */
 .stage-editor { --agent: var(--a-claude); position: relative; display: flex; flex-direction: column; min-width: 0; height: min(78vh, 780px); min-height: 420px; background: var(--ed-bg); border: 1px solid var(--ed-line); border-radius: var(--r-md); overflow: hidden; animation: rise var(--t3) var(--ease) both; }
 .stage-title { position: relative; display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 8px 0 14px; background: var(--ed-bar); border-bottom: 1px solid var(--ed-line); }
-.stage-title::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; opacity: 0; background: linear-gradient(90deg, transparent, var(--accent), transparent) 0 0 / 40% 100% no-repeat; transition: opacity .4s; }
-.stage-editor.active .stage-title::after { opacity: 1; animation: scan 1.6s ease-in-out infinite; }
+
 .stage-dots { display: none; }
 .stage-name { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 550; color: var(--ed-fg); }
 .stage-chips { display: flex; gap: 4px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
@@ -1041,7 +1042,6 @@ table.models td { text-align: right; padding: 7px 6px; border-top: 1px solid var
 @keyframes cursor-blink { to { visibility: hidden; } }
 @keyframes dots { 0% { width: 0; } 100% { width: 1.4em; } }
 @keyframes dot-pulse { 50% { opacity: .25; transform: scale(.7); } }
-@keyframes scan { 0% { background-position: -40% 0; } 100% { background-position: 140% 0; } }
 @keyframes block-in { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: none; } }
 @keyframes tag-in { from { opacity: 0; transform: translateY(4px) scale(.9); } to { opacity: 1; transform: none; } }
 @keyframes typed { 0% { background: color-mix(in srgb, var(--agent) 42%, transparent); color: var(--agent); } 100% { background: transparent; color: inherit; } }
