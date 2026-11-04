@@ -47,6 +47,10 @@ export function replayRun(state = 'running'): { run: Run; events: { t: number; e
   if (state === 'cancelled') { run.status = 'cancelled'; run.pausedReason = 'You cancelled this run. No changes reached your project.' }
   if (state === 'planningfail') { run.status = 'failed'; run.tasks = []; run.pausedReason = 'The team could not create a plan because the project could not be read.' }
   if (state === 'applyfail') { run.status = 'awaiting_approval'; run.final = { report: '## Ready, but the project moved\n\nThe result is complete. Applying it will re-check the project first.', files: [{ path: 'hello.js', status: 'added', added: 1, removed: 0 }], verifyOk: true, verifyOutput: 'Passed', reviewNotes: ['The final reviewer found no blocking issues.'] } }
+  if (state === 'final' || state === 'localcheck') {
+    const local = task('local-docs', 'Write the setup notes', 'claude', 'done', null); local.agent = 'local'; local.reviews = [{ by: 'codex', verdict: 'pass', issues: '', round: 1, at: now }]
+    run.tasks.push(local)
+  }
   if (state === 'question') {
     run.status = 'running'
     run.approvals = [
