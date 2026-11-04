@@ -20,7 +20,7 @@ Describe a goal. A planner splits it into tasks, the tasks run in their own git 
 - **Watch it live.** One shared editor shows every agent typing its code side by side, with the files that are changing and a feed of what the agents tell each other.
 - **A chat that never ends.** The message box at the bottom of a run is always there. While the crew works your message steers it; when the result is waiting or already applied, the same message reopens the same run with a new task. You keep working in one place.
 - **Agents ask you questions** inside the app, with choices, instead of guessing.
-- **Local model is always checked.** Anything the local model writes is reviewed by Claude or Codex before it counts.
+- **Local model is always checked.** Anything the local model writes is reviewed by Claude or Codex before it counts (if only the local model is ready it reviews its own work, and Forge says so).
 - **Web research.** Agents can search the web and read pages.
 - **Attachments.** Paste or drop photos, files and videos (a video becomes frames the agents can read), also in Solo chats.
 - **Skills.** Paste a GitHub repo link and Forge clones it; Claude and Codex use the `SKILL.md` files inside. There is a hand-checked catalog of 50 UI/UX, motion and engineering skill repos to add with one click.
@@ -41,7 +41,7 @@ Token use is counted per day for Claude, Codex and Local, with an all-time total
 
 ### Use it from your phone
 
-Forge can serve itself to your phone, so the agents keep running on your computer while you steer from anywhere. Turn on **Settings > Remote access**, install Tailscale on both devices, scan the one-time pairing code, then Add to Home Screen in Safari. The pairing does not expire and nothing is exposed to the internet. The phone page is its own layout: bottom tabs, swipe-in chat list, a light-weight live view and a reconnecting indicator.
+Forge can serve itself to your phone, so the agents keep running on your computer while you steer from anywhere. Turn on **Settings > Remote access**, install Tailscale on both devices, scan the one-time pairing code, then Add to Home Screen in Safari. The session is renewed while the phone is in use, and nothing is exposed to the internet when Tailscale is used (the optional Wi-Fi mode is plain http: only use it on a network you trust). The phone page is its own layout: bottom tabs, swipe-in chat list, a light-weight live view and a reconnecting indicator.
 
 ![Remote access settings](docs/screenshots/forge-settings-remote-dark.png)
 

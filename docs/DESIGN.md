@@ -13,22 +13,24 @@ The conversation is the way in. The project is the thing that stays. Forge puts 
 
 Geist and Geist Mono are bundled locally. No remote fonts, assets, or renderer dependencies were added.
 
-The visual language follows a near-black, monochrome desktop style (2026-11-04): neutral greys only, quiet hairlines, and the primary action is white on black in dark and black on white in light. Values were read from a reference app's computed styles, not copied code or assets; Forge keeps its own wordmark.
+The visual language is **Graphite** (redesign of 2026-11-04, tuned for ten-hour days): a soft charcoal, monochrome desktop style: neutral greys only, quiet hairlines, and the primary action is white on black in dark and black on white in light. Values were read from a reference app's computed styles, not copied code or assets; Forge keeps its own wordmark.
 
 | Token | Dark | Light | Purpose |
 | --- | --- | --- | --- |
-| `--bg` | `#101010` | `#ffffff` | Main canvas, editor-adjacent surfaces |
-| `--side` | `#0c0d0e` | `#fafafa` | Sidebar and settings nav |
-| `--panel` | `#181818` | `#fafafa` | Cards, dialogs, composer, toasts |
-| `--panel-2` | `#242424` | `#f0f0f1` | Hover, selected rows, icon tiles |
-| `--hair` / `--border` | `#252525` / `#303030` | `#e5e5e5` / `#d4d4d8` | 1px dividers / control borders |
-| `--text` / `--muted` / `--faint` | `#d8d8d8` / `#a7a7a7` / `#858585` | `#18181b` / `#52525b` / `#71717a` | Text levels, all AA on the canvas |
-| `--accent` / `--accent-ink` | `#e8e8e8` / `#111111` | `#18181b` / `#ffffff` | Primary buttons, send, progress |
+| `--bg` | `#141414` | `#fbfbfa` | Main canvas, editor-adjacent surfaces |
+| `--side` | `#111111` | `#f4f4f3` | Sidebar and settings nav |
+| `--panel` | `#1b1b1b` | `#ffffff` | Cards, dialogs, composer, toasts |
+| `--panel-2` | `#252525` | `#efefee` | Hover, selected rows, icon tiles |
+| `--hair` / `--border` | `#262626` / `#333333` | `#e6e6e4` / `#d6d6d3` | 1px dividers / control borders |
+| `--text` / `--muted` / `--faint` | `#d6d6d6` / `#a3a3a3` / `#808080` | `#1c1c1e` / `#56565c` / `#737378` | Text levels, all AA on the canvas |
+| `--accent` / `--accent-ink` | `#e6e6e6` / `#141414` | `#1c1c1e` / `#fbfbfa` | Primary buttons, send, progress |
 | `--focus` | `#c8c8c8` | `#3f3f46` | Focus rings and focused field borders |
 
 Agent colours (`--a-claude`, `--a-codex`, `--a-local`) appear only as small dots and in the live editor (carets, name tags, block rails). Semantic `--ok`, `--warn`, `--err` stay for diffs, errors and the few warnings. Radii: 8px rows and buttons, 12px dialogs, toasts and the composer. Type: 13px UI, 12.5px nav rows, 20px page titles, 15px settings section heads, 11.5px muted column heads.
 
-Layout anatomy: a 224px sidebar (wordmark and collapse, nav rows with line icons, a muted "Chats" label with +, the chat list, then a usage avatar with Models and Settings icons); page headers with the title left and a compact control cluster right (view toggle, filter and sort selects, an expanding search, then the white primary button); boards as tables with muted column heads and hairline rows, or a card grid; centred empty states (line glyph, bold line, two muted lines, one white button). Settings is a full page with grouped nav, a search that filters rows across pages, and hairline sections of label-plus-description rows with Off | On pairs, chevron selects, outline buttons and preview cards. Dialogs have a 1px border, 12px radius, an icon + title + close header, a divider, and a footer with a muted hint left and actions right. Toasts are cards bottom-right. The Team run screen sits on a 14px dotted canvas.
+Density: the desktop window opens at 107% zoom (`zoomFactor` in the BrowserWindow, Ctrl 0, Ctrl - and Ctrl + still change it), so the 13px UI reads as about 14px; do not enlarge px sizes to compensate. Durations are `--t1 150ms`, `--t2 220ms`, `--t3 320ms` on `--ease`, and motion stays rich (owner choice).
+
+Layout anatomy: a 240px-wide-feeling sidebar (224px, 107% zoom) (wordmark and collapse, nav rows with line icons, a muted "Chats" label with +, the chat list, then a usage avatar with Models and Settings icons); page headers with the title left and a compact control cluster right (view toggle, filter and sort selects, an expanding search, then the white primary button); boards as tables with muted column heads and hairline rows, or a card grid; centred empty states (line glyph, bold line, two muted lines, one white button). Settings is a full page with grouped nav, a search that filters rows across pages, and hairline sections of label-plus-description rows with Off | On pairs, chevron selects, outline buttons and preview cards. Dialogs have a 1px border, 12px radius, an icon + title + close header, a divider, and a footer with a muted hint left and actions right. Toasts are cards bottom-right. The Team run screen sits on a 14px dotted canvas.
 
 **Emoji only for meaning.** Emoji mark statuses (run, task, step), approvals and agent tool steps, plus the Chat / Team mode chips; they all come from one map in `glyphs.ts`. Headings, nav rows, buttons, menus, settings, dialogs, toasts, hints, table labels and file rows use words or the SVG set in `icons.ts`. Every icon-only control keeps its words in `title` and `aria-label`. The UI font stacks end with Noto Color Emoji, Apple Color Emoji and Segoe UI Emoji.
 
@@ -38,7 +40,7 @@ Layout anatomy: a 224px sidebar (wordmark and collapse, nav rows with line icons
 
 ## Components and behavior
 
-- **Build brief:** persistent above 1200px; accessible toggle and close controls below that. The agent checklist is observational. User priorities can be added, reordered earlier, unchecked, removed, and retained per chat in local storage. Up to 12 priorities, 240 characters each.
+- **Build brief:** closed by default at every width. The header's Build brief button, Ctrl . and the palette entry open it as a right panel (a floating panel when the workspace is open or the window is 1000px or less); the choice is kept in `sessionStorage forge.brief`. It is never shown on the phone. The agent checklist is observational. User priorities can be added, reordered earlier, unchecked, removed, and retained per chat in local storage. Up to 12 priorities, 240 characters each.
 - **Run story:** collapsed phase summary with plain-language step labels. Approvals expand their containing group, explain the proposed effect, and offer “Allow this change/command” and “Skip this step.” Exact text changes stay behind the step’s disclosure.
 - **Changes:** file categories, before/now facts, line counts, individual and checkpoint Undo. Semantic change descriptions need backend support; the renderer does not infer intent from code.
 - **Command palette:** Ctrl/Cmd K searches commands, chats, and models. Arrow keys select, Enter executes, Escape closes and returns focus. Available actions include autonomy modes, Workspace, build brief, project folder, library and settings.
@@ -85,3 +87,15 @@ Team Mode is a control room, not a second chat screen. It opens from the compose
 The renderer includes a deterministic, quota-free replay fixture for planning, running, streaming, settled text, approval, paused, interrupted, unavailable-agent, final, and applied states. Scripted prompt, delta, growing-code, live-file, shared-memory, and Undo data exercise the same reducer and components as live hooks. Setting `forge.teamReplay` to `open` and `forge.teamReplayState` to a state before reload opens the fixture; the harness never calls `teamStart` or an agent CLI. It also exercises restart replay through the previous-runs list.
 
 On 2026-11-03 the built Electron app was run with `FORGE_PROJECT=/tmp/forge-team-ui npx electron . --remote-debugging-port=9331 --user-data-dir=/tmp/forge-team-live-final --ozone-platform=x11`. CDP verified the task board, both agent lanes, prompt disclosures, delta replacement, content and diff code, live file diff, shared memory, feed, verification output, steering, controls, final decisions, confirmed Undo, composer entry, and interrupted-run replay with zero renderer exceptions. Light, dark, 1440px, and 760px captures are checked in; every PNG is below 500 KB. `npm run typecheck`, all 284 tests, and `npm run build` pass.
+
+
+## Redesign notes (2026-11-04)
+
+- **Sidebar rail.** Collapsing the sidebar (Ctrl B or its own button) leaves a 56px icon rail with the mark, Find, New Solo chat, Crew runs, and usage, models and settings at the bottom (`rail.css`, desktop windows above 800px). The page headers do not repeat the toggle there. Phones keep the drawer.
+- **Shortcuts.** Ctrl K find anything, Ctrl N new Solo chat, Ctrl B sidebar, Ctrl . build brief, Ctrl 1 Solo, Ctrl 2 Crew, Ctrl , settings, Ctrl J workspace, Ctrl L focus the message box.
+- **Stylesheet.** `styles.css` only `@import`s `css/base`, `solo`, `chrome`, `settings`, `workspace`, `crew`, `attachments`, `rail`, `phone`, `motion` in that order (the cascade order); each screen's agent owns its own file.
+- **Solo.** Thread and composer share one centred 760px column; the composer starts at two lines and grows to ten.
+- **Crew start.** Goal box first; Claude, Codex and Local are chips ("Claude · Default · High") that open their model and effort selects in place; Questions and Web research are Off | On toggles; readiness and plan allowance are one muted line; the rest is under More options.
+- **Crew run.** The goal is clamped to two lines (Show all expands); status, time, tokens and progress sit on one line; task cards are compact; the live editor fills the freed height; Crew notes and checks live in the collapsed Background row; the message box is pinned and is one never-ending chat (steers while working, reopens the same run after it finished). Typing pause, stop or wait stops the agents at once and resume or continue starts them again; Pause itself stops at once.
+- **Settings.** 240px nav, 720px column, sticky page head, 34px controls, search results grouped by page, three By agent usage cards (Claude, Codex, Local, today).
+- **Phone link.** `--safe-t/r/b/l` hold the safe-area insets; `theme-color` and the manifest follow the theme (`#141414` dark, `#fbfbfa` light, updated live by `phone.ts`); `html` and `body` paint the canvas; headers are 52px; message text and boxes share a 12px margin; Send stays bottom-right; landscape respects the left and right insets; phone fields are 16px at every width. Checked in Chromium with iPhone emulation and real safe-area insets (WebKit cannot run on the development laptop); a real iPhone is still worth a look, especially the status-bar text colour on the light theme (`black-translucent`).
