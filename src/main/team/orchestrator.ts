@@ -11,6 +11,7 @@ import { redact, redactEvent } from './redact'
 import type { ApprovalAsk, ServerHandle } from './codexServer'
 import { errorSignature, ProjectMemoryStore, rank, routeAgent } from './memory'
 import { decideCommand, decideTool } from './policy'
+import { historyBlock, HistoryRecorder, HISTORY_DIR, writeHistory } from './history'
 import { buildReport, conflictPrompt, contextFor, finalReviewPrompt, fixPrompt, forLocal, parsePlan, parseVerdict, planPrompt, reviewPrompt, verifyFixPrompt, workPrompt } from './prompts'
 import type { RunResult } from './process'
 import { TeamStore } from './store'
@@ -76,6 +77,7 @@ const MAX_MESSAGES = 1500 // the oldest fall off; decisions and handoffs are kep
 
 export class TeamOrchestrator {
   private live = new Map<string, Live>()
+  private history = new HistoryRecorder()
   private hub: TeamHub
   private hubReady: Promise<string> | null = null
 
@@ -145,6 +147,7 @@ export class TeamOrchestrator {
     const run: Run = { id: runId, project, goal: goal.trim(), status: 'planning', createdAt: Date.now(), updatedAt: Date.now(), baseCommit, integrationBranch, integrationWorktree, plan: { summary: '', plannedBy: null }, tasks: [], messages: [], decisions: [], errors: [], approvals: [], usage: { claude: emptyUsage(), codex: emptyUsage(), local: emptyUsage() }, config }
     this.runs.set(runId, run)
     this.saveNow(run)
+    writeHistory(project, `Run ${runId} started. Goal: ${run.goal.replace(/\s+/g, ' ').slice(0, 800)} (crew: ${available.join(', ')}; review ${config.review}; web ${config.webResearch === false ? 'off' : 'on'})`)
     for (const note of skipped) this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: note })
     const live = this.newLive(available)
     this.live.set(runId, live)
@@ -381,6 +384,7 @@ export class TeamOrchestrator {
     if (!r.ok) return { ok: false, message: r.message }
     run.applied = true
     run.appliedCheckpoint = checkpoint
+    writeHistory(run.project, `Run ${run.id} was applied to the project: ${r.message.replace(/\s+/g, ' ').slice(0, 300)}`)
     this.setStatus(run, 'done')
     await this.cleanup(run, true)
     return { ok: true, message: r.message, checkpoint }
@@ -396,6 +400,7 @@ export class TeamOrchestrator {
       const tree = (await git(run.project, ['rev-parse', `refs/forge/${run.appliedCheckpoint}^{tree}`])).trim()
       const paths = await undoTo(run.project, { id: run.appliedCheckpoint, tree })
       run.undone = true
+      writeHistory(run.project, `Run ${run.id} was undone: ${paths.length} file${paths.length === 1 ? '' : 's'} put back.`)
       this.save(run)
       this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: `Undone: ${paths.length} file${paths.length === 1 ? '' : 's'} put back.` })
       return { ok: true, paths, message: 'Undone.' }
@@ -476,6 +481,7 @@ export class TeamOrchestrator {
   }
   private out(run: Run, ev: RunEvent) {
     ev = redactEvent(ev)
+    writeHistory(run.project, this.history.lines(run, ev))
     const live = ev.type === 'agent' && (ev.ev.type === 'delta' || ev.ev.type === 'code')
     if (live || ev.type === 'live') {
       const a = ev.type === 'agent' ? ev.ev : null
@@ -611,6 +617,8 @@ export class TeamOrchestrator {
   private async agentRun(run: Run, task: Task, agent: AgentName, phase: TaskPhase | 'plan' | 'final-review', prompt: string, write: boolean, cwd: string, resume?: string): Promise<RunResult> {
     const live = this.liveOf(run)
     const skills = ['work', 'fix', 'plan'].includes(phase) && agent !== 'local' ? this.d.skills?.() : undefined // the local model cannot read outside its task folder
+    const past = ['work', 'fix', 'plan'].includes(phase) ? historyBlock(run.project) : ''
+    if (past) prompt = `${past}\n\n${prompt}`
     if (skills?.block) prompt = `${skills.block}\n\n${prompt}`
     if (agent === 'local') prompt = forLocal(prompt)
     this.out(run, { type: 'agent', runId: run.id, taskId: task.id, phase, ev: { type: 'prompt', agent, text: prompt.slice(0, 16_000) } })
@@ -620,7 +628,7 @@ export class TeamOrchestrator {
       model: agent === 'codex' ? run.config.codexModel : agent === 'local' ? run.config.localModel : run.config.claudeModel,
       effort: agent === 'claude' ? run.config.claudeEffort : agent === 'codex' ? run.config.codexEffort : undefined,
       codexMode: run.config.codexMode,
-      addDirs: skills?.dirs,
+      addDirs: [...(skills?.dirs ?? []), ...(past ? [join(run.project, HISTORY_DIR)] : [])],
       web: run.config.webResearch !== false,
       onEvent: (ev) => {
         if (ev.type === 'limits') {

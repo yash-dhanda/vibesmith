@@ -18,6 +18,8 @@ export type OpenedChat = { id: string; title: string; project: string | null; mi
 const api = {
   // app + chats
   appInit: (): Promise<{ chats: ChatListItem[]; project: string | null; usage: UsageSummary }> => ipcRenderer.invoke('app:init'),
+  teamHistory: (): Promise<{ path: string; text: string } | null> => ipcRenderer.invoke('team:history'),
+  teamHistoryOpen: (): Promise<void> => ipcRenderer.invoke('team:history-open'),
   skillsList: (): Promise<SkillRepo[]> => ipcRenderer.invoke('skills:list'),
   skillsAdd: (url: string): Promise<SkillRepo> => ipcRenderer.invoke('skills:add', url),
   skillsUpdate: (id: string): Promise<SkillRepo> => ipcRenderer.invoke('skills:update', id),

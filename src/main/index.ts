@@ -29,6 +29,7 @@ import { getVerify, setVerify } from './settings'
 import { registerLibrary } from './library'
 import { rankProjects, scanProjects, type ProjectHit } from './projectScan'
 import { SkillStore, type SkillRepo } from './skills'
+import { historyPath } from './team/history'
 import { UsageStore } from './usageStore'
 import { createTeamService, sanitizeConfig, type TeamService } from './team/service'
 
@@ -200,6 +201,21 @@ ipcMain.handle('project:pick', async (_e, chatId: string) => {
   const root = setRoot(r.filePaths[0])
   rememberProject(root)
   return root
+})
+
+// The project's running history (what happened so far), kept in the project folder for the user and the agents.
+ipcMain.handle('team:history', async () => {
+  const root = getRoot()
+  if (!root) return null
+  const path = historyPath(root)
+  return { path, text: existsSync(path) ? (await readFile(path, 'utf8')).slice(-300_000) : '' }
+})
+ipcMain.handle('team:history-open', async () => {
+  const root = getRoot()
+  const path = root ? historyPath(root) : ''
+  if (!path || !existsSync(path)) throw new Error('Nothing has happened in this project yet.')
+  const err = await shell.openPath(path)
+  if (err) throw new Error(err)
 })
 
 // Skill libraries: GitHub repositories the user adds; the agents of a team run read the skills that fit their task.
