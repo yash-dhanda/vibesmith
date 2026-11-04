@@ -856,6 +856,7 @@ table.models td { text-align: right; padding: 7px 6px; border-top: 1px solid var
 .lane-divider span { margin-left: auto; flex: none; font-size: 11.5px; color: var(--faint); }
 .activity-row { min-width: 0; padding: 8px 2px; border-bottom: 1px solid var(--hair); animation: rise var(--t2) var(--ease) both; }
 .activity-row p { font-size: 12.5px; line-height: 1.6; margin: 6px 0 0; overflow-wrap: anywhere; }
+.activity-tool.web { display: flex; align-items: center; gap: 6px; }
 .activity-tool { margin-top: 6px; padding: 6px 9px; border-radius: var(--r-sm); background: var(--panel); color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .activity-result summary, .verify-card summary, .agent-output summary, .agent-prompt summary, .agent-thinking summary { cursor: pointer; padding: 6px 0; color: var(--muted); font-size: 12px; }
 .activity-result pre, .verify-card pre, .agent-output pre, .agent-prompt pre { max-height: 220px; overflow: auto; margin: 0; white-space: pre-wrap; word-break: break-word; background: var(--panel); padding: 10px; border-radius: var(--r-sm); font: 11.5px/1.55 var(--mono); }

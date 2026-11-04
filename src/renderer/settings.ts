@@ -378,6 +378,7 @@ async function team(into: HTMLElement) {
   verify.onchange = () => put('verify', verify.value.trim() || undefined)
   perm.box.append(
     row('Questions', 'Agents may stop and ask you when they are really unsure.', onOff(cfg.askQuestions !== false, (v) => put('askQuestions', v))),
+    row('Web research', 'Agents may search the web and read pages for docs, APIs and versions.', onOff(cfg.webResearch !== false, (v) => put('webResearch', v))),
     row('Never ask me', 'Agents run commands and read files without asking. They still cannot push to git, use sudo, or write outside their own task folder.', onOff(cfg.bypassPermissions !== false, (v) => put('bypassPermissions', v))),
     row('Project check', 'The command that verifies the result. Leave blank to detect it from the project.', verify),
   )
