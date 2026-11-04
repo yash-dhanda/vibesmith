@@ -14,7 +14,7 @@
       <nav class="side-nav" aria-label="Main">
         <button class="side-btn command-trigger" id="commands" title="Find anything (Ctrl K)"><i data-icon="search"></i><span>Find anything</span><kbd>Ctrl K</kbd></button>
         <button class="side-btn new-chat" id="new-chat" title="New chat (Ctrl N)"><i data-icon="edit"></i><span>New chat</span><kbd>Ctrl N</kbd></button>
-        <button class="side-btn team-nav" id="team-nav" hidden title="Team runs"><i data-icon="users"></i><span>Team runs</span><span class="team-nav-dot" hidden></span></button>
+        <button class="side-btn team-nav" id="team-nav" hidden title="Team runs"><i data-icon="users"></i><span>Team runs</span></button>
       </nav>
       <div class="side-label"><span>Chats</span><button class="icon-btn xs" id="side-new" title="New chat" aria-label="New chat"><i data-icon="plus" class="sm"></i></button></div>
       <input id="chat-search" type="search" aria-label="Filter chats" placeholder="Filter chats" autocomplete="off" />
@@ -33,8 +33,8 @@
         <span class="grow"></span>
         <span class="chip" id="rate" hidden title="Generation speed"></span>
         <span class="chip" id="ctx" hidden title="How much of the model's memory this chat uses"></span>
-        <button class="head-btn" id="brief-toggle" aria-expanded="false" aria-controls="build-brief" title="Build brief" aria-label="Build brief"><span class="emo" aria-hidden="true">📋</span></button>
-        <button class="head-btn" id="ws-toggle" title="Workspace: files, editor and terminal (Ctrl J)" aria-label="Workspace"><span class="emo" aria-hidden="true">💻</span></button>
+        <button class="head-btn" id="brief-toggle" aria-expanded="false" aria-controls="build-brief" title="Build brief" aria-label="Build brief"><i data-icon="list"></i></button>
+        <button class="head-btn" id="ws-toggle" title="Workspace: files, editor and terminal (Ctrl J)" aria-label="Workspace"><i data-icon="code"></i></button>
         <button class="icon-btn" id="more" title="More" aria-label="More"><i data-icon="dots"></i></button>
       </header>
       <div id="thread-wrap"><div id="thread-scroll"><div id="thread"></div></div><button id="to-bottom" hidden title="Jump to the latest message" aria-label="Jump to the latest message"><i data-icon="arrowdown"></i></button></div>
@@ -70,9 +70,9 @@
     <main id="team-screen" hidden aria-label="Team Mode">
       <header class="team-head">
         <button class="icon-btn" id="team-hist-toggle" aria-label="Toggle navigation" title="Show or hide the sidebar"><i data-icon="sidebar"></i></button>
-        <div class="team-brand"><span class="emo" aria-hidden="true">🤝</span><span>Team Mode</span></div>
+        <h1 class="page-title"><span class="emo" aria-hidden="true">🤝</span>Team Mode</h1>
         <span class="grow"></span>
-        <button class="head-btn" id="team-back" title="Back to chat" aria-label="Back to chat"><span class="emo" aria-hidden="true">💬</span></button>
+        <button class="btn" id="team-back" title="Back to chat"><i data-icon="arrowleft" class="sm"></i>Back to chat</button>
       </header>
       <div id="team-root"></div>
     </main>

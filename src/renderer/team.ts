@@ -1,7 +1,7 @@
 import type { Run, RunEvent, Task, TeamConfig } from '../main/team/types'
 import type { RunSummary, TeamMemory } from '../main/team/service'
-import { md, folderName, formatTokens } from './format'
-import { icon } from './icons'
+import { md, folderName, formatTokens, timeAgo } from './format'
+import { icon, type IconName } from './icons'
 import { $, cleanErr, emo, h, toast } from './ui'
 import { replayRun } from './teamReplay'
 import { buildStage, pushCode, type StageCode } from './teamStage'
@@ -26,6 +26,9 @@ let liveFiles = new Map<string, Task['changed']>()
 let undoResult = ''
 let runFilter = 'all'
 let runSearch = ''
+let runSearchOpen = false
+let runSort = 'opened'
+let runView: 'list' | 'grid' = (() => { try { return localStorage.getItem('forge.teamRunView') === 'grid' ? 'grid' : 'list' } catch { return 'list' } })()
 let steerDraft = ''
 let steerTarget: 'all' | 'claude' | 'codex' | 'local' = 'all'
 const AGENT_NAME = { claude: 'Claude', codex: 'Codex', local: 'Local model' } as const
@@ -241,32 +244,63 @@ async function showEntry() {
   if (replay && !['entry', 'unavailable'].includes(replayState)) await openRun('replay-team-run', replayRun(replayState))
 }
 
+// A native select dressed as a compact header button: leading icon, the value, up/down chevrons.
+function selectButton(glyph: IconName, el: HTMLSelectElement, label: string) { const wrap = h('label', 'select-btn'); el.setAttribute('aria-label', label); wrap.title = label; wrap.append(icon(glyph, 'sm'), el, icon('updown', 'sm chev')); return wrap }
+const newRun = () => { root.scrollTo({ top: 0, behavior: 'smooth' }); document.querySelector<HTMLTextAreaElement>('.team-start-card textarea')?.focus() }
+function emptyState(glyph: IconName, title: string, copy: string, action?: [string, () => void]) {
+  const box = h('div', 'empty-state'); const mark = h('div', 'empty-glyph'); mark.append(icon(glyph)); box.append(mark, h('div', 'empty-title', title), h('p', 'empty-copy', copy))
+  if (action) { const b = h('button', 'btn primary', action[0]); b.onclick = action[1]; box.append(b) }
+  return box
+}
+
+// Previous runs as a sessions board: a header with view, filter, sort, search and New; then a table (or cards) of runs.
 function renderRunList() {
-  const section = h('section', 'team-runs')
-  section.append(sectionHead('🕘', 'Previous runs', `${summaries.length}`))
-  const tools = h('div', 'team-run-tools')
+  const section = h('section', `team-runs ${runView}`)
+  const redraw = (focusSearch = false) => { const next = renderRunList(); section.replaceWith(next); if (focusSearch) queueMicrotask(() => { const field = next.querySelector<HTMLInputElement>('input[type="search"]'); field?.focus(); field?.setSelectionRange(field.value.length, field.value.length) }) }
+  const head = h('div', 'page-head'); const title = h('h2', 'page-title', 'Previous runs'); title.append(h('span', 'page-count', String(summaries.length))); head.append(title, h('span', 'grow'))
+  const tools = h('div', 'head-tools')
+  const view = h('div', 'view-toggle'); view.setAttribute('role', 'group'); view.setAttribute('aria-label', 'Layout')
+  for (const [v, glyph, label] of [['grid', 'grid', 'Grid'], ['list', 'list', 'List']] as const) {
+    const b = h('button', `icon-btn sm${runView === v ? ' on' : ''}`); b.append(icon(glyph, 'sm')); b.title = `${label} view`; b.setAttribute('aria-label', `${label} view`); b.setAttribute('aria-pressed', String(runView === v))
+    b.onclick = () => { runView = v; try { localStorage.setItem('forge.teamRunView', v) } catch {} redraw() }; view.append(b)
+  }
+  const filter = select([['all', 'All runs'], ['active', 'In progress'], ['attention', 'Needs attention'], ['done', 'Finished']], runFilter); filter.onchange = () => { runFilter = filter.value; redraw() }
+  const sort = select([['opened', 'Last opened'], ['created', 'Created'], ['goal', 'Goal A-Z']], runSort); sort.onchange = () => { runSort = sort.value; redraw() }
+  const searchWrap = h('div', `head-search${runSearchOpen || runSearch ? ' open' : ''}`)
   const search = input('search', runSearch); search.placeholder = 'Search goals'; search.setAttribute('aria-label', 'Search team runs')
-  const filter = select([['all', 'All runs'], ['active', 'In progress'], ['attention', 'Needs attention'], ['done', 'Finished']], runFilter); filter.setAttribute('aria-label', 'Filter team runs')
-  search.oninput = () => { runSearch = search.value; const next = renderRunList(); section.replaceWith(next); queueMicrotask(() => { const field = next.querySelector<HTMLInputElement>('input[type="search"]'); field?.focus(); field?.setSelectionRange(field.value.length, field.value.length) }) }
-  filter.onchange = () => { runFilter = filter.value; section.replaceWith(renderRunList()) }
-  tools.append(search, filter); section.append(tools)
+  const searchBtn = h('button', 'icon-btn sm'); searchBtn.append(icon('search', 'sm')); searchBtn.title = 'Search runs'; searchBtn.setAttribute('aria-label', 'Search runs')
+  searchBtn.onclick = () => { runSearchOpen = true; searchWrap.classList.add('open'); search.focus() }
+  search.onblur = () => { if (!search.value) { runSearchOpen = false; searchWrap.classList.remove('open') } }
+  search.onkeydown = e => { if (e.key === 'Escape') { e.stopPropagation(); search.value = ''; runSearch = ''; runSearchOpen = false; redraw() } }
+  search.oninput = () => { runSearch = search.value; runSearchOpen = true; redraw(true) }
+  searchWrap.append(searchBtn, search)
+  const add = h('button', 'btn primary'); add.append(icon('plus', 'sm'), document.createTextNode('New')); add.title = 'Start a new team run'; add.onclick = newRun
+  tools.append(view, selectButton('filter', filter, 'Filter team runs'), selectButton('sort', sort, 'Sort team runs'), searchWrap, add); head.append(tools); section.append(head)
   const active = ['planning', 'running', 'verifying', 'paused', 'interrupted', 'awaiting_approval']
-  const visible = [...summaries].sort((a, b) => b.updatedAt - a.updatedAt).filter(item => item.goal.toLowerCase().includes(runSearch.trim().toLowerCase()) && (runFilter === 'all' || runFilter === 'active' && active.includes(item.status) || runFilter === 'attention' && ['failed', 'paused', 'interrupted'].includes(item.status) || runFilter === 'done' && ['done', 'cancelled'].includes(item.status)))
-  if (!summaries.length) { section.append(h('p', 'team-empty', 'No team runs yet. Describe a small goal above to start one.')); return section }
-  if (!visible.length) { section.append(h('p', 'team-empty', 'No team runs match this search and filter.')); return section }
+  const order = (a: Summary, b: Summary) => runSort === 'goal' ? a.goal.localeCompare(b.goal) : runSort === 'created' ? b.createdAt - a.createdAt : b.updatedAt - a.updatedAt
+  const visible = [...summaries].sort(order).filter(item => item.goal.toLowerCase().includes(runSearch.trim().toLowerCase()) && (runFilter === 'all' || runFilter === 'active' && active.includes(item.status) || runFilter === 'attention' && ['failed', 'paused', 'interrupted'].includes(item.status) || runFilter === 'done' && ['done', 'cancelled'].includes(item.status)))
+  const table = h('div', 'run-table'); table.setAttribute('role', 'table'); table.setAttribute('aria-label', 'Previous team runs')
+  const cols = h('div', 'run-cols run-head'); cols.setAttribute('role', 'row')
+  for (const [label, cls] of [['Run', 'c-goal'], ['Status', 'c-status'], ['Project', 'c-project'], ['Tasks', 'c-tasks'], ['Last opened', 'c-when']]) { const c = h('span', cls, label); c.setAttribute('role', 'columnheader'); cols.append(c) }
+  table.append(cols); section.append(table)
+  if (!summaries.length) { section.append(emptyState('users', 'No team runs yet', 'Describe a goal above and the team plans it, splits the work and brings back one checked result.', ['New run', newRun])); return section }
+  if (!visible.length) { section.append(emptyState('search', 'No runs match', 'Try another search or filter.', ['Clear filters', () => { runSearch = ''; runFilter = 'all'; runSearchOpen = false; redraw() }])); return section }
   for (const [index, item] of visible.entries()) {
-    const row = h('article', 'team-run-row'); enter(row, `row:${item.id}`, index)
-    const open = h('button', 'team-run-open'); open.onclick = () => void (replay ? openRun(item.id, replayRun('interrupted')) : openRun(item.id))
-    const meta = h('span', 'team-run-meta'); const count = h('span', '', `${item.tasks.done}/${item.tasks.total}`); count.title = `${item.tasks.done} of ${item.tasks.total} tasks done`; meta.append(count, statusTag(item.status, true))
-    open.append(h('strong', '', item.goal), meta)
-    row.append(open)
-    if (typeof window.forge.teamExportReport === 'function' && ['awaiting_approval', 'done'].includes(item.status)) { const exportButton = h('button', 'icon-btn sm'); exportButton.append(icon('download', 'sm')); exportButton.title = 'Export report'; exportButton.setAttribute('aria-label', `Export report for ${item.goal}`); exportButton.onclick = () => void call(() => window.forge.teamExportReport(item.id)); row.append(exportButton) }
+    const row = h('article', 'run-row'); row.setAttribute('role', 'row'); enter(row, `row:${item.id}`, index)
+    const open = h('button', 'run-open run-cols'); open.setAttribute('aria-label', `Open ${item.goal}`); open.onclick = () => void (replay ? openRun(item.id, replayRun('interrupted')) : openRun(item.id))
+    const count = h('span', 'c-tasks', `${item.tasks.done}/${item.tasks.total}`); count.title = `${item.tasks.done} of ${item.tasks.total} tasks done`
+    const where = h('span', 'c-project', folderName(item.project)); where.title = item.project
+    const when = h('span', 'c-when', timeAgo(item.updatedAt)); when.title = new Date(item.updatedAt).toLocaleString()
+    const status = h('span', 'c-status'); status.append(statusTag(item.status))
+    open.append(h('strong', 'c-goal', item.goal), status, where, count, when)
+    const acts = h('span', 'run-acts')
+    if (typeof window.forge.teamExportReport === 'function' && ['awaiting_approval', 'done'].includes(item.status)) { const exportButton = h('button', 'icon-btn sm'); exportButton.append(icon('download', 'sm')); exportButton.title = 'Export report'; exportButton.setAttribute('aria-label', `Export report for ${item.goal}`); exportButton.onclick = () => void call(() => window.forge.teamExportReport(item.id)); acts.append(exportButton) }
     if (typeof window.forge.teamDelete === 'function' && !['planning', 'running', 'verifying', 'paused', 'interrupted'].includes(item.status)) {
       const del = h('button', 'icon-btn sm'); del.append(icon('trash', 'sm')); del.title = 'Delete run'; del.setAttribute('aria-label', `Delete ${item.goal}`)
-      del.onclick = () => void call(async () => { if (!window.confirm(`Delete this team run?\n\n${item.goal}\n\nIts saved report and unfinished Team work will be removed.`)) return; if (await window.forge.teamDelete(item.id)) { summaries = summaries.filter(x => x.id !== item.id); section.replaceWith(renderRunList()) } })
-      row.append(del)
+      del.onclick = () => void call(async () => { if (!window.confirm(`Delete this team run?\n\n${item.goal}\n\nIts saved report and unfinished Team work will be removed.`)) return; if (await window.forge.teamDelete(item.id)) { summaries = summaries.filter(x => x.id !== item.id); redraw() } })
+      acts.append(del)
     }
-    section.append(row)
+    row.append(open, acts); table.append(row)
   }
   return section
 }
