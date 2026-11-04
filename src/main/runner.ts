@@ -29,7 +29,9 @@ export function detectRun(root: string): RunPlan {
 }
 
 export function findPort(text: string): number | null {
-  const m = /(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\]):(\d{2,5})\b/i.exec(text) ?? /\bport[ :]+(\d{2,5})\b/i.exec(text)
+  // "Port 5173 is in use, trying another one" / EADDRINUSE name a port the server did NOT get: the real address comes on a later line.
+  text = text.replace(/.*(?:\bin use\b|EADDRINUSE).*/gi, '')
+  const m =/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\]):(\d{2,5})\b/i.exec(text) ?? /\bport[ :]+(\d{2,5})\b/i.exec(text)
   const n = m ? Number(m[1]) : 0
   return n >= 80 && n <= 65535 ? n : null
 }

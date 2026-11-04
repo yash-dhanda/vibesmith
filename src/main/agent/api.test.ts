@@ -105,6 +105,15 @@ describe('openai-compatible providers', () => {
     '[DONE]',
   ]
 
+  it('leaves out tools when there are none (OpenAI refuses an empty list)', async () => {
+    const bodies: Record<string, unknown>[] = []
+    const fetchFn = async (_u: string, init: RequestInit) => (bodies.push(JSON.parse(init.body as string)), sseRes(events))
+    await openrouter({ apiKey: 'k', model: 'm', fetchFn }).chat(history, [], () => {}, signal)
+    await anthropic({ apiKey: 'k', model: 'm', fetchFn }).chat(history, [], () => {}, signal).catch(() => {})
+    expect(bodies).toHaveLength(2)
+    for (const b of bodies) expect('tools' in b).toBe(false)
+  })
+
   it('assembles streamed text and parallel tool calls', async () => {
     let url = ''
     let auth = ''

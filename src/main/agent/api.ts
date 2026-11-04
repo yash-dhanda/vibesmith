@@ -1,8 +1,7 @@
-import type { Message, Provider, ToolCall, Usage } from './provider'
+import type { Message, Provider, Turn, Usage } from './provider'
 import { imageB64 } from './images'
 
 type FetchFn = (url: string, init: RequestInit) => Promise<Response>
-type Turn = { content: string; toolCalls: ToolCall[]; usage?: Usage }
 
 // ---- shared ----
 async function* sse(res: Response): AsyncGenerator<string> {
@@ -93,7 +92,7 @@ export function anthropic(opts: { apiKey: string; model: string; fetchFn?: Fetch
         { 'x-api-key': opts.apiKey, 'anthropic-version': '2023-06-01' },
         {
           model: opts.model, max_tokens: opts.maxTokens ?? 8192, stream: true, system, messages: msgs,
-          tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters })),
+          ...(tools.length && { tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters })) }), // an empty list is refused
         },
         signal,
       )
@@ -101,17 +100,19 @@ export function anthropic(opts: { apiKey: string; model: string; fetchFn?: Fetch
       let input = 0
       let output = 0
       let firstAt = 0
+      let truncated = false
       const blocks = new Map<number, { id: string; name: string; json: string }>()
       for await (const data of sse(res)) {
         const e = JSON.parse(data) as {
           type: string; index?: number; error?: { message?: string }
           content_block?: { type: string; id?: string; name?: string }
-          delta?: { type: string; text?: string; partial_json?: string }
+          delta?: { type: string; text?: string; partial_json?: string; stop_reason?: string }
           message?: { usage?: { input_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number } }
           usage?: { output_tokens?: number }
         }
         if (e.type === 'message_start') input = (e.message?.usage?.input_tokens ?? 0) + (e.message?.usage?.cache_creation_input_tokens ?? 0) + (e.message?.usage?.cache_read_input_tokens ?? 0)
         if (e.type === 'message_delta' && e.usage?.output_tokens !== undefined) output = e.usage.output_tokens
+        if (e.type === 'message_delta' && e.delta?.stop_reason === 'max_tokens') truncated = true
         if (!firstAt && (e.type === 'content_block_start' || e.type === 'content_block_delta')) firstAt = Date.now()
         if (e.type === 'error') throw new Error(`Anthropic: ${e.error?.message ?? 'stream error'}`)
         if (e.type === 'content_block_start' && e.content_block?.type === 'tool_use') blocks.set(e.index!, { id: e.content_block.id ?? '', name: e.content_block.name ?? '', json: '' })
@@ -126,7 +127,7 @@ export function anthropic(opts: { apiKey: string; model: string; fetchFn?: Fetch
         }
       }
       const usage: Usage | undefined = input || output ? { input, output, genMs: firstAt ? Date.now() - firstAt : 0 } : undefined
-      return { content, toolCalls: [...blocks.values()].map((b) => ({ id: b.id, name: b.name, args: parseArgs(b.json) })), usage }
+      return { content, toolCalls: [...blocks.values()].map((b) => ({ id: b.id, name: b.name, args: parseArgs(b.json) })), usage, ...(truncated && { truncated }) }
     },
   }
 }
@@ -154,10 +155,11 @@ export function openaiCompat(opts: { who: string; baseUrl: string; apiKey: strin
       const res = await post(
         f, opts.who, `${opts.baseUrl}/chat/completions`,
         { authorization: `Bearer ${opts.apiKey}` },
-        { model: opts.model, stream: true, ...(opts.includeUsage && { stream_options: { include_usage: true } }), messages: toOpenAI(messages), tools: tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } })) },
+        { model: opts.model, stream: true, ...(opts.includeUsage && { stream_options: { include_usage: true } }), messages: toOpenAI(messages), ...(tools.length && { tools: tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } })) }) },
         signal,
       )
       let content = ''
+      let truncated = false
       let usageRaw: { prompt_tokens?: number; completion_tokens?: number } | undefined
       let firstAt = 0
       const calls = new Map<number, { id: string; name: string; json: string }>()
@@ -166,10 +168,11 @@ export function openaiCompat(opts: { who: string; baseUrl: string; apiKey: strin
         const j = JSON.parse(data) as {
           error?: { message?: string }
           usage?: { prompt_tokens?: number; completion_tokens?: number } | null
-          choices?: { delta?: { content?: string | null; tool_calls?: { index: number; id?: string; function?: { name?: string; arguments?: string } }[] } }[]
+          choices?: { finish_reason?: string | null; delta?: { content?: string | null; tool_calls?: { index: number; id?: string; function?: { name?: string; arguments?: string } }[] } }[]
         }
         if (j.error) throw new Error(`${opts.who}: ${j.error.message ?? 'stream error'}`)
         if (j.usage) usageRaw = j.usage
+        if (j.choices?.[0]?.finish_reason === 'length') truncated = true
         const d = j.choices?.[0]?.delta
         if (!firstAt && (d?.content || d?.tool_calls?.length)) firstAt = Date.now()
         if (d?.content) {
@@ -185,7 +188,7 @@ export function openaiCompat(opts: { who: string; baseUrl: string; apiKey: strin
         }
       }
       const usage: Usage | undefined = usageRaw ? { input: usageRaw.prompt_tokens ?? 0, output: usageRaw.completion_tokens ?? 0, genMs: firstAt ? Date.now() - firstAt : 0 } : undefined
-      return { content, toolCalls: [...calls.values()].map((c) => ({ id: c.id || undefined, name: c.name, args: parseArgs(c.json) })), usage }
+      return { content, toolCalls: [...calls.values()].map((c) => ({ id: c.id || undefined, name: c.name, args: parseArgs(c.json) })), usage, ...(truncated && { truncated }) }
     },
   }
 }

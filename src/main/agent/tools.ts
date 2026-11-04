@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { basename, dirname, join, relative, sep } from 'node:path'
 import { resolveIn } from '../project'
 import { runCommand } from './commands'
 import { checkSyntax, findLoose, reindent, resolveToolName } from './guards'
@@ -76,6 +76,38 @@ export function preview(before: string, after: string): string {
   const to = Math.min(lines.length, i + 8)
   return `[lines ${from + 1}-${to} of ${lines.length}]\n${lines.slice(from, to).join('\n')}`
 }
+
+// .env files hold real secrets. The model may see which variables exist, never their values (they would go to the provider and into the saved chat).
+const isSecretEnv = (p: string) => /^\.env(\..+)?$/.test(basename(p)) && !/\.(example|sample|template|dist)$/.test(basename(p))
+// A quoted value may span lines (a PEM key): the hidden part keeps its newlines, so line numbers still match the file.
+const maskEnv = (text: string) =>
+  text.replace(/^(\s*(?:export\s+)?[\w.-]+\s*=)((?:"(?:[^"\\]|\\.)*"|'[^']*')?.*)/gm, (_, key: string, value: string) => key + '<hidden>' + value.replace(/[^\n]/g, ''))
+
+// Files whose contents decide what an allow-listed command (npm test, npm run lint, git status) executes: its config, build files and test files.
+// Once the agent has written one, those commands are no longer known-safe. Ordinary source files are an inherent exposure of the allow-list and are not listed.
+export const COMMAND_CONFIG =
+  /(^|\/)(package\.json|\.npmrc|\.git\/|makefile|conftest\.py|pytest\.ini|tox\.ini|pyproject\.toml|setup\.(?:py|cfg)|Cargo\.toml|build\.rs|go\.mod|tsconfig[^/]*\.json|\.eslintrc[^/]*|\.mocharc[^/]*|[^/]*\.config\.\w+|[^/]*setup[^/]*\.\w+|[^/]*\.(?:test|spec)\.\w+|test_[^/]*\.py|[^/]*_test\.go|(?:__tests__|tests?|e2e)\/)/i
+
+// A cheap fingerprint of the project's files (size and mtime), to notice that a shell command wrote something.
+const STAMP_SKIP = new Set(['.git', 'node_modules', 'dist', 'build', 'out', '.venv', 'venv', '__pycache__'])
+export async function treeStamp(root: string): Promise<string> {
+  const parts: string[] = []
+  const walk = async (dir: string): Promise<void> => {
+    for (const d of await readdir(join(root, dir), { withFileTypes: true }).catch(() => [])) {
+      if (parts.length >= 5000) return
+      if (STAMP_SKIP.has(d.name) || d.isSymbolicLink()) continue
+      const rel = dir ? `${dir}/${d.name}` : d.name
+      if (d.isDirectory()) await walk(rel)
+      else {
+        const st = await stat(join(root, rel)).catch(() => null)
+        if (st) parts.push(`${rel}:${st.size}:${st.mtimeMs}`)
+      }
+    }
+  }
+  await walk('')
+  return parts.join('\n')
+}
+
 const hash = (s: string) => createHash('sha1').update(s).digest('hex')
 
 // Tool errors are returned as text so the model can recover. Nothing here throws to the loop.
@@ -86,6 +118,9 @@ export class ToolBox {
   maxRead = MAX_READ
 
   private inRoot = (p: string) => resolveIn(this.root, p)
+
+  // Set once the agent writes a file in COMMAND_CONFIG. It lives as long as the chat, so the next message cannot start from a clean slate.
+  tainted = false
 
   // path -> content hash at last read; edit_file needs a fresh entry (read-before-edit, enforced in code)
   private seen = new Map<string, string>()
@@ -136,7 +171,8 @@ export class ToolBox {
         else {
           const buf = await readFile(join(root, rel)).catch(() => null)
           if (!buf || buf.length > 1_000_000 || buf.includes(0)) continue // skip unreadable, big and binary files
-          buf.toString('utf8').split('\n').forEach((line, i) => {
+          const text = buf.toString('utf8')
+          ;(isSecretEnv(rel) ? maskEnv(text) : text).split('\n').forEach((line, i) => {
             if (hits.length < 100 && re.test(line)) hits.push(`${rel}:${i + 1}: ${line.slice(0, 200)}`)
           })
         }
@@ -147,20 +183,29 @@ export class ToolBox {
   }
 
   private async read(path: string) {
-    const text = await readFile(this.inRoot(path), 'utf8')
-    this.seen.set(this.inRoot(path), hash(text))
+    const real = this.inRoot(path)
+    const text = await readFile(real, 'utf8')
+    this.seen.set(real, hash(text))
+    if (isSecretEnv(path) || isSecretEnv(real)) return maskEnv(text) + '\n[Forge: the values in this file are hidden from you on purpose. Use the variable names.]'
     return text.length > this.maxRead ? text.slice(0, this.maxRead) + `\n[truncated at ${this.maxRead} of ${text.length} chars]` : text
   }
 
-  private async create(path: string, content: string) {
+  // Writes are refused inside .git: hooks and config there run commands, and the approval gate never sees them.
+  private writable(path: string) {
     const real = this.inRoot(path)
+    if (relative(this.root, real).split(sep).includes('.git')) throw new Error(`${path} is inside .git, which edit tools may not change`)
+    return real
+  }
+
+  private async create(path: string, content: string) {
+    const real = this.writable(path)
     if ((await readFile(real, 'utf8').catch(() => null)) !== null) return `ERROR: ${path} already exists. Use read_file, then edit_file, to change it.`
     await mkdir(dirname(real), { recursive: true })
     return this.commit(path, real, null, content, '')
   }
 
   private async edit(path: string, oldText: string, newText: string) {
-    const real = this.inRoot(path)
+    const real = this.writable(path)
     const current = await readFile(real, 'utf8').catch(() => null)
     if (current === null) {
       if (oldText !== '') return `ERROR: ${path} does not exist. To create it, pass an empty old_text.`
@@ -200,7 +245,9 @@ export class ToolBox {
       note += ' (file already had a syntax error before this edit)'
     }
     this.seen.set(real, hash(after))
+    if (COMMAND_CONFIG.test(relative(this.root, real).split(sep).join('/'))) this.tainted = true
     if (before === null) return `created ${path} (${after.length} chars)`
-    return `edited ${path}${note}\nNow the file reads:\n${preview(before, after)}`
+    const shown = preview(before, after)
+    return `edited ${path}${note}\nNow the file reads:\n${isSecretEnv(path) || isSecretEnv(real) ? maskEnv(shown) : shown}`
   }
 }

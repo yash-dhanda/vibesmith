@@ -37,6 +37,11 @@ describe('findPort', () => {
     expect(findPort('nothing to see')).toBeNull()
     expect(findPort('x localhost:99999')).toBeNull()
   })
+  it('ignores ports the server reports it could not take', () => {
+    expect(findPort('Port 5173 is in use, trying another one...')).toBeNull()
+    expect(findPort('Error: listen EADDRINUSE: address already in use 127.0.0.1:3000')).toBeNull()
+    expect(findPort('Port 5173 is in use\n  Local: http://localhost:5174/')).toBe(5174)
+  })
 })
 
 describe('ProjectRunner', () => {

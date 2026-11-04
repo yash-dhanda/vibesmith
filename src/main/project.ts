@@ -1,5 +1,5 @@
-import { realpathSync } from 'node:fs'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { lstatSync, realpathSync } from 'node:fs'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 // Every file op, UI or agent, is confined to the opened project folder (path jail).
 let root: string | null = process.env.FORGE_PROJECT ? realpathSync(process.env.FORGE_PROJECT) : null
@@ -21,6 +21,8 @@ export function resolveIn(root: string, p: string): string {
       existing = realpathSync(existing)
       break
     } catch {
+      // The entry exists but cannot be resolved: a dangling symlink. Writing through it would create its target, wherever that is.
+      if (lstatSync(existing, { throwIfNoEntry: false })) throw new Error(`path outside project: ${p}`)
       const parent = dirname(existing)
       if (parent === existing) throw new Error(`path outside project: ${p}`)
       rest = abs.slice(parent.length) // includes the leading separator; resolve() already removed any '..'
@@ -29,6 +31,6 @@ export function resolveIn(root: string, p: string): string {
   }
   const real = rest ? join(existing, rest) : existing
   const rel = relative(root, real)
-  if (rel.startsWith('..') || isAbsolute(rel)) throw new Error(`path outside project: ${p}`)
+  if (rel === '..' || rel.startsWith('..' + sep) || isAbsolute(rel)) throw new Error(`path outside project: ${p}`)
   return real
 }

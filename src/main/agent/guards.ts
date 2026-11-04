@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
-import { extname } from 'node:path'
+import { basename, extname } from 'node:path'
 import type { ToolCall } from './provider'
 
 // ---- loose edit matching: small models often drop or mangle indentation ----
@@ -56,6 +56,8 @@ function exec(cmd: string, args: string[], env?: NodeJS.ProcessEnv): Promise<str
 export async function checkSyntax(file: string): Promise<string | null> {
   const ext = extname(file).toLowerCase()
   if (ext === '.json') {
+    // tsconfig, VS Code settings and similar are JSONC (comments, trailing commas): a strict parse would reject files the tools accept.
+    if (/^(?:tsconfig|jsconfig)[^/\\]*\.json$|^devcontainer\.json$/.test(basename(file)) || /[\\/]\.vscode[\\/]/.test(file)) return null
     try {
       JSON.parse(await readFile(file, 'utf8'))
       return null
@@ -64,7 +66,11 @@ export async function checkSyntax(file: string): Promise<string | null> {
     }
   }
   // ELECTRON_RUN_AS_NODE makes the Electron binary behave as plain node, so no system node is needed
-  if (['.js', '.mjs', '.cjs'].includes(ext)) return exec(process.execPath, ['--check', file], { ELECTRON_RUN_AS_NODE: '1' })
+  if (['.js', '.mjs', '.cjs'].includes(ext)) {
+    const err = await exec(process.execPath, ['--check', file], { ELECTRON_RUN_AS_NODE: '1' })
+    // Plain node cannot read JSX, which React and Expo projects keep in .js files. The first JSX tag is always the first error.
+    return err && ext === '.js' && /Unexpected token '<'/.test(err) ? null : err
+  }
   if (ext === '.py') return exec('python3', ['-c', PY, file])
   return null
 }

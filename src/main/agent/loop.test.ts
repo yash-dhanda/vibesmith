@@ -278,7 +278,7 @@ describe('self-review before finishing', () => {
     const { p } = scripted([['', read], ['', read]])
     const events: AgentEvent[] = []
     await runAgent({ messages: [], mode: 'full-auto', provider: p, tools: new ToolBox(dir), emit: (e) => events.push(e), approve: async () => true, signal: new AbortController().signal, maxMs: -1 })
-    expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'max_steps' })
+    expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'max_time' })
   })
 })
 

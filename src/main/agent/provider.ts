@@ -13,7 +13,8 @@ export type Message =
 
 // What one model call cost. genMs is the time spent generating (not loading or reading the prompt), so output/genMs is tokens per second.
 export type Usage = { input: number; output: number; genMs: number; ctxLimit?: number; estimated?: boolean }
-export type Turn = { content: string; toolCalls: ToolCall[]; usage?: Usage }
+// truncated: the model ran into its output limit, so any tool call in this turn is cut off mid-way.
+export type Turn = { content: string; toolCalls: ToolCall[]; usage?: Usage; truncated?: boolean }
 
 export interface Provider {
   // Streams text through onText; resolves with the full turn once the model stops.

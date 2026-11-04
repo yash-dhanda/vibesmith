@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type { Message, Provider, Turn, Usage } from './provider'
 import { isAllowlisted } from './commands'
 import { estimateTokens, trimMessages } from './context'
@@ -6,7 +7,7 @@ import { onlyLatestImages } from './images'
 import { describeTool, parsePlan } from './narrate'
 import { missingEnvFile } from './envfile'
 import { mergeAgentPlan, planNote, type PlanState, type PlanStep } from './plan'
-import { ToolBox, toolDefs } from './tools'
+import { ToolBox, toolDefs, treeStamp } from './tools'
 
 export type Mode = 'ask-all' | 'auto-edit' | 'full-auto'
 
@@ -27,7 +28,7 @@ export type AgentEvent =
   | { type: 'summaries'; checkpoint: string; items: Record<string, string>; by: 'model' }
   // After Undo (all files or one): what was put back and what is still changed from that checkpoint.
   | { type: 'restored'; checkpoint: string; paths: string[]; remaining: { path: string; status: 'added' | 'modified' | 'deleted'; added: number; removed: number; previewable?: boolean }[] }
-  | { type: 'done'; reason: 'finished' | 'unverified' | 'stopped' | 'stuck' | 'max_steps'; steps: number }
+  | { type: 'done'; reason: 'finished' | 'unverified' | 'stopped' | 'stuck' | 'max_steps' | 'max_time'; steps: number }
   | { type: 'error'; message: string }
 
 export const SYSTEM_PROMPT = `You are Forge, a coding agent working inside the user's project folder. The user describes what they want and you do the work yourself with the tools. Do not hand the work back, and do not ask for permission.
@@ -56,13 +57,14 @@ export function systemPromptFor(about: { name?: string; description?: string; ru
 const KIND: Record<string, 'read' | 'edit' | 'command'> = { list_dir: 'read', read_file: 'read', edit_file: 'edit', create_file: 'edit', search: 'read', update_plan: 'read', run_command: 'command' }
 
 // The one place autonomy is decided. Unknown tools never execute, so they never need approval.
-export function needsApproval(tool: string, mode: Mode, args?: unknown): boolean {
+// `tainted`: this chat changed a file that commands read as instructions (package.json, a tool config), so even the allow-listed commands are no longer known-safe.
+export function needsApproval(tool: string, mode: Mode, args?: unknown, tainted = false): boolean {
   const kind = KIND[tool]
   if (!kind || kind === 'read' || mode === 'full-auto') return false
   if (kind === 'edit') return mode === 'ask-all'
   // command: auto-edit lets a short allow-list through (tests, builds, git status)
   const cmd = (args as { command?: unknown } | null)?.command
-  return !(mode === 'auto-edit' && typeof cmd === 'string' && isAllowlisted(cmd))
+  return !(mode === 'auto-edit' && !tainted && typeof cmd === 'string' && isAllowlisted(cmd))
 }
 
 const MAX_VERIFY_FAILURES = 2
@@ -88,6 +90,7 @@ export function looksUnfinished(text: string): boolean {
   if (finished.test(t.slice(-300)) && !forward.test(t.slice(-200))) return false
   return forward.test(tail)
 }
+const TRUNCATED_NUDGE = '[Forge: your last reply was cut off at the output limit, so its tool call was not run. Do the work in smaller pieces: a shorter file, or several smaller edits.]'
 const UNFINISHED_NUDGE = '[Forge: you described what to do next but did not do it. Do not describe: act now with the tools, one step at a time.]'
 
 // What the user originally asked, for the review. Skips messages Forge itself injected.
@@ -141,8 +144,11 @@ export async function runAgent(o: RunOpts): Promise<void> {
   let trimNoted = false
   let explore = false // after a repeat, the next call is sampled more freely to escape the loop
   const deadline = Date.now() + (o.maxMs ?? MAX_RUN_MS)
+  // Stop or out of time. The time limit also cuts a model call or command that is still running.
+  const halted = () => (o.signal.aborted ? 'stopped' : Date.now() >= deadline ? 'max_time' : null)
+  const sig = () => AbortSignal.any([o.signal, AbortSignal.timeout(Math.max(1, deadline - Date.now()))])
   let lastCheck: { command: string; ok: boolean } | null = null
-  const done = (reason: 'finished' | 'unverified' | 'stopped' | 'stuck' | 'max_steps') => {
+  const done = (reason: 'finished' | 'unverified' | 'stopped' | 'stuck' | 'max_steps' | 'max_time') => {
     // A model can end by claiming everything works. If the project's own check last said otherwise, say so plainly.
     if (reason !== 'finished' && lastCheck && !lastCheck.ok) o.emit({ type: 'note', text: `The project check (${lastCheck.command}) was still failing when this stopped, so the work is not finished, whatever the last message says.` })
     o.emit({ type: 'done', reason, steps })
@@ -153,7 +159,7 @@ export async function runAgent(o: RunOpts): Promise<void> {
       if (o.signal.aborted) return done('stopped')
       steps++
       if (o.contextLimit && Math.max(estimateTokens(o.messages), lastInput) > o.contextLimit * 0.75) {
-        const n = trimMessages(o.messages, o.contextLimit)
+        const n = trimMessages(o.messages, o.contextLimit, lastInput)
         if (n && !trimNoted) {
           trimNoted = true
           o.emit({ type: 'note', text: "Older steps were shortened to fit the model's memory. It can re-read files when it needs them." })
@@ -165,16 +171,21 @@ export async function runAgent(o: RunOpts): Promise<void> {
       const reflecting = holdNext
       holdNext = false
       let held = ''
-      const turn = await o.provider.chat(onlyLatestImages(o.messages), toolDefs, (text) => (reflecting ? (held += text) : o.emit({ type: 'delta', text })), o.signal, { explore })
+      const turn = await o.provider.chat(onlyLatestImages(o.messages), toolDefs, (text) => (reflecting ? (held += text) : o.emit({ type: 'delta', text })), sig(), { explore })
       explore = false
       if (reflecting && (turn.toolCalls.length || held.trim().length > 60)) o.emit({ type: 'delta', text: held })
       const u = turn.usage ?? estimateUsage(o.messages, turn)
       if (!u.estimated) lastInput = u.input
       o.emit({ type: 'usage', input: u.input, output: u.output, tps: u.genMs > 0 ? u.output / (u.genMs / 1000) : 0, ctxLimit: u.ctxLimit, estimated: u.estimated })
       // Resolve near-miss names (read, cat, write_file) BEFORE the gate, so an alias can never dodge approval.
-      const calls = turn.toolCalls.map((c, i) => ({ ...c, id: c.id ?? `call_${steps}_${i}`, name: resolveToolName(c.name) ?? c.name }))
-      o.messages.push({ role: 'assistant', content: turn.content, toolCalls: calls.length ? calls : undefined })
+      const calls = turn.toolCalls.map((c) => ({ ...c, id: c.id ?? `call_${randomUUID().slice(0, 8)}`, name: resolveToolName(c.name) ?? c.name }))
       o.emit({ type: 'turn_end' })
+      // A tool call cut off by the output limit has broken arguments: tell the model instead of running it.
+      if (turn.truncated && calls.length) {
+        o.messages.push({ role: 'assistant', content: turn.content }, { role: 'user', content: TRUNCATED_NUDGE })
+        continue
+      }
+      o.messages.push({ role: 'assistant', content: turn.content, toolCalls: calls.length ? calls : undefined })
       if (!calls.length) {
         // A reply that only announces the next step is a stall: make it act.
         if (nudges < MAX_NUDGES && looksUnfinished(turn.content)) {
@@ -187,7 +198,7 @@ export async function runAgent(o: RunOpts): Promise<void> {
           envChecked = true
           const m = missingEnvFile(o.tools.root)
           if (m) {
-            o.messages.push({ role: 'user', content: m })
+            o.messages.push({ role: 'user', content: `[Forge: ${m}]` })
             editedSinceReview = true
             continue
           }
@@ -201,7 +212,21 @@ export async function runAgent(o: RunOpts): Promise<void> {
           continue
         }
         if (!o.verify || !edited) return done('finished')
+        // The check runs project code. Ask first when the user asked to approve commands, or when this run edited what that code is read from.
+        let cardId: string | null = null
+        if (o.mode === 'ask-all' || (o.mode === 'auto-edit' && o.tools.tainted)) {
+          const id = (cardId = `${steps}-verify`)
+          o.emit({ type: 'tool', id, name: 'run_command', args: { command: 'the project check' }, needsApproval: true, label: 'Run the project check' })
+          const yes = await o.approve(id)
+          if (halted()) return done(halted() === 'stopped' ? 'stopped' : 'max_time')
+          if (!yes) {
+            o.emit({ type: 'tool_result', id, text: 'DENIED: the user did not approve the project check.', ok: false })
+            o.emit({ type: 'note', text: 'The project check was not run because it was not approved.' })
+            return done('finished')
+          }
+        }
         const v = await o.verify()
+        if (cardId) o.emit({ type: 'tool_result', id: cardId, text: `${v.command}: ${v.ok ? 'passed' : 'failed'}`, ok: v.ok })
         if (o.signal.aborted) return done('stopped')
         lastCheck = { command: v.command, ok: v.ok }
         o.emit({ type: 'verify', ...v })
@@ -212,13 +237,19 @@ export async function runAgent(o: RunOpts): Promise<void> {
         continue
       }
 
-      for (const call of calls) {
+      // Every tool call in the assistant message needs an answer, or a cloud provider rejects the whole conversation afterwards.
+      const skipFrom = (from: number) => {
+        for (const c of calls.slice(from)) o.messages.push({ role: 'tool', content: 'SKIPPED: the run ended before this ran.', toolName: c.name, toolCallId: c.id })
+      }
+      for (const [i, call] of calls.entries()) {
+        const h0 = halted()
+        if (h0) return skipFrom(i), done(h0)
         const id = `${steps}-${Math.random().toString(36).slice(2, 8)}`
-        const ask = needsApproval(call.name, o.mode, call.args)
+        const ask = needsApproval(call.name, o.mode, call.args, o.tools.tainted)
         // The plan is shown as a checklist, not as a tool row.
         if (call.name === 'update_plan') {
           const items = parsePlan(String((call.args as { steps?: unknown } | null)?.steps ?? ''))
-          let reply = await o.tools.run(call.name, call.args, o.signal)
+          let reply = await o.tools.run(call.name, call.args, sig())
           if (items.length && o.plan) {
             const next = mergeAgentPlan(o.plan, items)
             o.plan.revision = next.revision
@@ -233,10 +264,17 @@ export async function runAgent(o: RunOpts): Promise<void> {
         o.emit({ type: 'tool', id, name: call.name, args: call.args, needsApproval: ask, label: describeTool(call.name, call.args) })
         let text: string
         if (ask && !(await o.approve(id))) text = 'DENIED: the user rejected this action. Do not retry it; ask what to do instead.'
-        else if (o.signal.aborted) return done('stopped')
-        else text = await o.tools.run(call.name, call.args, o.signal)
+        else if (halted()) return skipFrom(i), done(halted() === 'stopped' ? 'stopped' : 'max_time')
+        else {
+          // A shell command can write files too (cat > app.js): compare the project before and after, so the check and the review still run.
+          const before = call.name === 'run_command' && !isAllowlisted(String((call.args as { command?: unknown } | null)?.command)) ? await treeStamp(o.tools.root) : null
+          text = await o.tools.run(call.name, call.args, sig())
+          if (before !== null && (await treeStamp(o.tools.root)) !== before) (edited = true), (editedSinceReview = true)
+        }
         const ok = !text.startsWith('ERROR:') && !text.startsWith('DENIED:')
-        if (ok && (call.name === 'edit_file' || call.name === 'create_file')) (edited = true), (editedSinceReview = true)
+        if (ok && (call.name === 'edit_file' || call.name === 'create_file')) {
+          ;(edited = true), (editedSinceReview = true)
+        }
 
         // The same call returning the same result three times means nothing is changing: the model is looping.
         // Errors, empty searches, a repeated read or an unchanged test run all land here.
@@ -250,12 +288,13 @@ export async function runAgent(o: RunOpts): Promise<void> {
 
         o.emit({ type: 'tool_result', id, text: shown, ok })
         o.messages.push({ role: 'tool', content: shown, toolName: call.name, toolCallId: call.id })
-        if (n >= 3) return done('stuck')
+        if (n >= 3) return skipFrom(i + 1), done('stuck')
       }
     }
-    done('max_steps')
+    done(steps >= max ? 'max_steps' : 'max_time')
   } catch (e) {
     if (o.signal.aborted) return done('stopped')
+    if (Date.now() >= deadline) return done('max_time')
     o.emit({ type: 'error', message: (e as Error).message })
   }
 }
