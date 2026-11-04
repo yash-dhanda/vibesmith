@@ -12,7 +12,7 @@ export function setUsage(u: UsageSummary) {
   const text = formatTokens(total)
   if (main.dataset.v !== undefined && main.dataset.v !== text) { main.classList.remove('bump'); void main.offsetWidth; main.classList.add('bump') } // the count nudges when it changes
   main.dataset.v = text
-  main.replaceChildren(emo('🪙'), document.createTextNode(text))
+  main.textContent = text
   const top = u.byModel.find((m) => m.avgTps > 0)
   const today = u.today.input + u.today.output
   const sub = total ? `${formatTokens(today)} today${top ? ` · ${formatRate(top.avgTps)} tok/s` : ''}` : 'no usage yet'

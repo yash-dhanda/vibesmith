@@ -759,6 +759,8 @@ export async function initChat(opts: {
   initLibrary()
   $('usage-badge').onclick = () => openSettings('usage')
   $('new-chat').onclick = newChat
+  $('side-new').onclick = newChat
+  $('side-collapse').onclick = () => $('hist-toggle').click()
   $('more').onclick = moreMenu
   titleEl.onclick = startTitleEdit
   searchEl.oninput = () => {
