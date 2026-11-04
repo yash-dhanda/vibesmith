@@ -645,13 +645,25 @@ function makeDetailsToggle() {
   toggle.onclick = () => { laneDetails = !laneDetails; try { localStorage.setItem('forge.teamLaneDetails', laneDetails ? '1' : '0') } catch {} document.querySelector('.team-lanes')?.replaceWith(renderLanes()) }
   return toggle
 }
+// What the agents are doing while no code is being typed (a fix that edits files with tools, a long command, the project check): the latest
+// command or message, so the empty live view never just says "Reading the project" for an hour.
+const oneLine = (text: string, max = 90) => { const t = text.replace(/\s+/g, ' ').trim(); return t.length > max ? `${t.slice(0, max - 1)}…` : t }
+function activityOf(agent: 'claude' | 'codex' | 'local', ev: { type: string; summary?: string; text?: string; kind?: string }): string | null {
+  if (ev.type === 'tool' && ev.summary) return `${AGENT_NAME[agent]} · ${ev.kind === 'command' ? 'running ' : ''}${oneLine(ev.summary)}`
+  if (ev.type === 'text' && ev.text?.trim()) return `${AGENT_NAME[agent]} · ${oneLine(ev.text)}`
+  return null
+}
+function latestActivity(): string | null {
+  for (let i = log.length - 1, seen = 0; i >= 0 && seen < 300; i--, seen++) { const x = log[i]; if (x.ev.type === 'agent' && x.ev.phase !== 'plan') { const line = activityOf(x.ev.ev.agent, x.ev.ev as never); if (line) return line } }
+  return null
+}
 // The live view is one editor for the whole team; "Details" swaps it for a lane per agent with every command and message.
 function renderLanes() {
   const lanes = h('div', `team-lanes${laneDetails ? '' : ' single'}`)
   if (laneDetails) { const used = usedAgents(); for (const a of used) lanes.append(renderLane(a)); if (!used.length) lanes.append(renderLane('claude')); return lanes }
   const files: StageCode[] = log.flatMap(x => x.ev.type === 'agent' && x.ev.ev.type === 'code' && x.ev.phase !== 'plan' ? [{ id: x.ev.ev.id, agent: x.ev.ev.agent, path: x.ev.ev.path, text: x.ev.ev.text, kind: x.ev.ev.kind, done: x.ev.ev.done }] : [])
   const working = run!.tasks.some(t => t.status === 'running')
-  const status = run!.status === 'planning' ? 'Planning the work' : working ? 'Reading the project' : ['done', 'awaiting_approval'].includes(run!.status) ? 'Finished' : run!.status === 'paused' ? 'Paused' : 'Waiting'
+  const status = run!.status === 'planning' ? 'Planning the work' : working ? latestActivity() ?? 'Reading the project' : run!.status === 'verifying' ? 'Running the project check' : ['done', 'awaiting_approval'].includes(run!.status) ? 'Finished' : run!.status === 'paused' ? 'Paused' : 'Waiting'
   const agents = (usedAgents().length ? usedAgents() : (['claude'] as const)).map(a => ({ agent: a, name: AGENT_NAME[a], running: run!.tasks.some(t => t.agent === a && t.status === 'running') || run!.status === 'planning' }))
   lanes.append(buildStage(files, { agents, running: working || run!.status === 'planning', status, details: makeDetailsToggle(), live: ['planning', 'running', 'verifying'].includes(run!.status) ? 'Live' : 'History' }))
   return lanes
@@ -872,6 +884,7 @@ function reduceEvent(event: RunEvent, t = Date.now()) {
   const state = reduceTeamView({ run, log, liveFiles }, event, t); run = state.run; log = state.log; liveFiles = state.liveFiles
   if (event.type === 'agent' && !laneDetails) {
     const e = event.ev
+    if (event.phase !== 'plan') { const line = activityOf(e.agent, e as never); const idle = line && document.querySelector('.stage-idle-text'); if (idle) idle.textContent = line } // keep the empty live view honest
     if (e.type === 'code' && event.phase !== 'plan') { if (pushCode({ id: e.id, agent: e.agent, path: e.path, text: e.text, kind: e.kind, done: e.done })) return }
     else if (e.type !== 'error' && !(e.type === 'done' && !e.ok)) return // talk, commands and planning stay out of the live view
   }
