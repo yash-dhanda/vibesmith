@@ -261,7 +261,7 @@ vi.mock('./team/service', async (orig) => ({
   createTeamService: (o: any) => {
     H.teamOpts = o
     return {
-      orch: { shutdown: () => void H.shutdowns++, get: (id: string) => H.runs[id] },
+      stopApps: () => {}, orch: { shutdown: () => void H.shutdowns++, get: (id: string) => H.runs[id] },
       settings: { get: () => ({}), set: (root: string, cfg: unknown) => void H.settingsSet.push([root, cfg]) },
       start: (root: string) => void H.teamStarts.push(root),
       health: () => ({}),
