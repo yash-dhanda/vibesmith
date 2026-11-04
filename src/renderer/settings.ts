@@ -81,9 +81,11 @@ const save = (key: string, v: string) => {
 async function general(into: HTMLElement) {
   const info = await window.forge.appInfo()
   const card = h('div', 'set-card')
+  const mark = h('span', 'brand-mark', 'f')
+  mark.setAttribute('aria-hidden', 'true')
   const t = h('div', 'srl')
   t.append(h('div', 'st-t', `Forge ${info.version}`), h('div', 'st-d', 'Builds software on your computer with local or cloud AI. Chats, usage and settings stay on this machine.'))
-  card.append(t)
+  card.append(mark, t)
   if (!isRemote()) card.append(action('Open data folder', 'folder', () => window.forge.openDataDir()))
   into.append(card)
 
@@ -133,12 +135,18 @@ function appearance(into: HTMLElement) {
     c.setAttribute('aria-checked', String(themePref() === v))
     const shot = h('span', `sprev ${v}`)
     shot.setAttribute('aria-hidden', 'true')
-    shot.append(h('i', 'side'), h('i', 'l1'), h('i', 'l2'), h('i', 'box'))
+    for (const face of v === 'system' ? ['dark', 'light'] : [v]) { // System is both, split on a diagonal
+      const f = h('span', `sprev-face ${face}`)
+      f.append(h('i', 'side'), h('i', 'n1'), h('i', 'n2'), h('i', 'l1'), h('i', 'l2'), h('i', 'box'), h('i', 'send'))
+      shot.append(f)
+    }
     c.append(shot, h('span', 'cl', label))
     c.onclick = () => pick(v)
     cards.append(c)
   }
-  g.box.append(row('Window theme', 'Dark, light, or follow your system setting.', cards))
+  const r = row('Window theme', 'Dark, light, or follow your system setting.', cards)
+  r.classList.add('stack') // the previews get the column's width
+  g.box.append(r)
   into.append(g.g)
 }
 
@@ -248,7 +256,9 @@ async function models(into: HTMLElement) {
         rerender()
       }, 'danger'))
     }
-    cloud.box.append(row(name, note, h('span', 'badge ' + (keys[p] ? 'ok' : ''), keys[p] ? 'Connected' : 'Not connected')), row('API key', `Your ${name} key.`, ...ctl))
+    const head = row(name, note, h('span', 'badge ' + (keys[p] ? 'ok' : ''), keys[p] ? 'Connected' : 'Not connected'))
+    head.classList.add('sub')
+    cloud.box.append(head, row('API key', `Your ${name} key.`, ...ctl))
     if (p !== 'anthropic') {
       const ids = field('text', getCustomIds(p).join(', '), 'model-one, model-two')
       ids.onchange = () => {
@@ -302,7 +312,7 @@ async function team(into: HTMLElement) {
   into.append(h('p', 'note', project ? `Defaults for ${N.crewRuns.toLowerCase()} in the folder of the chat you are looking at. The ${N.crew} start screen picks them up.` : `Open a chat in a project folder to set its ${N.crew} defaults.`))
   if (!project) return
   const cfg: Partial<TeamConfig> = { ...stored }
-  const status = h('div', 'hint')
+  const status = h('div', 'hint set-status')
   status.setAttribute('role', 'status')
   const put = <K extends keyof TeamConfig>(key: K, value: TeamConfig[K] | undefined) => {
     if (value === undefined) delete cfg[key]
@@ -370,24 +380,45 @@ async function team(into: HTMLElement) {
   const hist = group('Project history')
   hist.box.append(row('What happened', 'Forge keeps a history of everything that happens in a project in .forge/what-happened.txt and shows it to every agent.', action('Show history', 'list', () => void openProjectHistory())))
   into.append(hist.g)
-  into.append(perm.g, status)
+  into.append(perm.g)
+  headNote?.replaceChildren(status) // "Saved for this project." shows in the sticky head, in sight wherever the page is scrolled
 }
 
+// Every key Forge listens for (chat.ts and palette.ts own the handlers), as key caps.
 function shortcuts(into: HTMLElement) {
-  const g = group('Shortcuts')
-  for (const [k, v] of [
-    ['Ctrl N', N.newChat],
-    ['Ctrl K', 'Find actions, chats and models'],
-    ['Ctrl L', 'Focus the message box'],
-    ['Ctrl B', 'Show or hide chat history'],
-    ['Ctrl J', 'Show or hide the workspace (files, editor, terminal)'],
-    ['Ctrl ,', 'Open settings'],
-    ['Ctrl F', 'Search settings (inside Settings)'],
-    ['Esc', 'Stop the agent, or leave Settings'],
-    ['Enter', 'Send the message'],
-    ['Shift Enter', 'New line in the message'],
-  ]) g.box.append(row(v, '', h('kbd', '', k)))
-  into.append(g.g)
+  const caps = (combo: string) => {
+    const s = h('span', 'keys')
+    for (const k of combo.split(' ')) s.append(h('kbd', '', k))
+    return s
+  }
+  const crew = typeof window.forge.teamStart === 'function'
+  const sections: [string, [string, string][]][] = [
+    ['Anywhere', [
+      ['Ctrl K', 'Find actions, chats and models'],
+      ['Ctrl N', N.newChat],
+      ['Ctrl 1', `Go to ${N.solo}`],
+      ...(crew ? [['Ctrl 2', `Go to ${N.crew}`] as [string, string]] : []),
+      ['Ctrl B', 'Collapse the sidebar to icons, or expand it'],
+      ['Ctrl .', 'Show or hide the build brief'],
+      ['Ctrl J', 'Show or hide the workspace (files, editor, terminal)'],
+      ['Ctrl ,', 'Open settings'],
+    ]],
+    ['In a chat', [
+      ['Ctrl L', 'Focus the message box'],
+      ['Enter', 'Send the message'],
+      ['Shift Enter', 'New line in the message'],
+      ['Esc', 'Stop the agent while it works'],
+    ]],
+    ['In Settings', [
+      ['Ctrl F', 'Search settings'],
+      ['Esc', 'Clear the search, or leave Settings'],
+    ]],
+  ]
+  for (const [title, keys] of sections) {
+    const g = group(title)
+    for (const [k, v] of keys) g.box.append(row(v, '', caps(k)))
+    into.append(g.g)
+  }
 }
 
 async function privacy(into: HTMLElement) {
@@ -478,7 +509,9 @@ const skills = (into: HTMLElement) => { into.append(renderSkillsPanel()) }
 const BUILD: Record<Page, (into: HTMLElement) => void | Promise<void>> = { general, appearance, shortcuts, models, agent, team, skills, remote, usage, privacy, about }
 let current: Page = 'general'
 let body: HTMLElement | null = null
+let scroller: HTMLElement | null = null // .set-main scrolls, not the body
 let headTitle: HTMLElement | null = null
+let headNote: HTMLElement | null = null // a page's save status, right of the title
 let searchEl: HTMLInputElement | null = null
 let query = ''
 let token = 0
@@ -494,7 +527,7 @@ function skeleton(): HTMLElement {
 async function rerender() {
   if (!body) return
   const mine = ++token
-  const scroll = body.scrollTop
+  const scroll = scroller?.scrollTop ?? 0
   const fresh = h('div')
   const slow = setTimeout(() => { if (mine === token) body?.replaceChildren(skeleton()) }, 120) // only if the page takes a moment
   const q = query.trim().toLowerCase()
@@ -509,6 +542,8 @@ async function rerender() {
     if (!part.querySelector('.sgroup:not([hidden])')) continue
     const t = h('button', 'set-hit-page', label)
     t.prepend(icon(GLYPH[id], 'sm'))
+    t.append(icon('arrowright', 'sm'))
+    t.title = `Open ${label}`
     t.onclick = () => { query = ''; if (searchEl) searchEl.value = ''; void show(id) }
     fresh.append(t, ...part.childNodes)
   }
@@ -516,7 +551,7 @@ async function rerender() {
   clearTimeout(slow)
   if (mine !== token) return
   body.replaceChildren(...fresh.childNodes)
-  body.scrollTop = q ? 0 : scroll
+  if (scroller) scroller.scrollTop = q ? 0 : scroll // a redraw of the same page keeps its place
 }
 
 async function show(page: Page) {
@@ -528,7 +563,9 @@ async function show(page: Page) {
     else b.removeAttribute('aria-current')
   })
   if (headTitle) headTitle.replaceChildren(icon(query ? 'search' : GLYPH[page]), document.createTextNode(query ? 'Search results' : TITLE[page]))
-  if (body) { body.scrollTop = 0; body.classList.remove('turn'); void body.offsetWidth; body.classList.add('turn') } // the page fades in
+  if (scroller) scroller.scrollTop = 0 // every page opens at its top
+  headNote?.replaceChildren()
+  if (body) { body.classList.remove('turn'); void body.offsetWidth; body.classList.add('turn') } // the page fades in
   await rerender()
 }
 
@@ -564,15 +601,18 @@ export async function openSettings(asked?: Page) {
     }
   }
   const main = h('section', 'set-main')
+  scroller = main
   const inner = h('div', 'set-inner')
   const head = h('div', 'set-head')
+  main.addEventListener('scroll', () => head.classList.toggle('stuck', main.scrollTop > 2), { passive: true }) // the head's line shows once something is under it
   headTitle = h('h3')
   const up = h('button', 'icon-btn set-up phone-only') as HTMLButtonElement
   up.append(icon('arrowleft'))
   up.title = 'All settings'
   up.setAttribute('aria-label', 'All settings')
   up.onclick = () => { wrap.classList.remove('show-page'); nav.querySelector<HTMLElement>(`[data-page="${current}"]`)?.focus() }
-  head.append(up, headTitle)
+  headNote = h('div', 'set-head-note')
+  head.append(up, headTitle, headNote)
   body = h('div', 'set-body')
   inner.append(head, body)
   main.append(inner)

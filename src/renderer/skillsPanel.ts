@@ -160,9 +160,11 @@ export function renderSkillsPanel(): HTMLElement {
   filter.setAttribute('aria-label', 'Filter recommended skills')
   filter.className = 'skill-filter'
   filter.oninput = () => drawRecs()
+  const filterBox = h('label', 'skill-filter-box')
+  filterBox.append(icon('search', 'sm'), filter)
   const packsBox = h('div', 'skill-packs')
   const groupsBox = h('div', 'skill-groups')
-  recs.append(h('h4', 'gt', 'Recommended'), h('div', 'gd', 'Public repos checked by hand. Adding one clones it like a pasted link; big collections take longer.'), packsBox, filter, groupsBox)
+  recs.append(h('h4', 'gt', 'Recommended'), h('div', 'gd', 'Public repos checked by hand. Adding one clones it like a pasted link; big collections take longer.'), packsBox, filterBox, groupsBox)
 
   const addButton = (repo: string) => {
     const st = state.get(repo)
@@ -205,7 +207,9 @@ export function renderSkillsPanel(): HTMLElement {
       note.setAttribute('role', 'status')
       packNote.set(pack.id, note)
       btn.onclick = () => { btn.disabled = true; void addPack(pack).finally(() => drawPacks()) }
-      card.append(h('div', 'st-t', pack.name), h('div', 'st-d', pack.blurb), h('div', 'skill-pack-repos', `${names.join(', ')} · ${have} of ${pack.repos.length} added`), btn, note)
+      const foot = h('div', 'skill-pack-foot') // the button sits on the card's bottom edge, level across the row
+      foot.append(btn, h('span', 'skill-pack-count', `${have} of ${pack.repos.length} added`))
+      card.append(h('div', 'st-t', pack.name), h('div', 'st-d', pack.blurb), h('div', 'skill-pack-repos', names.join(', ')), foot, note)
       return card
     }))
   }

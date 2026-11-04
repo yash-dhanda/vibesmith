@@ -1,5 +1,6 @@
 import type { UsageSummary } from '../preload'
 import { formatRate, formatTokens } from './format'
+import { AGENT_NAME, N } from './names'
 import { $, h } from './ui'
 
 let last: UsageSummary | null = null
@@ -44,23 +45,25 @@ export async function renderUsage(into: HTMLElement) {
   into.append(cards)
 
   const crew = h('div', 'sgroup'); crew.append(h('div', 'gt', 'By agent'))
-  const agentCards = h('div', 'cards')
+  const agentCards = h('div', 'cards agents')
   for (const a of u.byAgent) {
-    const c = h('div', 'card'); c.append(h('div', 'k', `${a.agent === 'local' ? 'Local' : a.agent === 'claude' ? 'Claude' : 'Codex'} today`), h('div', 'v', formatTokens(a.today)), h('div', 'note', `${formatTokens(a.last7)} this week · ${formatTokens(a.allTime)} all time`))
+    const c = h('div', 'card'); c.dataset.agent = a.agent // the agent's colour shows as a dot
+    c.append(h('div', 'k', `${AGENT_NAME[a.agent]} today`), h('div', 'v', formatTokens(a.today)), h('div', 'note', `${formatTokens(a.last7)} this week · ${formatTokens(a.allTime)} all time`))
     agentCards.append(c)
   }
-  crew.append(agentCards, h('div', 'note', 'Crew work counts for Claude, Codex and Local. Local also includes Solo chats on your Ollama models.'))
+  crew.append(agentCards, h('div', 'note', `${N.crew} work counts for ${AGENT_NAME.claude}, ${AGENT_NAME.codex} and ${AGENT_NAME.local}. ${AGENT_NAME.local} also includes ${N.solo} chats on your Ollama models.`))
   into.append(crew)
 
   const chart = h('div', 'sgroup')
   chart.append(h('div', 'gt', 'Last 14 days'))
   const max = Math.max(1, ...u.byDay.map((d) => d.tokens))
   const bars = h('div', 'bars')
-  for (const d of u.byDay) {
+  for (const [i, d] of u.byDay.entries()) {
     const b = h('div', d.tokens ? '' : 'zero')
     b.style.height = d.tokens ? Math.max(3, (d.tokens / max) * 100) + '%' : '2px'
-    b.style.animationDelay = `${u.byDay.indexOf(d) * 18}ms`
+    b.style.animationDelay = `${i * 18}ms`
     b.title = `${d.day}: ${d.tokens.toLocaleString()} tokens`
+    if (i === u.byDay.length - 1) b.classList.add('today')
     bars.append(b)
   }
   const axis = h('div', 'axis')
@@ -78,7 +81,7 @@ export async function renderUsage(into: HTMLElement) {
     const body = document.createElement('tbody')
     for (const m of u.byModel) {
       const tr = document.createElement('tr')
-      for (const [i, text] of [m.model.replace(/^ollama:/, '').replace(/^crew:(\w)(\w*)$/, (_x, a: string, b: string) => `${a.toUpperCase()}${b} (Crew)`), formatTokens(m.input), formatTokens(m.output), String(m.calls), m.avgTps ? `${formatRate(m.avgTps)} tok/s` : '–'].entries()) {
+      for (const [i, text] of [m.model.replace(/^ollama:/, '').replace(/^crew:(\w)(\w*)$/, (_x, a: string, b: string) => `${a.toUpperCase()}${b} (${N.crew})`), formatTokens(m.input), formatTokens(m.output), String(m.calls), m.avgTps ? `${formatRate(m.avgTps)} tok/s` : '–'].entries()) {
         const td = document.createElement('td')
         td.textContent = text
         if (i === 0) td.title = m.model
