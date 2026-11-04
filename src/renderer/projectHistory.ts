@@ -4,20 +4,20 @@ import { cleanErr, copy, h, toast } from './ui'
 const TIP = 'What happened in this project so far'
 
 // A quiet "History" link for the crew start screen and run header.
-export function historyButton(): HTMLButtonElement {
+export function historyButton(runId?: string): HTMLButtonElement {
   const b = h('button', 'link-btn history-btn', 'History') as HTMLButtonElement
   b.type = 'button'
   b.prepend(icon('list', 'sm'))
   b.title = TIP
   b.hidden = typeof window.forge.teamHistory !== 'function'
-  b.onclick = () => void openProjectHistory()
+  b.onclick = () => void openProjectHistory(runId)
   return b
 }
 
 let dlg: HTMLDialogElement | null = null
 
 // The project's .forge/what-happened.txt in a modal: mono text, newest at the bottom, a filter, Copy path and Open file.
-export async function openProjectHistory() {
+export async function openProjectHistory(runId?: string) {
   if (!dlg) { dlg = document.createElement('dialog'); dlg.id = 'project-history'; dlg.setAttribute('aria-label', 'History'); document.body.append(dlg) }
   const head = h('div', 'modal-head')
   const title = h('h3', '', 'History')
@@ -41,7 +41,7 @@ export async function openProjectHistory() {
   where.prepend(icon('file', 'sm'))
   const copyPath = h('button', 'btn', 'Copy path') as HTMLButtonElement
   const open = h('button', 'btn primary', 'Open file') as HTMLButtonElement
-  open.onclick = () => window.forge.teamHistoryOpen().catch((e) => toast(cleanErr(e), 4000))
+  open.onclick = () => window.forge.teamHistoryOpen(runId).catch((e) => toast(cleanErr(e), 4000))
   open.hidden = (window as { __forgeRemote?: boolean }).__forgeRemote === true // it opens on the computer, not here
   foot.append(where, h('span', 'grow'), copyPath, open)
   dlg.replaceChildren(head, bar, body, foot)
@@ -49,7 +49,7 @@ export async function openProjectHistory() {
   close.focus()
 
   let hist: { path: string; text: string } | null = null
-  try { hist = await window.forge.teamHistory() } catch (e) { body.replaceChildren(h('p', 'errtext', cleanErr(e))); return }
+  try { hist = await window.forge.teamHistory(runId) } catch (e) { body.replaceChildren(h('p', 'errtext', cleanErr(e))); return }
   const lines = (hist?.text ?? '').split('\n')
   if (!hist || !hist.text.trim()) {
     body.replaceChildren(h('div', 'empty-state', ''))

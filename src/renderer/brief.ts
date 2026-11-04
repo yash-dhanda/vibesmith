@@ -152,16 +152,17 @@ function render() {
     b.onclick = () => openFile(path)
     files.append(b)
   }
-  const preview = $('brief-preview')
+  const preview = $('brief-preview') as HTMLButtonElement
   preview.hidden = !page
   preview.onclick = async () => {
-    if (!page) return
+    if (!page || preview.disabled) return
     const id = chatId
+    preview.disabled = true // a double click would start two previews
     try {
       if (typeof window.forge.previewStart === 'function') {
         const { url } = await window.forge.previewStart(id)
         await window.forge.openExternal(url)
       } else await window.forge.openPath(id, page)
-    } catch (e) { toast(cleanErr(e), 4000) }
+    } catch (e) { toast(cleanErr(e), 4000) } finally { preview.disabled = false }
   }
 }

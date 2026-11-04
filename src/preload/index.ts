@@ -18,8 +18,8 @@ export type OpenedChat = { id: string; title: string; project: string | null; mi
 const api = {
   // app + chats
   appInit: (): Promise<{ chats: ChatListItem[]; project: string | null; usage: UsageSummary }> => ipcRenderer.invoke('app:init'),
-  teamHistory: (): Promise<{ path: string; text: string } | null> => ipcRenderer.invoke('team:history'),
-  teamHistoryOpen: (): Promise<void> => ipcRenderer.invoke('team:history-open'),
+  teamHistory: (runId?: string): Promise<{ path: string; text: string } | null> => ipcRenderer.invoke('team:history', runId),
+  teamHistoryOpen: (runId?: string): Promise<void> => ipcRenderer.invoke('team:history-open', runId),
   remoteStatus: (): Promise<import('../main/remote').RemoteStatus> => ipcRenderer.invoke('remote:status'),
   remoteSet: (o: { enabled?: boolean; lan?: boolean }): Promise<import('../main/remote').RemoteStatus> => ipcRenderer.invoke('remote:set', o),
   remotePair: (): Promise<{ url: string; qr: string }> => ipcRenderer.invoke('remote:pair'),
@@ -118,7 +118,7 @@ const api = {
   teamSettingsGet: (): Promise<Partial<TeamConfig>> => ipcRenderer.invoke('team:settings-get'),
   teamSettingsSet: (cfg: Partial<TeamConfig>): Promise<void> => ipcRenderer.invoke('team:settings-set', cfg),
   teamExportReport: (id: string): Promise<string | null> => ipcRenderer.invoke('team:export-report', id),
-  teamApply: (id: string): Promise<{ ok: boolean; message: string; checkpoint?: string }> => ipcRenderer.invoke('team:apply', id),
+  teamApply: (id: string, withoutUndo?: boolean): Promise<{ ok: boolean; message: string; checkpoint?: string }> => ipcRenderer.invoke('team:apply', id, withoutUndo),
   teamReject: (id: string): Promise<void> => ipcRenderer.invoke('team:reject', id),
   onTeamFocus: (cb: (runId: string) => void) => ipcRenderer.on('team:focus', (_e, runId: string) => cb(runId)),
   onTeamEvent: (cb: (ev: TeamRunEvent) => void) => ipcRenderer.on('team:event', (_e, ev: TeamRunEvent) => cb(ev)),

@@ -1,13 +1,13 @@
-import { app, BrowserWindow, dialog, ipcMain, Notification, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Notification, shell, type IpcMainInvokeEvent } from 'electron'
 import type * as PtyModule from 'node-pty'
 import { homedir } from 'node:os'
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { existsSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
+import { lstat, open, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { checkForUpdate, type UpdateInfo } from './updates'
 import { PRICES_AS_OF, costOf, priceFor } from './pricing'
-import { getRoot, inRoot, resolveIn, setRoot } from './project'
+import { getRoot, resolveIn, setRoot } from './project'
 import { isPreviewable } from './preview'
 import { PreviewServer } from './previewServer'
 import { PreviewViews, type Bounds } from './previewView'
@@ -19,7 +19,7 @@ import { applyUserPlan, planFromTranscript, planNote, type PlanState } from './a
 import { runVerify } from './agent/commands'
 import { runAgent, systemPromptFor, type AgentEvent, type Mode } from './agent/loop'
 import { ToolBox } from './agent/tools'
-import { changesSince, createCheckpoint, diffOf, fileAt, hasGit, initRepo, isRepo, undoFile, undoTo, type Change, type Checkpoint } from './checkpoint'
+import { changesSince, createCheckpoint, diffOf, fileAt, hasGit, initRepo, isRepo, SECRET_PATH, undoFile, undoTo, type Change, type Checkpoint } from './checkpoint'
 import { summarizeChanges } from './agent/summarize'
 import { ChatStore, compact, titleFrom, type Chat, type ChatListItem, type ChatStatus } from './chatStore'
 import { clearKey, keyStatus, setKey, type KeyProvider } from './keys'
@@ -30,7 +30,7 @@ import { registerLibrary } from './library'
 import { rankProjects, scanProjects, type ProjectHit } from './projectScan'
 import { SkillStore, type SkillRepo } from './skills'
 import { CATEGORY_LABEL, SKILL_CATALOG, SKILL_PACKS } from './skillCatalog'
-import { historyPath } from './team/history'
+import { historyPath, readHistory } from './team/history'
 import { RemoteServer, type Handler } from './remote'
 import { UsageStore } from './usageStore'
 import { createTeamService, sanitizeConfig, type TeamService } from './team/service'
@@ -55,22 +55,36 @@ let library: ReturnType<typeof registerLibrary> | null = null
 let store: ChatStore
 let usage: UsageStore
 
+// The phone keeps its own folder: opening a chat on it must not move the one the computer's window is working in.
+// Until the phone opens a chat it follows the computer's folder (read only: it never writes the computer's).
+// One folder per paired device, keyed by the device id the remote server puts on the event (events without one share a slot).
+const phoneRoots = new Map<string, string>()
+const isPhone = (e: unknown) => !!(e as { remote?: boolean } | null)?.remote
+const deviceOf = (e: unknown) => String((e as { device?: unknown } | null)?.device ?? 'phone')
+const rootOf = (e: unknown) => (isPhone(e) ? (phoneRoots.get(deviceOf(e)) ?? getRoot()) : getRoot())
+const setRootOf = (e: unknown, p: string) => (isPhone(e) ? (phoneRoots.set(deviceOf(e), realpathSync(p)), phoneRoots.get(deviceOf(e))!) : setRoot(p))
+const inRootOf = (e: unknown, p: string) => resolveIn(rootOf(e) ?? (() => { throw new Error('no project open') })(), p)
+
 // ---- files and terminal: they follow the chat that is on screen ----
-ipcMain.handle('fs:list', async (_e, dir: string) => {
-  const entries = await readdir(inRoot(dir), { withFileTypes: true })
+ipcMain.handle('fs:list', async (e, dir: string) => {
+  const entries = await readdir(inRootOf(e, dir), { withFileTypes: true })
   return entries
     .filter((d) => d.name !== '.git' && d.name !== 'node_modules')
     .map((d) => ({ name: d.name, dir: d.isDirectory() }))
     .sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name))
 })
-ipcMain.handle('fs:read', (_e, file: string) => readFile(inRoot(file), 'utf8'))
-ipcMain.handle('fs:write', (_e, file: string, text: string) => writeFile(inRoot(file), text))
+ipcMain.handle('fs:read', (e, file: string) => readFile(inRootOf(e, file), 'utf8'))
+ipcMain.handle('fs:write', (e, file: string, text: string) => writeFile(inRootOf(e, file), text))
 
 // One terminal per window. It runs in the project folder; the shell itself is the user's, not jailed.
 // node-pty is a native module: it is loaded on demand, so a build where it is missing still runs (without a terminal).
 let term: PtyModule.IPty | null = null
-ipcMain.handle('term:spawn', async (e, cols: number, rows: number) => {
+const killTerm = () => {
   term?.kill()
+  term = null
+}
+ipcMain.handle('term:spawn', async (e, cols: number, rows: number) => {
+  killTerm() // the old shell's last output and exit notice must not reach the new terminal
   let pty: typeof PtyModule
   try {
     pty = await import('node-pty')
@@ -78,13 +92,19 @@ ipcMain.handle('term:spawn', async (e, cols: number, rows: number) => {
     e.sender.send('term:data', '\r\nThe terminal is not available in this build.\r\n')
     return
   }
+  killTerm() // a second spawn can have finished while this one was loading node-pty: its shell would be orphaned
   const shell = process.platform === 'win32' ? process.env.COMSPEC || 'powershell.exe' : process.env.SHELL || 'bash'
-  term = pty.spawn(shell, [], { name: 'xterm-256color', cols, rows, cwd: getRoot() ?? homedir(), env: process.env as Record<string, string> })
-  term.onData((d) => e.sender.send('term:data', d))
-  term.onExit(() => e.sender.send('term:data', '\r\n[process exited]\r\n'))
+  term = pty.spawn(shell, [], { name: 'xterm-256color', cols, rows, cwd: rootOf(e) ?? homedir(), env: process.env as Record<string, string> })
+  const t = term
+  t.onData((d) => term === t && !e.sender.isDestroyed() && e.sender.send('term:data', d))
+  t.onExit(() => {
+    if (term !== t) return
+    term = null // a dead pty throws on resize and write
+    if (!e.sender.isDestroyed()) e.sender.send('term:data', '\r\n[process exited]\r\n')
+  })
 })
-ipcMain.on('term:write', (_e, d: string) => term?.write(d))
-ipcMain.on('term:resize', (_e, cols: number, rows: number) => term?.resize(cols, rows))
+ipcMain.on('term:write', (_e, d: string) => { try { term?.write(d) } catch {} })
+ipcMain.on('term:resize', (_e, cols: number, rows: number) => { try { term?.resize(cols, rows) } catch {} })
 
 // ---- remembered folder: a new chat starts in the project you were just using ----
 type State = { lastProject?: string; notify?: boolean; noUndo?: string[] }
@@ -96,7 +116,12 @@ const readState = (): State => {
     return {}
   }
 }
-const writeState = (patch: Partial<State>) => writeFileSync(stateFile(), JSON.stringify({ ...readState(), ...patch }))
+// temp file + rename: a crash mid-write must not leave half a state file (a corrupt one reads as empty)
+const writeState = (patch: Partial<State>) => {
+  const f = stateFile()
+  writeFileSync(f + '.tmp', JSON.stringify({ ...readState(), ...patch }))
+  renameSync(f + '.tmp', f)
+}
 const lastProject = (): string | null => {
   const p = readState().lastProject
   return p && existsSync(p) ? p : null
@@ -130,9 +155,14 @@ function sessionFor(id: string): Session | null {
 function flush(s: Session) {
   if (s.saveTimer) clearTimeout(s.saveTimer)
   s.saveTimer = null
-  if (!s.dirty) return
-  s.dirty = false
-  store.save(s.chat)
+  if (!s.dirty || sessions.get(s.chat.id) !== s) return // a deleted chat must not be written back by a late event
+  try {
+    store.save(s.chat)
+    s.dirty = false // only once it is on disk
+  } catch (err) {
+    console.error('chat save failed', err) // disk full, or a file held by antivirus: stay dirty and try again shortly
+    s.saveTimer = setTimeout(() => flush(s), 5000)
+  }
 }
 // A crash or a power cut mid-run still leaves the transcript up to a couple of seconds ago.
 function scheduleSave(s: Session) {
@@ -152,14 +182,19 @@ function stopPreview(chatId: string) {
   previews.delete(chatId)
 }
 
+// The ledger is bookkeeping: a failed write (full disk, a file another program holds open) must not stop a run or fail a Crew task.
+function recordUsage(model: string, u: { input: number; output: number; genMs: number }) {
+  try {
+    usage.record(model, u)
+    win?.webContents.send('usage:changed')
+  } catch {}
+}
+
 function emit(s: Session, ev: AgentEvent) {
   s.chat.transcript.push(ev)
   if (ev.type === 'tool_result' && ev.ok) previews.get(s.chat.id)?.reload()
   win?.webContents.send('agent:event', { chatId: s.chat.id, ev })
-  if (ev.type === 'usage' && s.run) {
-    usage.record(s.run.model, { input: ev.input, output: ev.output, genMs: ev.tps > 0 ? (ev.output / ev.tps) * 1000 : 0 })
-    win?.webContents.send('usage:changed')
-  }
+  if (ev.type === 'usage' && s.run) recordUsage(s.run.model, { input: ev.input, output: ev.output, genMs: ev.tps > 0 ? (ev.output / ev.tps) * 1000 : 0 })
   scheduleSave(s)
 }
 
@@ -176,21 +211,50 @@ async function runtimeEvent(model: string, queueSeconds?: number): Promise<Extra
 
 const withPreview = (files: Change[]) => files.map((f) => ({ ...f, previewable: f.status !== 'deleted' && isPreviewable(f.path) }))
 
+// The first ~16 KB of a file: a new file can be huge, and 25 lines are all the summary uses.
+async function head(file: string): Promise<string> {
+  try {
+    if (!(await lstat(file)).isFile()) return '' // a symlink could point at a file outside the project
+    const fh = await open(file, 'r')
+    try {
+      const buf = Buffer.alloc(16_384)
+      const { bytesRead } = await fh.read(buf, 0, buf.length, 0)
+      return buf.subarray(0, bytesRead).includes(0) ? '' : buf.toString('utf8', 0, bytesRead) // binary: nothing to summarise
+    } finally {
+      await fh.close().catch(() => {})
+    }
+  } catch {
+    return ''
+  }
+}
+
 // After a run, ask the model for one plain sentence per changed file. Slow or failing models just give none.
-async function describeChanges(s: Session, provider: ReturnType<typeof makeProvider>, root: string, cp: Checkpoint, files: Change[]) {
+async function describeChanges(s: Session, provider: ReturnType<typeof makeProvider>, model: string, root: string, cp: Checkpoint, files: Change[]) {
   const list = files.slice(0, 12)
   if (!list.length) return
   const withExcerpt = await Promise.all(
-    list.map(async (f) => ({ ...f, excerpt: f.status === 'added' ? ((await readFile(join(root, f.path), 'utf8').catch(() => '')) as string).split('\n').slice(0, 25).join('\n') : (await diffOf(root, cp, f.path)).split('\n').slice(0, 30).join('\n') })),
+    list.map(async (f) => ({ ...f, excerpt: SECRET_PATH.test(f.path) ? '' : f.status === 'added' ? (await head(join(root, f.path))).split('\n').slice(0, 25).join('\n') : (await diffOf(root, cp, f.path)).split('\n').slice(0, 30).join('\n') })),
   )
-  const items = await summarizeChanges(provider, withExcerpt, AbortSignal.timeout(45_000))
+  // This call costs tokens like any other: count it in the ledger.
+  const counted: typeof provider = { chat: async (...a) => { const turn = await provider.chat(...a); if (turn.usage) recordUsage(model, turn.usage); return turn } }
+  const items = await summarizeChanges(counted, withExcerpt, AbortSignal.timeout(45_000))
   if (Object.keys(items).length) emit(s, { type: 'summaries', checkpoint: cp.id, items, by: 'model' })
+}
+
+// A Notification nobody references can be garbage collected before it is clicked: hold it until it closes.
+const shown = new Set<Notification>()
+function hold(n: Notification) {
+  shown.add(n)
+  n.on('close', () => shown.delete(n))
+  n.on('click', () => shown.delete(n))
 }
 
 function notify(title: string, body: string, chatId: string) {
   if (!Notification.isSupported() || readState().notify === false) return
   const n = new Notification({ title, body })
+  hold(n)
   n.on('click', () => {
+    if (win?.isMinimized()) win.restore()
     win?.show()
     win?.focus()
     win?.webContents.send('chats:focus', chatId)
@@ -199,36 +263,40 @@ function notify(title: string, body: string, chatId: string) {
 }
 const unseen = (id: string) => !win || win.isDestroyed() || !win.isFocused() || viewing !== id
 
-ipcMain.handle('app:init', () => {
-  if (!getRoot()) {
+ipcMain.handle('app:init', (e) => {
+  if (!rootOf(e)) {
     const p = lastProject()
-    if (p) setRoot(p)
+    if (p) setRootOf(e, p)
   }
-  return { chats: list(), project: getRoot(), usage: usage.summary() }
+  return { chats: list(), project: rootOf(e), usage: usage.summary() }
 })
 
 ipcMain.handle('usage:summary', () => usage.summary())
 
-ipcMain.handle('project:pick', async (_e, chatId: string) => {
+ipcMain.handle('project:pick', async (e, chatId: string) => {
   if (sessions.get(chatId)?.chat.transcript.length || store.load(chatId)?.transcript.length) throw new Error('This chat belongs to its project. Start a new chat to work in another folder.')
   const r = await dialog.showOpenDialog({ properties: ['openDirectory'] })
-  if (r.canceled) return getRoot()
-  const root = setRoot(r.filePaths[0])
+  if (r.canceled) return rootOf(e)
+  const root = setRootOf(e, r.filePaths[0])
   rememberProject(root)
   return root
 })
 
 // The project's running history (what happened so far), kept in the project folder for the user and the agents.
-ipcMain.handle('team:history', async () => {
-  const root = getRoot()
+// With a run id it is that run's project, otherwise the folder on screen.
+const historyRoot = (e: unknown, runId: unknown) => {
+  if (typeof runId !== 'string' || !runId) return rootOf(e)
+  return teamSvc().orch.get(teamId(runId))?.project ?? rootOf(e)
+}
+ipcMain.handle('team:history', async (e, runId?: unknown) => {
+  const root = historyRoot(e, runId)
   if (!root) return null
-  const path = historyPath(root)
-  return { path, text: existsSync(path) ? (await readFile(path, 'utf8')).slice(-300_000) : '' }
+  return { path: historyPath(root), text: readHistory(root).slice(-300_000) } // readHistory never follows a link out of the project
 })
-ipcMain.handle('team:history-open', async () => {
-  const root = getRoot()
+ipcMain.handle('team:history-open', async (e, runId?: unknown) => {
+  const root = historyRoot(e, runId)
   const path = root ? historyPath(root) : ''
-  if (!path || !existsSync(path)) throw new Error('Nothing has happened in this project yet.')
+  if (!path || !readHistory(root!)) throw new Error('Nothing has happened in this project yet.') // also true when the file or .forge is a link
   const err = await shell.openPath(path)
   if (err) throw new Error(err)
 })
@@ -251,22 +319,30 @@ ipcMain.handle('skills:catalog', () => ({ entries: SKILL_CATALOG, packs: SKILL_P
 ipcMain.handle('skills:add', (_e, url: unknown) => skillStore().add(String(url ?? '')))
 ipcMain.handle('skills:update', (_e, id: unknown) => skillStore().update(skillId(id)))
 ipcMain.handle('skills:toggle', (_e, id: unknown, enabled: unknown) => skillStore().setEnabled(skillId(id), enabled === true))
-ipcMain.handle('skills:remove', (_e, id: unknown) => skillStore().remove(skillId(id)))
+ipcMain.handle('skills:remove', (_e, id: unknown) => {
+  if (!skillStore().list().some((r) => r.id === skillId(id))) throw new Error('That skill library is not in the list.') // an id that names the registry file itself must not wipe it
+  return skillStore().remove(skillId(id))
+})
 
 // Folder finder for Team mode: scan the home folder for projects, match them to what the user typed, and open the one they click.
 let scanCache: { at: number; hits: ProjectHit[] } | null = null
+let scanning: Promise<ProjectHit[]> | null = null // one scan at a time: callers that arrive meanwhile wait for it
 const scanned = async (fresh = false) => {
   if (!fresh && scanCache && Date.now() - scanCache.at < 120_000) return scanCache.hits
-  const hits = (await scanProjects()).sort((a, b) => b.mtime - a.mtime)
-  scanCache = { at: Date.now(), hits }
-  return hits
+  return (scanning ??= scanProjects()
+    .then((found) => {
+      const hits = found.sort((a, b) => b.mtime - a.mtime)
+      scanCache = { at: Date.now(), hits }
+      return hits
+    })
+    .finally(() => (scanning = null)))
 }
 ipcMain.handle('project:scan', async (_e, fresh?: unknown) => (await scanned(fresh === true)).slice(0, 300))
 ipcMain.handle('project:suggest', async (_e, query: unknown) => rankProjects(await scanned(), String(query ?? '').slice(0, 2000)))
-ipcMain.handle('project:set', async (_e, path: unknown) => {
+ipcMain.handle('project:set', async (e, path: unknown) => {
   const p = String(path ?? '')
   if (!isAbsolute(p) || !(await stat(p).then((s) => s.isDirectory()).catch(() => false))) throw new Error('That folder is not available.')
-  const root = setRoot(p)
+  const root = setRootOf(e, p)
   rememberProject(root)
   return root
 })
@@ -274,12 +350,12 @@ ipcMain.handle('project:set', async (_e, path: unknown) => {
 ipcMain.handle('chats:list', () => list())
 ipcMain.on('chats:viewing', (_e, id: string | null) => (viewing = id))
 
-ipcMain.handle('chats:open', (_e, id: string) => {
+ipcMain.handle('chats:open', (e, id: string) => {
   const s = sessionFor(id)
   if (!s) throw new Error('that chat could not be loaded')
   const { chat } = s
   const missing = !!chat.project && !existsSync(chat.project)
-  if (chat.project && !missing) setRoot(chat.project)
+  if (chat.project && !missing) setRootOf(e, chat.project)
   viewing = id
   return { id, title: chat.title, project: chat.project, missing, status: status(id), transcript: compact(chat.transcript) }
 })
@@ -309,7 +385,9 @@ ipcMain.handle('chats:delete', (_e, id: string) => {
   stopRunner(id)
   attachments().removeChat(id)
   store.delete(id)
-  sessions.delete(id)
+  const s = sessions.get(id)
+  if (s?.saveTimer) clearTimeout(s.saveTimer)
+  sessions.delete(id) // flush ignores sessions that are no longer in the table, so a late summary cannot bring the chat back
 })
 
 ipcMain.handle('save:text', async (_e, name: string, text: string) => {
@@ -419,10 +497,21 @@ ipcMain.handle('attachments:preview', (_e, chatId: string, id: string) => {
 })
 
 // ---- the agent ----
-ipcMain.handle('agent:send', async (e, p: { chatId: string; text: string; attachments?: string[]; mode: Mode; model: string; numCtx?: number; maxSteps?: number; maxMinutes?: number }) => {
+// A send awaits several things (git, the undo question) before its run exists: a second send in that gap must not start another run.
+const sending = new Set<string>()
+type SendArgs = { chatId: string; text: string; attachments?: string[]; mode: Mode; model: string; numCtx?: number; maxSteps?: number; maxMinutes?: number }
+ipcMain.handle('agent:send', async (e, p: SendArgs) => {
+  if (sending.has(p.chatId) || sessionFor(p.chatId)?.run) throw new Error('This chat is still working. Wait for it, or press stop.')
+  sending.add(p.chatId)
+  try {
+    await send(e, p)
+  } finally {
+    sending.delete(p.chatId) // by now session.run (set inside send) guards the chat
+  }
+})
+async function send(e: IpcMainInvokeEvent, p: SendArgs) {
   let s = sessionFor(p.chatId)
-  if (s?.run) throw new Error('This chat is still working. Wait for it, or press stop.')
-  const root = s ? s.chat.project : getRoot()
+  const root = s ? s.chat.project : rootOf(e)
   if (!root) throw new Error('Choose a folder to work in first.')
   if (!existsSync(root)) throw new Error(`The folder ${root} no longer exists.`)
   // Attachments: text files go into the message, pictures go to the model as pictures (only if it can see).
@@ -480,9 +569,16 @@ ipcMain.handle('agent:send', async (e, p: { chatId: string; text: string; attach
   changed()
 
   void runtimeEvent(p.model).then((r) => emit(session, r))
+  let failed = false // the run ended in an error: no after-run summaries
   let cp: Checkpoint | null = null
-  if (git && (await isRepo(root))) cp = await createCheckpoint(root)
-  else emit(session, { type: 'note', text: git ? 'No git repository: this run cannot be undone.' : 'Git is not installed on this computer, so this run cannot be undone. Install git to get Undo.' })
+  if (git && (await isRepo(root))) {
+    try {
+      cp = await createCheckpoint(root)
+    } catch (err) {
+      // An unreadable file or a nested repo without a commit makes the snapshot fail: the run goes on without undo instead of leaving the chat stuck.
+      emit(session, { type: 'note', text: `Could not snapshot the files (${(err as Error).message.split('\n')[0]}), so this run cannot be undone.` })
+    }
+  } else emit(session, { type: 'note', text: git ? 'No git repository: this run cannot be undone.' : 'Git is not installed on this computer, so this run cannot be undone. Install git to get Undo.' })
 
   // Not awaited: the run carries on in the background and the screen follows it through events.
   runAgent({
@@ -491,6 +587,7 @@ ipcMain.handle('agent:send', async (e, p: { chatId: string; text: string; attach
     provider,
     tools,
     emit: (ev) => {
+      if (ev.type === 'error') failed = true
       const price = ev.type === 'usage' ? priceFor(p.model) : null
       emit(session, ev.type === 'usage' && price ? { ...ev, costUsd: costOf(price, ev.input, ev.output) } : ev)
       // After the first reply the model is loaded: say so, and how long the user waited for it to start.
@@ -519,7 +616,7 @@ ipcMain.handle('agent:send', async (e, p: { chatId: string; text: string; attach
       if (cp && files.length) {
         chat.checkpoints[cp.id] = cp
         emit(session, { type: 'changes', checkpoint: cp.id, files: withPreview(files) })
-        void describeChanges(session, provider, root, cp, files)
+        if (!run.stoppedByUser && !failed) void describeChanges(session, provider, p.model, root, cp, files)
       }
     })
     .catch((err) => emit(session, { type: 'error', message: (err as Error).message }))
@@ -529,7 +626,7 @@ ipcMain.handle('agent:send', async (e, p: { chatId: string; text: string; attach
       changed()
       if (!run.stoppedByUser && unseen(chat.id)) notify('Forge finished', chat.title, chat.id)
     })
-})
+}
 
 ipcMain.handle('agent:undo', async (_e, chatId: string, id: string) => {
   const s = sessions.get(chatId)
@@ -551,10 +648,10 @@ ipcMain.handle('agent:plan-update', (_e, chatId: string, p: { revision: number; 
   const cur = planOf(s)
   const r = applyUserPlan(cur, Number(p?.revision), p?.items)
   if (r.changed) {
-    s.plan = r.plan
     const note = planNote(cur, r.plan)
+    Object.assign(cur, r.plan) // the running agent holds this very object: replacing it would make its next update_plan drop the user's edit
     if (note) s.steer.push(note)
-    emit(s, { type: 'plan', revision: r.plan.revision, items: r.plan.items })
+    emit(s, { type: 'plan', revision: cur.revision, items: cur.items })
   }
   return { revision: r.plan.revision, items: r.plan.items, conflict: r.conflict }
 })
@@ -580,10 +677,18 @@ ipcMain.handle('chats:rewind', async (_e, chatId: string, userIndex: number, res
   const s = sessionFor(chatId)
   if (!s) throw new Error('that chat could not be loaded')
   if (s.run) throw new Error('This chat is still working. Wait for it, or press stop.')
+  const before = { transcript: s.chat.transcript, messages: s.chat.messages, checkpoints: { ...s.chat.checkpoints } }
   const r = rewindChat(s.chat, Number(userIndex))
   if (!r) throw new Error('that message no longer exists')
   let files: string[] = []
-  if (restoreFiles && r.restore && s.chat.project) files = await undoTo(s.chat.project, r.restore)
+  if (restoreFiles && r.restore && s.chat.project) {
+    try {
+      files = await undoTo(s.chat.project, r.restore)
+    } catch (err) {
+      Object.assign(s.chat, before) // the files could not be put back: keep the chat and its way back as they were
+      throw err
+    }
+  }
   s.plan = null
   s.steer = []
   s.chat.messages.push({ role: 'user', content: restoreFiles ? '[The user took the chat back and restored the files. Re-read a file before editing it.]' : '[The user took the chat back. Files may still hold changes from the earlier attempt: re-read a file before editing it.]' })
@@ -621,8 +726,8 @@ ipcMain.on('agent:stop', (_e, chatId: string) => {
   r.pending.clear()
 })
 
-ipcMain.handle('verify:get', () => (getRoot() ? getVerify(getRoot()!) : null))
-ipcMain.handle('verify:set', (_e, cmd: string) => getRoot() && setVerify(getRoot()!, cmd))
+ipcMain.handle('verify:get', (e) => { const root = rootOf(e); return root ? getVerify(root) : null })
+ipcMain.handle('verify:set', (e, cmd: string) => { const root = rootOf(e); return root && setVerify(root, cmd) })
 
 ipcMain.handle('agent:models', () => listModels())
 ipcMain.handle('ollama:status', () => ollamaStatus())
@@ -645,9 +750,31 @@ function busyRuns() {
 function saveAll() {
   for (const s of sessions.values()) flush(s)
 }
+// Quitting stops the running chats: ask first. Resolves true once the user has agreed and the runs are stopped.
+let quitting = false
+let asking: Promise<boolean> | null = null
+function confirmQuit(): Promise<boolean> {
+  const busy = busyRuns()
+  return (asking ??= dialog
+    .showMessageBox(win!, {
+      type: 'warning', buttons: ['Keep working', 'Quit anyway'], defaultId: 0, cancelId: 0,
+      message: busy.length === 1 ? 'A chat is still working.' : `${busy.length} chats are still working.`,
+      detail: 'Quitting stops them. Progress so far is saved.',
+    })
+    .then((r) => {
+      if (r.response !== 1) return false
+      quitting = true
+      for (const s of busy) s.run?.ctl.abort()
+      saveAll()
+      return true
+    })
+    .finally(() => (asking = null)))
+}
 
 // A second launch (a desktop shortcut clicked twice) focuses the running app instead of opening another.
-if (!app.requestSingleInstanceLock()) app.quit()
+// app.quit() would let the rest of start-up run in this second process (recovering the first one's runs, binding its port): exit at once.
+const gotLock = app.requestSingleInstanceLock()
+if (!gotLock) app.exit(0)
 app.on('second-instance', () => {
   if (win?.isMinimized()) win.restore()
   win?.focus()
@@ -665,7 +792,9 @@ function teamNotify(ev: import('./team/types').RunEvent) {
   else if (ev.type === 'run' && ev.status === 'paused' && ev.reason && !/Paused by you/.test(ev.reason)) (title = 'Your team stopped'), (body = ev.reason)
   if (!title) return
   const n = new Notification({ title, body: body.slice(0, 200) })
+  hold(n)
   n.on('click', () => {
+    if (win?.isMinimized()) win.restore()
     win?.show()
     win?.focus()
     win?.webContents.send('team:focus', ev.runId)
@@ -676,7 +805,7 @@ const teamSvc = (): TeamService =>
   (team ??= createTeamService({
     userData: app.getPath('userData'),
     mcpScript: join(here, 'team-mcp.js').replace('app.asar' + (process.platform === 'win32' ? '\\' : '/'), 'app.asar.unpacked' + (process.platform === 'win32' ? '\\' : '/')),
-    recordUsage: (agent, u) => { usage.record(`crew:${agent}`, { input: u.input, output: u.output, genMs: 0 }); win?.webContents.send('usage:changed') },
+    recordUsage: (agent, u) => recordUsage(`crew:${agent}`, { input: u.input, output: u.output, genMs: 0 }),
     emit: (ev) => {
       win?.webContents.send('team:event', ev)
       teamNotify(ev)
@@ -693,8 +822,8 @@ const teamId = (v: unknown): string => {
 }
 ipcMain.handle('team:health', () => teamSvc().health())
 ipcMain.handle('team:attach', (_e, files: unknown) => teamSvc().attach(Array.isArray(files) ? (files as { name: string; data: string }[]) : []))
-ipcMain.handle('team:start', (_e, goal: unknown, config: unknown) => {
-  const root = getRoot()
+ipcMain.handle('team:start', (e, goal: unknown, config: unknown) => {
+  const root = rootOf(e)
   if (!root) throw new Error('Choose a folder to work in first.')
   return teamSvc().start(root, String(goal ?? ''), sanitizeConfig(config), (config as { attachments?: unknown } | null)?.attachments)
 })
@@ -723,12 +852,12 @@ ipcMain.handle('team:update-plan', (_e, id: unknown, edits: unknown) => {
 ipcMain.handle('team:diagnostics', () => teamSvc().diagnostics())
 ipcMain.handle('team:undo', (_e, id: unknown) => teamSvc().orch.undoApply(teamId(id)))
 ipcMain.handle('team:delete', (_e, id: unknown) => teamSvc().orch.deleteRun(teamId(id)))
-ipcMain.handle('team:settings-get', () => {
-  const root = getRoot()
+ipcMain.handle('team:settings-get', (e) => {
+  const root = rootOf(e)
   return root ? teamSvc().settings.get(root) : {}
 })
-ipcMain.handle('team:settings-set', (_e, cfg: unknown) => {
-  const root = getRoot()
+ipcMain.handle('team:settings-set', (e, cfg: unknown) => {
+  const root = rootOf(e)
   if (root) teamSvc().settings.set(root, cfg)
 })
 ipcMain.handle('team:export-report', async (e, id: unknown) => {
@@ -739,10 +868,11 @@ ipcMain.handle('team:export-report', async (e, id: unknown) => {
   writeFileSync(r.filePath, run.final.report)
   return r.filePath
 })
-ipcMain.handle('team:apply', (_e, id: unknown) => teamSvc().orch.approveFinal(teamId(id)))
+ipcMain.handle('team:apply', (_e, id: unknown, withoutUndo?: unknown) => teamSvc().orch.approveFinal(teamId(id), withoutUndo === true))
 ipcMain.handle('team:reject', (_e, id: unknown) => teamSvc().orch.rejectFinal(teamId(id)))
 
 app.whenReady().then(() => {
+  if (!gotLock) return
   library = registerLibrary(() => win)
   teamSvc() // also recovers runs that were interrupted by the last shutdown
   library.ensureStarted()
@@ -772,24 +902,10 @@ app.whenReady().then(() => {
     if (url !== win!.webContents.getURL()) e.preventDefault()
   })
 
-  let quitting = false
   win.on('close', (e) => {
-    const busy = busyRuns()
-    if (quitting || !busy.length) return
+    if (quitting || !busyRuns().length) return
     e.preventDefault()
-    dialog
-      .showMessageBox(win!, {
-        type: 'warning', buttons: ['Keep working', 'Quit anyway'], defaultId: 0, cancelId: 0,
-        message: busy.length === 1 ? 'A chat is still working.' : `${busy.length} chats are still working.`,
-        detail: 'Quitting stops them. Progress so far is saved.',
-      })
-      .then((r) => {
-        if (r.response !== 1) return
-        quitting = true
-        for (const s of busy) s.run?.ctl.abort()
-        saveAll()
-        win?.close()
-      })
+    void confirmQuit().then((yes) => yes && win?.close())
   })
   win.on('closed', () => (win = null))
   // Whatever the app tells its window is also told to the paired phones; and the remote server comes up if the user turned it on.
@@ -804,11 +920,18 @@ app.whenReady().then(() => {
   else win.loadFile(join(here, '../renderer/index.html'))
 })
 
-app.on('before-quit', () => {
+app.on('before-quit', (e) => {
+  // Ask before anything is torn down: "Keep working" must leave the app as it was (previews, engine, Crew runs).
+  if (!quitting && busyRuns().length) {
+    e.preventDefault()
+    void confirmQuit().then((yes) => yes && app.quit())
+    return
+  }
   team?.orch.shutdown()
   views.detachAll()
   for (const id of [...runners.keys()]) stopRunner(id)
   for (const id of [...previews.keys()]) stopPreview(id)
+  killTerm()
   saveAll()
   library?.stop()
 })

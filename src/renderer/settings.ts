@@ -457,7 +457,7 @@ async function remote(into: HTMLElement) {
   info.append(state)
   if (!st.tailscale) info.append(h('div', 'remote-hint', 'Tailscale isn’t running on this computer, so the phone link only works on this computer. Install Tailscale on both devices (free) and turn it on.'))
   g.box.append(info)
-  const lan = row('Also allow this Wi-Fi', 'Anyone on the same Wi-Fi can reach the pairing page (they still need a one-time link). Prefer Tailscale.', onOff(st.lan, (v) => void set({ lan: v })))
+  const lan = row('Also allow this Wi-Fi', 'Over plain http, anyone who can see or intercept this Wi-Fi can take over a paired phone’s session. It then listens only on the Wi-Fi and Tailscale addresses, not on every network interface. Prefer Tailscale.', onOff(st.lan, (v) => void set({ lan: v })))
   g.box.append(lan)
   into.append(g.g)
 

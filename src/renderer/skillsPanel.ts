@@ -59,7 +59,8 @@ export function renderSkillsPanel(): HTMLElement {
     const box = h('div', `skill-repo${repo.enabled ? '' : ' off'}`)
     const r = h('div', 'srow')
     const left = h('div', 'srl')
-    left.append(h('div', 'st-t', repo.name), h('div', 'st-d', `${repo.url} · ${plural(repo.skills.length, 'skill', 'skills')} · updated ${timeAgo(repo.updatedAt)}`))
+    const n = repo.total ?? repo.skills.length
+    left.append(h('div', 'st-t', repo.name), h('div', 'st-d', `${repo.url} · ${plural(n, 'skill', 'skills')}${n > repo.skills.length ? ` (${repo.skills.length} listed)` : ''} · updated ${timeAgo(repo.updatedAt)}`))
     if (repo.error) left.append(h('div', 'errtext', repo.error))
     const ctl = h('div', 'ctl')
     const toggle = onOff(repo.enabled, (on) => void run(() => window.forge.skillsToggle(repo.id, on).then((next) => { repos = next })))

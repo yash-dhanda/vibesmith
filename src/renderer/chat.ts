@@ -559,6 +559,7 @@ function handle(ev: AgentEvent) {
         stopped: 'Stopped.',
         stuck: 'Stopped: the agent kept repeating a failing step.',
         max_steps: 'Stopped: step limit reached.',
+        max_time: 'Stopped: time limit reached.',
         finished: '',
         unverified: 'Finished, but the project check still fails. Review the changes before keeping them.',
       }[ev.reason]

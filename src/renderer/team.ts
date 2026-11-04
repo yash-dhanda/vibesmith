@@ -172,7 +172,7 @@ async function showEntry() {
   const goal = document.createElement('textarea'); goal.rows = 5; goal.placeholder = 'Describe what the crew should build'; goal.setAttribute('aria-label', 'Crew goal')
   // Files go to Forge as soon as they are added, so the run only carries their stored locations.
   const att = attachmentStrip({
-    host: form, textarea: goal, max: 12, maxBytes: 200 * 1024 * 1024, limits: 'Up to 12 files per run, 200 MB each.',
+    host: form, textarea: goal, max: 12, maxBytes: (isRemote() ? 60 : 200) * 1024 * 1024, limits: `Up to 12 files per run, ${isRemote() ? 60 : 200} MB each.`, // a phone sends each file in one request
     note: 'Agents get the file locations and look at pictures and video frames themselves.',
     upload: async (file, progress) => {
       if (replay) return { id: String(file.size), name: file.name, size: file.size, path: `/tmp/forge-replay/${file.name}`, kind: kindOf(file), frames: kindOf(file) === 'video' ? ['/tmp/forge-replay/f1.jpg'] : undefined }
@@ -418,7 +418,7 @@ function renderRunHeader() {
   const sent = run!.config?.attachments ?? []
   if (sent.length) identity.append(sentChips(sent))
   const controls = h('div', 'team-controls')
-  controls.append(historyButton())
+  controls.append(historyButton(run!.id))
   const planPending = run!.approvals.some(a => a.kind === 'plan' && a.status === 'pending')
   if (planPending) { /* the plan card starts the team */ }
   else if (['paused', 'interrupted'].includes(run!.status)) controls.append(actionButton('Resume', () => teamAction(() => window.forge.teamResume(run!.id))))
@@ -842,7 +842,7 @@ function renderFinal() {
   if (undoResult) section.append(h('div', 'errcard final-action-result', undoResult))
   const note = h('p', 'team-final-note', 'Nothing has changed in your project yet. If you don’t land this result, Forge keeps a saved crew copy that you can reopen later.'); section.append(note)
   const actions = h('div', 'team-final-actions')
-  const apply = actionButton(N.land, async () => { if (replay) { if (replayScenario === 'applyfail') { undoResult = 'Could not land: your project changed while the crew was working. Review the project and try again.'; renderRun(); return } run!.status = 'done'; run!.applied = true; run!.appliedCheckpoint = 'replay-checkpoint'; toast('Landed · Undo is ready'); renderRun(); return } await call(async () => { const result = await window.forge.teamApply(run!.id); if (!result.ok) { undoResult = result.message; renderRun(); return } toast(result.checkpoint ? `${result.message} · Undo is ready` : result.message, 5000); await refreshRun() }) }, 'primary')
+  const apply = actionButton(N.land, async () => { if (replay) { if (replayScenario === 'applyfail') { undoResult = 'Could not land: your project changed while the crew was working. Review the project and try again.'; renderRun(); return } run!.status = 'done'; run!.applied = true; run!.appliedCheckpoint = 'replay-checkpoint'; toast('Landed · Undo is ready'); renderRun(); return } await call(async () => { let result = await window.forge.teamApply(run!.id); if (!result.ok && /apply without Undo/.test(result.message) && window.confirm(`${result.message}\n\nApply anyway, without Undo?`)) result = await window.forge.teamApply(run!.id, true); if (!result.ok) { undoResult = result.message; renderRun(); return } toast(result.checkpoint ? `${result.message} · Undo is ready` : result.message, 5000); await refreshRun() }) }, 'primary')
   const reject = actionButton("Don't land", () => { if (replay) { run!.status = 'done'; run!.applied = false; toast('Not landed · Forge kept a saved crew copy'); renderRun(); return } void teamAction(() => window.forge.teamReject(run!.id)) })
   actions.append(apply, reject); section.append(actions); return section
 }
