@@ -1,6 +1,8 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import { brotliCompress, gzip } from 'node:zlib'
+import { promisify } from 'node:util'
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { networkInterfaces } from 'node:os'
 import { dirname, extname, join, resolve, sep } from 'node:path'
@@ -24,6 +26,11 @@ export type RemoteDeps = {
 
 const BLOCKED = (c: string) => c.startsWith('remote:') || c === 'project:pick' || c === 'app:open-data' || c === 'team:history-open'
 const MIME: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf', '.map': 'application/json', '.webmanifest': 'application/manifest+json' }
+const brotli = promisify(brotliCompress)
+const gz = promisify(gzip)
+const COMPRESSIBLE = new Set(['.html', '.js', '.mjs', '.css', '.json', '.svg', '.map', '.webmanifest', '.ttf'])
+const MAX_COMPRESS = 3_000_000 // bigger files (the editor's language workers) are sent as they are
+const HASHED = /-[\w-]{8,}\.[a-z0-9]+$/i // build output names carry a hash of their content, so they can be cached for good
 const sha = (s: string) => createHash('sha256').update(s).digest('hex')
 const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
 const SESSION_SECONDS = 10 * 365 * 24 * 3600 // a paired phone stays paired until the user removes it
@@ -53,8 +60,19 @@ const post = async (url, body) => {
   if (r.status === 401) { location.href = '/__unpaired'; throw new Error('This device is not paired.') }
   return r.json()
 }
+let queue = []
+let timer = 0
+const flush = async () => {
+  timer = 0
+  const batch = queue
+  queue = []
+  try {
+    const r = await post('/batch', { calls: batch.map((b) => ({ c: b.c, a: b.a })) })
+    batch.forEach((b, i) => { const x = r.results[i]; if (x && x.ok) b.res(x.result); else b.rej(new Error(x ? x.error : 'no answer')) })
+  } catch (e) { batch.forEach((b) => b.rej(e)) }
+}
 const ipcRenderer = {
-  invoke: (c, ...a) => post('/rpc', { c, a }).then((r) => { if (!r.ok) throw new Error(r.error); return r.result }),
+  invoke: (c, ...a) => new Promise((res, rej) => { queue.push({ c, a, res, rej }); if (!timer) timer = setTimeout(flush, 2) }),
   send: (c, ...a) => { post('/send', { c, a }).catch(() => {}) },
   on: (c, fn) => { if (!listeners.has(c)) listeners.set(c, new Set()); listeners.get(c).add(fn); return ipcRenderer },
   removeListener: (c, fn) => { listeners.get(c)?.delete(fn); return ipcRenderer },
@@ -98,11 +116,20 @@ export class RemoteServer {
   }
 
   // Every message the app sends to its window is also sent to the paired phones.
+  // Messages that arrive close together (a stream of text from an agent) are written to the phones in one go, not one packet each.
+  private outbox = ''
+  private flushTimer: ReturnType<typeof setTimeout> | null = null
   broadcast(channel: string, args: unknown[]) {
     if (!this.clients.size) return
     let data: string
     try { data = JSON.stringify({ c: channel, a: args }) } catch { return }
-    for (const res of this.clients) res.write(`data: ${data}\n\n`)
+    this.outbox += `data: ${data}\n\n`
+    this.flushTimer ??= setTimeout(() => {
+      this.flushTimer = null
+      const chunk = this.outbox
+      this.outbox = ''
+      for (const res of this.clients) res.write(chunk)
+    }, 30)
   }
 
   status(): RemoteStatus {
@@ -126,7 +153,8 @@ export class RemoteServer {
     this.error = ''
     this.host = this.d.bind ?? (this.state.lan ? '0.0.0.0' : (tailscaleAddress() ?? '127.0.0.1'))
     const srv = createServer((req, res) => { void this.handle(req, res).catch(() => { if (!res.headersSent) res.writeHead(500); res.end() }) })
-    srv.keepAliveTimeout = 5000
+    srv.keepAliveTimeout = 65_000 // phones reuse one connection instead of opening a new one for every call
+    srv.on('connection', (sock) => sock.setNoDelay(true))
     await new Promise<void>((resolveStart) => {
       srv.once('error', (e: NodeJS.ErrnoException) => { this.error = e.code === 'EADDRINUSE' ? `Port ${port} is in use.` : e.message; resolveStart() })
       srv.listen(port, this.host, () => { this.server = srv; resolveStart() })
@@ -134,6 +162,9 @@ export class RemoteServer {
   }
 
   async stop() {
+    if (this.flushTimer) clearTimeout(this.flushTimer)
+    this.flushTimer = null
+    this.outbox = ''
     for (const c of this.clients) c.end()
     this.clients.clear()
     const s = this.server
@@ -188,9 +219,15 @@ export class RemoteServer {
     return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}', (_k, v) => (v && typeof v === 'object' && typeof v.__u8 === 'string' && Object.keys(v).length === 1 ? new Uint8Array(Buffer.from(v.__u8, 'base64')) : v))
   }
 
-  private json(res: ServerResponse, code: number, v: unknown) {
+  private async json(res: ServerResponse, code: number, v: unknown, req?: IncomingMessage) {
+    const body = Buffer.from(JSON.stringify(v))
+    if (req && body.length > 1024 && /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''))) {
+      const z = await gz(body, { level: 4 })
+      res.writeHead(code, { 'content-type': 'application/json', 'cache-control': 'no-store', 'content-encoding': 'gzip', vary: 'Accept-Encoding' })
+      return void res.end(z)
+    }
     res.writeHead(code, { 'content-type': 'application/json', 'cache-control': 'no-store' })
-    res.end(JSON.stringify(v))
+    res.end(body)
   }
 
   private async handle(req: IncomingMessage, res: ServerResponse) {
@@ -224,6 +261,22 @@ export class RemoteServer {
     }
     if (Date.now() - dev.lastSeen > 60_000) { dev.lastSeen = Date.now(); this.save() }
 
+    // Several calls in one request: the phone batches what the page asks for at start-up, so one round trip does the work of a dozen.
+    if (req.method === 'POST' && url.pathname === '/batch') {
+      let msg: { calls?: { c?: unknown; a?: unknown }[] }
+      try { msg = await this.body(req) } catch { return void this.json(res, 400, { error: 'bad request' }) }
+      const calls = Array.isArray(msg.calls) ? msg.calls.slice(0, 40) : []
+      const event = { sender: { send: (ch: string, ...a: unknown[]) => this.broadcast(ch, a), isDestroyed: () => false } }
+      const results = await Promise.all(calls.map(async (call) => {
+        const c = typeof call?.c === 'string' ? call.c : ''
+        if (!c || BLOCKED(c)) return { ok: false, error: 'This action is only available on the computer.' }
+        const fn = this.d.handlers.get(c)
+        if (!fn) return { ok: false, error: `unknown call ${c}` }
+        try { return { ok: true, result: await fn(event, ...(Array.isArray(call.a) ? call.a : [])) } } catch (e) { return { ok: false, error: (e as Error).message } }
+      }))
+      return void (await this.json(res, 200, { results }, req))
+    }
+
     if (req.method === 'POST' && (url.pathname === '/rpc' || url.pathname === '/send')) {
       let msg: { c?: unknown; a?: unknown }
       try { msg = await this.body(req) } catch { return void this.json(res, 400, { ok: false, error: 'bad request' }) }
@@ -238,7 +291,7 @@ export class RemoteServer {
       }
       const fn = this.d.handlers.get(c)
       if (!fn) return void this.json(res, 404, { ok: false, error: `unknown call ${c}` })
-      try { return void this.json(res, 200, { ok: true, result: await fn(event, ...args) }) } catch (e) { return void this.json(res, 200, { ok: false, error: (e as Error).message }) }
+      try { return void (await this.json(res, 200, { ok: true, result: await fn(event, ...args) }, req)) } catch (e) { return void this.json(res, 200, { ok: false, error: (e as Error).message }) }
     }
 
     if (req.method === 'GET' && url.pathname === '/events') {
@@ -253,8 +306,9 @@ export class RemoteServer {
     if (req.method !== 'GET') return void this.json(res, 405, { error: 'method not allowed' })
     if (url.pathname === '/__forge-remote.js') {
       this.shim ||= shimSource(readFileSync(this.d.preloadFile, 'utf8'))
-      res.writeHead(200, { 'content-type': MIME['.js'], 'cache-control': 'no-store' })
-      return void res.end(this.shim)
+      const z = /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? '')) ? await gz(Buffer.from(this.shim)) : null
+      res.writeHead(200, { 'content-type': MIME['.js'], 'cache-control': 'no-cache', vary: 'Accept-Encoding', ...(z ? { 'content-encoding': 'gzip' } : {}) })
+      return void res.end(z ?? this.shim)
     }
     if (url.pathname === '/manifest.webmanifest') {
       res.writeHead(200, { 'content-type': MIME['.webmanifest'] })
@@ -268,15 +322,39 @@ export class RemoteServer {
       const html = (await readFile(abs, 'utf8'))
         .replace('width=device-width, initial-scale=1', 'width=device-width, initial-scale=1, viewport-fit=cover')
         .replace('</head>', '  <link rel="manifest" href="/manifest.webmanifest" />\n  <link rel="apple-touch-icon" href="/icon.png" />\n  <meta name="apple-mobile-web-app-capable" content="yes" />\n  <meta name="mobile-web-app-capable" content="yes" />\n  <meta name="apple-mobile-web-app-title" content="Forge" />\n  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />\n  <meta name="theme-color" content="#101010" />\n  <script src="/__forge-remote.js"></script>\n</head>')
-      res.writeHead(200, { 'content-type': MIME['.html'], 'cache-control': 'no-store' })
-      return void res.end(html)
+      const z = /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? '')) ? await gz(Buffer.from(html)) : null
+      res.writeHead(200, { 'content-type': MIME['.html'], 'cache-control': 'no-store', vary: 'Accept-Encoding', ...(z ? { 'content-encoding': 'gzip' } : {}) })
+      return void res.end(z ?? html)
     }
-    await this.file2(res, abs, false)
+    await this.file2(req, res, abs, false)
   }
 
-  private async file2(res: ServerResponse, abs: string, short: boolean) {
-    if (!existsSync(abs)) { res.writeHead(404); return void res.end('not found') }
-    res.writeHead(200, { 'content-type': MIME[extname(abs).toLowerCase()] ?? 'application/octet-stream', 'cache-control': short ? 'max-age=86400' : 'max-age=3600' })
-    res.end(await readFile(abs))
+  private packed = new Map<string, { key: string; enc: 'br' | 'gzip' | ''; body: Buffer }>()
+
+  // Static files: cached for good when the name carries a content hash, revalidated with an ETag otherwise, and compressed once and kept.
+  private async file2(req: IncomingMessage, res: ServerResponse, abs: string, short: boolean) {
+    let st
+    try { st = statSync(abs) } catch { res.writeHead(404); return void res.end('not found') }
+    if (!st.isFile()) { res.writeHead(404); return void res.end('not found') }
+    const ext = extname(abs).toLowerCase()
+    const etag = `"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`
+    const hashed = HASHED.test(abs)
+    const headers: Record<string, string> = { 'content-type': MIME[ext] ?? 'application/octet-stream', etag, 'cache-control': hashed ? 'public, max-age=31536000, immutable' : short ? 'max-age=86400' : 'no-cache', vary: 'Accept-Encoding' }
+    if (req.headers['if-none-match'] === etag) { res.writeHead(304, headers); return void res.end() }
+    const accept = String(req.headers['accept-encoding'] ?? '')
+    const want: 'br' | 'gzip' | '' = !COMPRESSIBLE.has(ext) || st.size > MAX_COMPRESS || st.size < 600 ? '' : /\bbr\b/.test(accept) ? 'br' : /\bgzip\b/.test(accept) ? 'gzip' : ''
+    const slot = `${abs}|${want}`
+    let hit = this.packed.get(slot)
+    if (!hit || hit.key !== etag) {
+      const raw = await readFile(abs)
+      const body = want === 'br' ? await brotli(raw) : want === 'gzip' ? await gz(raw, { level: 6 }) : raw
+      hit = { key: etag, enc: want, body }
+      this.packed.set(slot, hit)
+      if (this.packed.size > 200) this.packed.delete(this.packed.keys().next().value as string)
+    }
+    if (hit.enc) headers['content-encoding'] = hit.enc
+    headers['content-length'] = String(hit.body.length)
+    res.writeHead(200, headers)
+    res.end(hit.body)
   }
 }

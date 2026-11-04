@@ -64,6 +64,35 @@ describe('remote access', () => {
     expect((await rpc(t.base, cookie, 'hello', ['x'])).status).toBe(401)
   })
 
+  it('answers many calls in one request, and keeps blocked ones blocked', async () => {
+    const t = await boot()
+    const { cookie } = await pair(t)
+    const res = await fetch(`${t.base}/batch`, { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ calls: [{ c: 'hello', a: ['a'] }, { c: 'boom', a: [] }, { c: 'project:pick', a: [] }, { c: 'nope', a: [] }, { c: 'hello', a: ['b'] }] }) })
+    const { results } = await res.json()
+    expect(results.map((r: { ok: boolean; result?: string }) => (r.ok ? r.result : 'x'))).toEqual(['hi a', 'x', 'x', 'x', 'hi b'])
+    expect(results[2].error).toMatch(/only available on the computer/)
+  })
+
+  it('compresses, and lets the phone keep what it already has', async () => {
+    const t = await boot()
+    const { cookie } = await pair(t)
+    const dir = (t.srv as unknown as { d: { rendererDir: string } }).d.rendererDir
+    mkdirSync(join(dir, 'assets'), { recursive: true })
+    writeFileSync(join(dir, 'assets', 'index-AbCdEf12.js'), 'const x = "forge";\n'.repeat(400))
+    const raw = await fetch(`${t.base}/assets/index-AbCdEf12.js`, { headers: { cookie, 'accept-encoding': 'identity' } })
+    const rawLen = (await raw.arrayBuffer()).byteLength
+    const br = await fetch(`${t.base}/assets/index-AbCdEf12.js`, { headers: { cookie, 'accept-encoding': 'br' } })
+    expect(br.headers.get('content-encoding')).toBe('br')
+    expect(br.headers.get('cache-control')).toMatch(/immutable/)
+    expect(Number(br.headers.get('content-length'))).toBeLessThan(rawLen / 4)
+    const etag = br.headers.get('etag')!
+    expect((await fetch(`${t.base}/assets/index-AbCdEf12.js`, { headers: { cookie, 'if-none-match': etag } })).status).toBe(304)
+    expect((await fetch(`${t.base}/app.js`, { headers: { cookie } })).headers.get('cache-control')).toBe('no-cache')
+    const gzHtml = await fetch(`${t.base}/`, { headers: { cookie, 'accept-encoding': 'gzip' } })
+    expect(gzHtml.headers.get('content-encoding')).toBe('gzip')
+    expect(await gzHtml.text()).toContain('/__forge-remote.js')
+  })
+
   it('turns binary arguments back into bytes', async () => {
     const t = await boot()
     const { cookie } = await pair(t)
