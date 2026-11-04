@@ -30,10 +30,24 @@ import { registerLibrary } from './library'
 import { rankProjects, scanProjects, type ProjectHit } from './projectScan'
 import { SkillStore, type SkillRepo } from './skills'
 import { historyPath } from './team/history'
+import { RemoteServer, type Handler } from './remote'
 import { UsageStore } from './usageStore'
 import { createTeamService, sanitizeConfig, type TeamService } from './team/service'
 
 const here = dirname(fileURLToPath(import.meta.url))
+
+// Remote access needs to call the same handlers the window does, so every handler and listener registered below is also kept in a table.
+const remoteHandlers = new Map<string, Handler>()
+const remoteListeners = new Map<string, Handler[]>()
+{
+  const handle = ipcMain.handle.bind(ipcMain) as (c: string, fn: Handler) => void
+  const on = ipcMain.on.bind(ipcMain) as (c: string, fn: Handler) => unknown
+  ipcMain.handle = ((c: string, fn: Handler) => (remoteHandlers.set(c, fn), handle(c, fn))) as typeof ipcMain.handle
+  ipcMain.on = ((c: string, fn: Handler) => (remoteListeners.set(c, [...(remoteListeners.get(c) ?? []), fn]), on(c, fn))) as typeof ipcMain.on
+}
+let remote: RemoteServer | null = null
+const remoteSrv = () =>
+  (remote ??= new RemoteServer({ dir: app.getPath('userData'), rendererDir: join(here, '../renderer'), preloadFile: join(here, '../preload/index.mjs'), handlers: remoteHandlers, listeners: remoteListeners }))
 
 let win: BrowserWindow | null = null
 let library: ReturnType<typeof registerLibrary> | null = null
@@ -217,6 +231,15 @@ ipcMain.handle('team:history-open', async () => {
   const err = await shell.openPath(path)
   if (err) throw new Error(err)
 })
+
+// Remote access: the Forge window served to a paired phone over Tailscale (or this computer only). Off until the user turns it on.
+ipcMain.handle('remote:status', () => remoteSrv().status())
+ipcMain.handle('remote:set', (_e, o: unknown) => remoteSrv().configure({ enabled: typeof (o as { enabled?: unknown })?.enabled === 'boolean' ? (o as { enabled: boolean }).enabled : undefined, lan: typeof (o as { lan?: unknown })?.lan === 'boolean' ? (o as { lan: boolean }).lan : undefined }))
+ipcMain.handle('remote:pair', async () => {
+  if (!remoteSrv().status().listening) throw new Error('Turn on remote access first.')
+  return remoteSrv().pairLink()
+})
+ipcMain.handle('remote:revoke', (_e, id: unknown) => remoteSrv().revoke(String(id ?? '')))
 
 // Skill libraries: GitHub repositories the user adds; the agents of a team run read the skills that fit their task.
 let skillStoreInst: SkillStore | null = null
@@ -764,6 +787,13 @@ app.whenReady().then(() => {
       })
   })
   win.on('closed', () => (win = null))
+  // Whatever the app tells its window is also told to the paired phones; and the remote server comes up if the user turned it on.
+  {
+    const wc = win.webContents
+    const send = wc.send.bind(wc)
+    wc.send = ((channel: string, ...args: unknown[]) => (remoteSrv().broadcast(channel, args), send(channel, ...args))) as typeof wc.send
+    void remoteSrv().configure({}).catch(() => {})
+  }
 
   if (process.env.ELECTRON_RENDERER_URL) win.loadURL(process.env.ELECTRON_RENDERER_URL)
   else win.loadFile(join(here, '../renderer/index.html'))
