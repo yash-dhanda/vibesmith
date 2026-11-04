@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AUTHOR, git, snapshotTree } from '../checkpoint'
+import { addAll, AUTHOR, git, snapshotTree } from '../checkpoint'
 import type { Task } from './types'
 
 // Isolation for parallel agents: one branch and one working folder (git worktree) per task, merged one at a time into a run branch.
@@ -31,7 +31,7 @@ export async function snapshotTreeWithoutSecrets(root: string): Promise<string> 
   const dir = mkdtempSync(join(tmpdir(), 'forge-team-idx-'))
   const env = { GIT_INDEX_FILE: join(dir, 'index') }
   try {
-    await git(root, ['add', '-A', '--', '.', ...NOT_COMMITTED], env)
+    await addAll(root, NOT_COMMITTED, env)
     return (await git(root, ['write-tree'], env)).trim()
   } catch {
     return snapshotTree(root)
@@ -54,7 +54,7 @@ export async function addTaskWorktree(root: string, worktree: string, branch: st
 
 // Commits whatever the agent left in its worktree. Returns the commit, or null when nothing changed.
 export async function commitAll(wt: string, message: string): Promise<string | null> {
-  await git(wt, ['add', '-A', '--', '.', ...NOT_COMMITTED])
+  await addAll(wt, NOT_COMMITTED)
   if (!(await git(wt, ['diff', '--cached', '--name-only'])).trim()) return null // untracked secrets we refused to add do not count
   await git(wt, ['commit', '--no-verify', '-m', message], AUTHOR)
   return head(wt)
@@ -102,7 +102,7 @@ export async function finishMerge(wt: string): Promise<{ ok: boolean; left: stri
   const stillConflicted = (await conflictFiles(wt)).filter((f) => marked.includes(f))
   const left = [...new Set([...marked, ...stillConflicted])]
   if (left.length) return { ok: false, left }
-  await git(wt, ['add', '-A', '--', '.', ...NOT_COMMITTED])
+  await addAll(wt, NOT_COMMITTED)
   await git(wt, ['commit', '--no-verify', '--no-edit'], AUTHOR).catch(() => '')
   return { ok: true, left: [] }
 }

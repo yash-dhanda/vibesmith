@@ -58,11 +58,13 @@ export function rankProjects(projects: ProjectHit[], query: string, limit = 6): 
     let score = 0
     for (const w of words) {
       if (name === w) score += 12
-      else if (name.includes(w) || (w.length >= 5 && w.includes(name) && name.length >= 4)) score += 8
-      else if (parts.some((x) => x.startsWith(w) || w.startsWith(x) && x.length >= 4)) score += 5
+      else if (w.length >= 4 && name.includes(w)) score += 8
+      else if (w.length >= 4 && parts.some((x) => x.startsWith(w))) score += 5
       else if (path.includes('/' + w)) score += 2
     }
     return { p, score: score ? score + (p.mtime / newest) * 1.5 : 0 }
   })
-  return scored.filter((x) => x.score > 0).sort((a, b) => b.score - a.score).slice(0, limit).map((x) => x.p)
+  const ranked = scored.filter((x) => x.score > 0).sort((a, b) => b.score - a.score)
+  const top = ranked[0]?.score ?? 0
+  return ranked.filter((x) => x.score >= Math.max(5, top * 0.5)).slice(0, limit).map((x) => x.p) // only the matches that are close to the best one
 }

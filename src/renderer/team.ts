@@ -111,7 +111,7 @@ function folderFinder(goal: HTMLTextAreaElement, pill: HTMLButtonElement) {
   }
   let timer: ReturnType<typeof setTimeout> | null = null, token = 0
   const suggest = () => { if (!apiOk) return; const mine = ++token, q = goal.value.trim(); if (q.length < 4) { chips.replaceChildren(); return }
-    void window.forge.suggestProjects(q).then(hits => { if (mine !== token) return; chips.replaceChildren(...hits.filter(x => x.path !== currentProject).slice(0, 4).map(x => item(x))) }).catch(() => {}) }
+    void window.forge.suggestProjects(q).then(hits => { if (mine !== token) return; chips.replaceChildren(...(hits[0]?.path === currentProject ? [] : hits.filter(x => x.path !== currentProject).slice(0, 4).map(x => item(x)))) }).catch(() => {}) }
   goal.addEventListener('input', () => { if (timer) clearTimeout(timer); timer = setTimeout(suggest, 350) })
   let all: { path: string; name: string; markers: string[]; mtime: number }[] = []
   const draw = () => { const q = filter.value.trim().toLowerCase(); const shown = all.filter(x => !q || x.path.toLowerCase().includes(q)).slice(0, 60); list.replaceChildren(...(shown.length ? shown.map(x => item(x, 'team-folder-row-item')) : [h('p', 'team-empty', all.length ? 'No folder matches.' : 'No project folders found.')])) }
@@ -174,7 +174,7 @@ async function showEntry() {
   const verify = input('text', defaults.verify === null ? '' : defaults.verify ?? ''); verify.placeholder = 'Detect from project'
   const codexModel = select(health.codexModels.map(m => [m, m] as [string, string]), defaults.codexModel ?? health.codexModels[0] ?? '')
   const localModel = select(health.localModels.map(m => [m, m] as [string, string]), defaults.localModel ?? health.localModels[0] ?? '')
-  const claudeModels: [string, string][] = [['', 'Account default'], ['claude-opus-5-5', 'Opus 5.5'], ['claude-sonnet-5-5', 'Sonnet 5.5'], ['claude-haiku-5-5', 'Haiku 5.5'], ['claude-fable-5-1', 'Fable 5.1']]
+  const claudeModels: [string, string][] = [['', 'Default'], ['claude-opus-5-5', 'Opus 5.5'], ['claude-sonnet-5-5', 'Sonnet 5.5'], ['claude-haiku-5-5', 'Haiku 5.5'], ['claude-fable-5-1', 'Fable 5.1']]
   if (defaults.claudeModel && !claudeModels.some(([v]) => v === defaults.claudeModel)) claudeModels.push([defaults.claudeModel, defaults.claudeModel])
   const claudeModel = select(claudeModels, defaults.claudeModel ?? ''); claudeModel.setAttribute('aria-label', 'Claude model')
   const codexEffort = select([['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high']], defaults.codexEffort ?? 'high'); codexEffort.setAttribute('aria-label', 'Codex reasoning effort')

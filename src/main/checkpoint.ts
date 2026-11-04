@@ -36,12 +36,22 @@ export async function isRepo(root: string): Promise<boolean> {
 
 export const initRepo = (root: string) => git(root, ['init']).then(() => undefined)
 
+// Adds everything except the given paths. When .gitignore already ignores a path named in an exclude, git adds the rest and then exits with an
+// error about it ("The following paths are ignored..."); that is not a failure here, so it is let through.
+export async function addAll(root: string, exclude: string[], env?: Record<string, string>): Promise<void> {
+  try {
+    await git(root, ['add', '-A', '--', '.', ...exclude], env)
+  } catch (e) {
+    if (!/ignored by one of your \.gitignore/i.test((e as Error).message)) throw e
+  }
+}
+
 export async function snapshotTree(root: string): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), 'forge-idx-'))
   const env = { GIT_INDEX_FILE: join(dir, 'index') }
   try {
     // node_modules is excluded even without a .gitignore: snapshotting it would take minutes
-    await git(root, ['add', '-A', '--', '.', ':(exclude)node_modules', ':(exclude)**/node_modules'], env)
+    await addAll(root, [':(exclude)node_modules', ':(exclude)**/node_modules'], env)
     return (await git(root, ['write-tree'], env)).trim()
   } finally {
     rmSync(dir, { recursive: true, force: true })

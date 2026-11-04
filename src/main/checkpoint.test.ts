@@ -26,6 +26,15 @@ beforeEach(async () => {
 })
 
 describe('checkpoint', () => {
+  it('takes a checkpoint when .gitignore already lists node_modules, and still leaves it out', async () => {
+    w('.gitignore', 'ignored.txt\nnode_modules\n')
+    w('new.txt', 'fresh\n')
+    const c = await createCheckpoint(dir)
+    const files = git('ls-tree', '-r', '--name-only', c.tree)
+    expect(files).toContain('new.txt')
+    expect(files).not.toContain('node_modules')
+  })
+
   it('detects a repo, and a plain folder', async () => {
     expect(await isRepo(dir)).toBe(true)
     expect(await isRepo(mkdtempSync(join(tmpdir(), 'forge-plain-')))).toBe(false)

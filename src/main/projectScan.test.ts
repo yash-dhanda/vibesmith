@@ -24,6 +24,11 @@ describe('project scan', () => {
     expect(rankProjects(all, 'fix the bug')).toEqual([])
   })
 
+  it('does not match unrelated short names or far weaker matches', () => {
+    const all = [hit('riftvault'), hit('vaul'), hit('frontend'), hit('riftvault-old')]
+    expect(rankProjects(all, 'rework the riftvault app everything new').map((p) => p.name)).toEqual(['riftvault', 'riftvault-old'])
+  })
+
   it('prefers the more recently changed folder when names tie', () => {
     const all = [hit('recall', 1), { ...hit('recall-corpus-meta', 100) }]
     expect(rankProjects(all, 'recall cards')[0].name).toBe('recall')
