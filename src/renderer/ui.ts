@@ -16,10 +16,13 @@ export const emo = (glyph: string) => {
   return s
 }
 
-export const cleanErr =(e: unknown) => String((e as Error).message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+// A call the phone could not send (the link is down) says so in words; the link reconnects by itself.
+export const NO_LINK = 'No connection. Retrying.'
+export const cleanErr = (e: unknown) => { const m = String((e as Error).message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''); return /^(Failed to fetch|Load failed|NetworkError|The network connection was lost)/i.test(m) ? NO_LINK : m }
 
 // A toast is a small card: icon tile, a bold first sentence, the rest muted, an optional white action and a close button.
 export function toast(msg: string, ms = 1800, action?: { label: string; run: () => void }) {
+  if (msg === NO_LINK && [...$('toasts').children].some((t) => t.textContent?.startsWith('No connection'))) return // one at a time
   const m = msg.match(/^(.+?[.!?])\s+(.+)$/s) ?? msg.match(/^(.+?) · (.+)$/s)
   const t = h('div', 'toast')
   t.setAttribute('role', 'status')
