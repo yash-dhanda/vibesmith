@@ -17,7 +17,7 @@ export function codexArgs(o: CodexOpts): string[] {
   const sandbox = o.write ? 'workspace-write' : 'read-only'
   const mcp = o.team ? codexMcpArgs(o.team) : []
   const pics = (o.images ?? []).flatMap((p) => ['-i', p])
-  const web = o.web === true ? ['-c', 'web_search="live"'] : []
+  const web = o.web === true ? ['-c', 'web_search="live"'] : o.web === false ? ['-c', 'web_search="disabled"'] : [] // codex 0.153 searches the web unless told not to
   const effort = o.effort ? ['-c', `model_reasoning_effort="${o.effort}"`] : []
   if (o.resume) return ['exec', 'resume', o.resume, '--json', '-m', o.model, '-c', `sandbox_mode="${sandbox}"`, '-c', 'approval_policy="never"', ...effort, ...web, ...pics, ...codexLeanArgs(), ...mcp, '-']
   return ['exec', '--json', '-C', o.cwd, '-s', sandbox, '-m', o.model, '-c', 'approval_policy="never"', ...effort, ...web, ...pics, ...codexLeanArgs(), ...mcp, '-']

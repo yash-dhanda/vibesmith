@@ -3,6 +3,8 @@ import { ollama, type Provider } from '../agent/provider'
 import { describeTool } from '../agent/narrate'
 import { ToolBox } from '../agent/tools'
 import type { TeamEvent } from './events'
+import type { ApprovalAsk } from './codexServer'
+import { decideTool } from './policy'
 import { makeSink, type RunResult } from './process'
 
 // The third team member: a model running on this computer through Ollama, driven by Forge's own agent loop (the one the chat uses).
@@ -20,14 +22,25 @@ export type LocalOpts = {
   signal: AbortSignal
   onEvent?: (e: TeamEvent) => void
   provider?: Provider // tests pass a scripted model
+  ask?: (a: ApprovalAsk) => Promise<boolean> // decides commands the policy would ask about; without it they are refused
 }
 
-// A read-only run (planning, review) may look and run commands but never change a file.
-export function guardedBox(cwd: string, write: boolean): ToolBox {
+// A read-only run (planning, review) may look but never change a file, so it also runs no commands: a command can write anywhere.
+// A build run's commands go through the same policy as the other agents (no push, no writes outside the folder, deploys and the like asked first).
+export function guardedBox(cwd: string, write: boolean, ask?: LocalOpts['ask']): ToolBox {
   const box = new ToolBox(cwd)
-  if (write) return box
   const run = box.run.bind(box)
-  box.run = async (name, args, signal) => (name === 'create_file' || name === 'edit_file' ? 'ERROR: this is a read-only job. Do not change files; report what you found instead.' : run(name, args, signal))
+  const readOnly = 'ERROR: this is a read-only job. Do not change files or run commands; read files and report what you found instead.'
+  box.run = async (name, args, signal) => {
+    if (!write && (name === 'create_file' || name === 'edit_file' || name === 'run_command')) return readOnly
+    if (name === 'run_command') {
+      const command = String((args as { command?: unknown })?.command ?? '')
+      const v = decideTool('Bash', { command }, cwd)
+      if (v.verdict === 'deny') return `ERROR: not allowed: ${v.reason}.`
+      if (v.verdict === 'ask' && !(await ask?.({ kind: 'command', title: `The local model wants to run: ${command.slice(0, 200)}`, detail: v.reason, command }))) return `ERROR: not allowed: ${v.reason}`
+    }
+    return run(name, args, signal)
+  }
   return box
 }
 
@@ -41,7 +54,7 @@ export async function runLocal(o: LocalOpts): Promise<RunResult> {
   const sink = makeSink('local', o.onEvent)
   const agent = 'local' as const
   const provider = o.provider ?? ollama({ model: o.model, numCtx: LOCAL_NUM_CTX })
-  const tools = guardedBox(o.cwd, o.write)
+  const tools = guardedBox(o.cwd, o.write, o.ask)
   let typed = '' // the answer being written, shown live and replaced by the whole text at the end of the turn
   let last = ''
   let reason: Extract<AgentEvent, { type: 'done' }>['reason'] | null = null

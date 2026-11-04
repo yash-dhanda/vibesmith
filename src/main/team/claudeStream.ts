@@ -13,6 +13,15 @@ const summary = (name: string, input: Record<string, unknown> | undefined, rel: 
 const flat = (c: unknown): string =>
   typeof c === 'string' ? c : Array.isArray(c) ? c.map((b) => (b && typeof b === 'object' && 'text' in b ? String((b as { text: unknown }).text) : '')).join('') : ''
 
+// Claude Code reads the project's own .claude/settings*.json, which can hold an API key, an apiKeyHelper or a switch to Bedrock/Vertex.
+// The init line says what the run will really use, before any request is made. On the Claude plan the key source is "none" (or the login itself).
+const PLAN_SOURCE = /^(none|oauth|claude\.ai|CLAUDE_CODE_OAUTH_TOKEN)?$/i
+const CLOUD_MODEL = /^(?:(?:us|eu|apac|au|jp|global)\.)?anthropic\.|@\d{8}$|^arn:/
+function billingProblem(init: Record<string, any>): string | null {
+  const why = !PLAN_SOURCE.test(String(init.apiKeySource ?? '')) ? `an API key (${init.apiKeySource})` : init.apiProvider && init.apiProvider !== 'firstParty' ? `${init.apiProvider} billing` : CLOUD_MODEL.test(String(init.model ?? '')) ? `a cloud provider's model (${init.model})` : ''
+  return why ? `This project's Claude settings make Claude Code use ${why} instead of your Claude plan. Remove it from .claude/settings.json or settings.local.json (apiKeyHelper, or an env entry for ANTHROPIC_*, CLAUDE_CODE_USE_*).` : null
+}
+
 const CONTENT_KEY: Record<string, string> = { Write: 'content', Edit: 'new_string' }
 
 export function makeClaudeParser(cwd?: string): Parser {
@@ -54,8 +63,11 @@ export function makeClaudeParser(cwd?: string): Parser {
       }
       return out
     }
-    if (m.type === 'system' && m.subtype === 'init' && m.session_id) out.push({ type: 'session', agent: 'claude', sessionId: m.session_id })
-    else if (m.type === 'assistant') {
+    if (m.type === 'system' && m.subtype === 'init') {
+      if (m.session_id) out.push({ type: 'session', agent: 'claude', sessionId: m.session_id })
+      const bad = billingProblem(m)
+      if (bad) out.push({ type: 'error', agent: 'claude', kind: 'auth', message: bad })
+    } else if (m.type === 'assistant') {
       if (m.message?.model === '<synthetic>') return [] // Claude Code's own error message; the result line carries it
       const blocks = Array.isArray(m.message?.content) ? m.message.content : []
       for (const b of blocks) {

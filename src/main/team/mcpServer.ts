@@ -61,8 +61,9 @@ export function hubCaller(sock: string, token: string, ctx: { runId: string; tas
       s.once('error', reject)
       s.once('connect', () => {
         socket = s
-        s.on('data', (d) => {
-          buf += d.toString()
+        s.setEncoding('utf8') // a character split across two reads stays whole
+        s.on('data', (d: string) => {
+          buf += d
           let i: number
           while ((i = buf.indexOf('\n')) !== -1) {
             const line = buf.slice(0, i)
@@ -95,8 +96,9 @@ export function hubCaller(sock: string, token: string, ctx: { runId: string; tas
 export function serveStdio(env: NodeJS.ProcessEnv = process.env) {
   const call = hubCaller(env.FORGE_TEAM_SOCK ?? '', env.FORGE_TEAM_TOKEN ?? '', { runId: env.FORGE_RUN ?? '', taskId: env.FORGE_TASK ?? '', agent: env.FORGE_AGENT ?? '' })
   let buf = ''
-  process.stdin.on('data', (d) => {
-    buf += d.toString()
+  process.stdin.setEncoding('utf8')
+  process.stdin.on('data', (d: string) => {
+    buf += d
     let i: number
     while ((i = buf.indexOf('\n')) !== -1) {
       const line = buf.slice(0, i).trim()

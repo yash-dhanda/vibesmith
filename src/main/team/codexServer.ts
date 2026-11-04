@@ -1,10 +1,9 @@
 import { spawn } from 'node:child_process'
-import { killTree } from '../agent/commands'
 import { codexLeanArgs, codexMcpArgs, type TeamLink } from './link'
 import type { ErrorKind, TeamEvent } from './events'
 import { classifyError } from './events'
 import { resolveCommand } from './bin'
-import { cleanEnv, makeSink, type RunOpts, type RunResult } from './process'
+import { cleanEnv, makeSink, stopTree, type RunOpts, type RunResult } from './process'
 import { unwrapShell } from './codexStream'
 import { relative } from 'node:path'
 
@@ -43,7 +42,7 @@ export function runCodexServer(o: CodexServerOpts, bin = 'codex'): Promise<RunRe
     let nextId = 0
     const waiting = new Map<number, { ok: (v: any) => void; fail: (e: Error) => void }>()
 
-    const cmd = resolveCommand(bin, ['app-server', ...(o.web === true ? ['-c', 'web_search="live"'] : []), ...codexLeanArgs(), ...(o.team ? codexMcpArgs(o.team) : [])])
+    const cmd = resolveCommand(bin, ['app-server', ...(o.web === true ? ['-c', 'web_search="live"'] : o.web === false ? ['-c', 'web_search="disabled"'] : []), ...codexLeanArgs(), ...(o.team ? codexMcpArgs(o.team) : [])])
     const child = spawn(cmd.cmd, cmd.args, { cwd: o.cwd, env: cleanEnv(process.env, { ...cmd.env, ...o.env }), stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32', windowsHide: true })
     const write = (m: object) => child.stdin.writable && child.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...m }) + '\n')
     const request = (method: string, params: object) =>
@@ -61,7 +60,7 @@ export function runCodexServer(o: CodexServerOpts, bin = 'codex'): Promise<RunRe
       o.signal?.removeEventListener('abort', onAbort)
       o.onHandle?.(null)
       for (const w of waiting.values()) w.fail(new Error('closed'))
-      killTree(child)
+      stopTree(child)
       resolve(sink.res)
     }
     const end = (kind: ErrorKind | null, message = '') => {
@@ -73,13 +72,19 @@ export function runCodexServer(o: CodexServerOpts, bin = 'codex'): Promise<RunRe
       finish()
     }
 
+    // Codex prints nothing while an approval or an MCP question waits for a person: that is not being stuck.
+    let asking = 0
+    const held = () => asking > 0 || !!o.hold?.()
     const idleMs = o.idleMs ?? 300_000
-    let idle = setTimeout(() => end('timeout', `no output for ${Math.round(idleMs / 1000)}s`), idleMs)
+    const maxMs = o.maxMs ?? 1_800_000
+    const onIdle = () => (held() ? poke() : end('timeout', `no output for ${Math.round(idleMs / 1000)}s`))
+    let idle = setTimeout(onIdle, idleMs)
     const poke = () => {
       clearTimeout(idle)
-      idle = setTimeout(() => end('timeout', `no output for ${Math.round(idleMs / 1000)}s`), idleMs)
+      idle = setTimeout(onIdle, idleMs)
     }
-    const max = setTimeout(() => end('timeout', `took longer than ${Math.round((o.maxMs ?? 1_800_000) / 60_000)} minutes`), o.maxMs ?? 1_800_000)
+    const onMax = () => (held() ? (max = setTimeout(onMax, Math.min(maxMs, 60_000))) : end('timeout', `took longer than ${Math.round(maxMs / 60_000)} minutes`))
+    let max = setTimeout(onMax, maxMs)
     const onAbort = () => {
       if (threadId && turnId) write({ id: ++nextId, method: 'turn/interrupt', params: { threadId, turnId } })
       setTimeout(() => end('aborted', 'stopped by user'), 1500).unref()
@@ -125,7 +130,13 @@ export function runCodexServer(o: CodexServerOpts, bin = 'codex'): Promise<RunRe
         if (m.method === 'item/commandExecution/requestApproval' || m.method === 'item/fileChange/requestApproval') {
           const p = m.params ?? {}
           const files = m.method.includes('fileChange')
-          const yes = o.onApproval ? await o.onApproval({ kind: files ? 'files' : 'command', title: files ? 'Codex wants to change files outside its folder' : `Codex wants to run: ${unwrapShell(String(p.command ?? '')).slice(0, 200)}`, detail: String(p.reason ?? ''), command: p.command ?? undefined }) : false
+          // Only a plain yes from the caller accepts, and only this one request (never 'acceptForSession' or a grantRoot): no answer, a no or a failure all decline.
+          let yes = false
+          asking++
+          try {
+            yes = o.write && o.onApproval ? (await o.onApproval({ kind: files ? 'files' : 'command', title: files ? 'Codex wants to change files outside its folder' : `Codex wants to run: ${unwrapShell(String(p.command ?? '')).slice(0, 200)}`, detail: String(p.reason ?? ''), command: p.command ?? undefined })) === true : false
+          } catch {}
+          asking--
           write({ id: m.id, result: { decision: yes ? 'accept' : 'decline' } })
         } else write({ id: m.id, error: { code: -32601, message: 'Forge does not handle this request' } })
         return
@@ -180,9 +191,11 @@ export function runCodexServer(o: CodexServerOpts, bin = 'codex'): Promise<RunRe
       }
     }
 
-    child.stdout.on('data', (d: Buffer) => {
+    child.stdout.setEncoding('utf8') // a character split across two reads stays whole
+    child.stderr.setEncoding('utf8')
+    child.stdout.on('data', (d: string) => {
       poke()
-      buf += d.toString()
+      buf += d
       let i: number
       while ((i = buf.indexOf('\n')) !== -1) {
         const line = buf.slice(0, i).trim()
@@ -194,7 +207,7 @@ export function runCodexServer(o: CodexServerOpts, bin = 'codex'): Promise<RunRe
       }
     })
     let tail = ''
-    child.stderr.on('data', (d: Buffer) => (poke(), (tail = (tail + d.toString()).slice(-1500))))
+    child.stderr.on('data', (d: string) => (poke(), (tail = (tail + d).slice(-1500))))
     child.stdin.on('error', () => {})
     child.on('error', (e: NodeJS.ErrnoException) => end(e.code === 'ENOENT' ? 'missing' : 'other', e.code === 'ENOENT' ? `${bin} is not installed or not on PATH` : e.message))
     child.on('close', (code) => {
@@ -207,7 +220,8 @@ export function runCodexServer(o: CodexServerOpts, bin = 'codex'): Promise<RunRe
       try {
         await request('initialize', { clientInfo: { name: 'forge', title: 'Forge', version: '0.1.0' } })
         write({ method: 'initialized' })
-        const common = { cwd: o.cwd, model: o.model, sandbox: o.write ? 'workspace-write' : 'read-only', approvalPolicy: 'on-request' }
+        // A read-only run never leaves its sandbox: with 'never' the sandbox is the gate (as in exec) and nothing can be approved into a write.
+        const common = { cwd: o.cwd, model: o.model, sandbox: o.write ? 'workspace-write' : 'read-only', approvalPolicy: o.write ? 'on-request' : 'never' }
         const started = await request(o.resume ? 'thread/resume' : 'thread/start', o.resume ? { threadId: o.resume, ...common } : common)
         threadId = started.thread.id
         push({ type: 'session', agent: 'codex', sessionId: threadId })

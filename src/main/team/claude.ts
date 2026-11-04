@@ -1,5 +1,5 @@
 import { makeClaudeParser } from './claudeStream'
-import { linkEnv, PERMISSION_TOOL, SERVER, TOOL_TIMEOUT_SEC, type TeamLink } from './link'
+import { PERMISSION_TOOL, SERVER, TOOL_TIMEOUT_SEC, type TeamLink } from './link'
 import { runCli, type RunOpts, type RunResult } from './process'
 
 export type ClaudeOpts = RunOpts & {
@@ -19,6 +19,9 @@ export type ClaudeOpts = RunOpts & {
 // What a build task may run without asking. Anything else is denied in a headless run, which is the point: it comes back as a failed
 // tool call the orchestrator can turn into an approval request.
 export const CLAUDE_ALLOW = ['Bash(npm *)', 'Bash(npx *)', 'Bash(node *)', 'Bash(python3 *)', 'Bash(git status *)', 'Bash(git diff *)', 'Bash(git log *)', 'Bash(git add *)', 'Bash(git commit *)', 'Bash(ls *)', 'Bash(cat *)', 'Bash(mkdir *)']
+// With the team server attached, the policy decides every command, so only the harmless ones skip it: a broader list would pre-approve
+// `npm publish` or `npx vercel deploy`, and "Ask before risky actions" would never be asked. No cat: it would skip the secrets check.
+export const CLAUDE_ALLOW_GATED = ['Bash(npm test *)', 'Bash(npm run test *)', 'Bash(npm run build *)', 'Bash(npm run lint *)', 'Bash(git status *)', 'Bash(git diff *)', 'Bash(git log *)', 'Bash(ls *)']
 // Never, in any role. With the team server attached, everything else risky (deploys, secrets, destructive commands) is not denied
 // but sent to the policy, which asks the user. Without it, those are denied outright.
 export const CLAUDE_DENY = ['Bash(git push *)', 'Bash(sudo *)', 'Bash(rm -rf /*)', 'Bash(rm -rf ~*)']
@@ -32,12 +35,14 @@ export function claudeArgs(o: ClaudeOpts): string[] {
   if (o.systemAppend) a.push('--append-system-prompt', o.systemAppend)
   if (o.addDirs?.length) a.push('--add-dir', ...o.addDirs)
   if (o.mcpConfig) a.push('--mcp-config', o.mcpConfig, '--strict-mcp-config')
-  const allow = [...(o.allow ?? (o.write ? CLAUDE_ALLOW : [])), ...(o.web === true ? ['WebSearch', 'WebFetch'] : []), ...(o.team ? [`mcp__${SERVER}`] : [])]
+  const allow = [...(o.allow ?? (o.write ? (o.team ? CLAUDE_ALLOW_GATED : CLAUDE_ALLOW) : [])), ...(o.web === true ? ['WebSearch', 'WebFetch'] : []), ...(o.team ? [`mcp__${SERVER}`] : [])]
   if (allow.length) a.push('--allowedTools', allow.join(','))
   if (o.team) a.push('--permission-prompt-tool', PERMISSION_TOOL)
-  a.push('--disallowedTools', [...(o.deny ?? (o.team ? CLAUDE_DENY : CLAUDE_DENY_NO_GATE)), ...(o.web === false ? ['WebSearch', 'WebFetch'] : [])].join(','))
+  // --add-dir folders are readable, never writable: acceptEdits would otherwise let Claude edit the skill libraries, the project's .forge and the attachments (rules beat the mode)
+  const readOnlyDirs = o.write ? (o.addDirs ?? []).flatMap((d) => { const p = '//' + d.replace(/\\/g, '/').replace(/^([a-z]):/i, '$1').replace(/^\/+/, '') + '/**'; return [`Edit(${p})`, `Write(${p})`, `NotebookEdit(${p})`] }) : []
+  a.push('--disallowedTools', [...(o.deny ?? (o.team ? CLAUDE_DENY : CLAUDE_DENY_NO_GATE)), ...readOnlyDirs, ...(o.web === false ? ['WebSearch', 'WebFetch'] : [])].join(','))
   return a
 }
 
 export const runClaude = (o: ClaudeOpts, bin = 'claude'): Promise<RunResult> =>
-  runCli('claude', bin, claudeArgs(o), makeClaudeParser(o.cwd), o.team ? { ...o, env: { ...linkEnv(o.team), MCP_TOOL_TIMEOUT: String(TOOL_TIMEOUT_SEC * 1000), ...o.env } } : o)
+  runCli('claude', bin, claudeArgs(o), makeClaudeParser(o.cwd), o.team ? { ...o, env: { MCP_TOOL_TIMEOUT: String(TOOL_TIMEOUT_SEC * 1000), ...o.env } } : o)

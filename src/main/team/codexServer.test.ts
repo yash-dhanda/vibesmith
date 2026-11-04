@@ -79,4 +79,46 @@ describe.skipIf(process.platform === 'win32')('codex app-server adapter', () => 
     const a = await runCodexServer({ cwd: process.cwd(), prompt: 'go', write: true, model: 'm', signal: ctl.signal }, hang)
     expect(a.error?.kind).toBe('aborted')
   })
+
+  // a stand-in that reports how the thread was started, then asks for one approval and reports the answer
+  const PROBE = `
+rl.on('line',(l)=>{const m=JSON.parse(l);
+ if(m.method==='initialize') out({id:m.id,result:{}});
+ else if(m.method==='thread/start'){ started=m.params; out({id:m.id,result:{thread:{id:'T'}}}); }
+ else if(m.method==='turn/start'){ out({id:m.id,result:{turn:{id:'U'}}}); out({id:5,method:'item/fileChange/requestApproval',params:{reason:'outside',grantRoot:'/home/u'}}); }
+ else if(m.id===5){ out({method:'item/completed',params:{item:{type:'agentMessage',id:'m',text:JSON.stringify({policy:started.approvalPolicy,sandbox:started.sandbox,answer:m.result,args:process.argv.slice(2)}),phase:'final_answer'}}}); out({method:'turn/completed',params:{turn:{id:'U',status:'completed'}}}); }
+});`
+  const probe = (b: string) => fake(`let started=null;${b}`)
+
+  it('a read-only run never gets approvals: the sandbox is the gate, so nothing can be accepted into a write', async () => {
+    const r = await runCodexServer({ cwd: process.cwd(), prompt: 'review', write: false, model: 'm', web: false, onApproval: async () => true }, probe(PROBE))
+    const seen = JSON.parse(r.text)
+    expect(seen).toMatchObject({ policy: 'never', sandbox: 'read-only' })
+    expect(seen.args).toEqual(expect.arrayContaining(['web_search="disabled"']))
+    expect(seen.answer).toEqual({ decision: 'decline' }) // and if it asks anyway, the answer is no
+  })
+
+  it('declines when the caller throws or does not say a plain yes, and never grants a root', async () => {
+    const write = (onApproval: any) => runCodexServer({ cwd: process.cwd(), prompt: 'go', write: true, model: 'm', onApproval }, probe(PROBE))
+    expect(JSON.parse((await write(async () => { throw new Error('boom') })).text)).toMatchObject({ policy: 'on-request', answer: { decision: 'decline' } })
+    expect(JSON.parse((await write(async () => 'yes')).text).answer).toEqual({ decision: 'decline' })
+    expect(JSON.parse((await write(async () => true)).text).answer).toEqual({ decision: 'accept' })
+  })
+
+  it('does not time out an agent while its approval waits for a person', async () => {
+    const r = await runCodexServer({ cwd: process.cwd(), prompt: 'go', write: true, model: 'm', idleMs: 300, onApproval: () => new Promise((res) => setTimeout(() => res(true), 1000)) }, probe(PROBE))
+    expect(r.ok).toBe(true)
+    expect(JSON.parse(r.text).answer).toEqual({ decision: 'accept' })
+  })
+
+  it('keeps a character that arrives split across two reads', async () => {
+    const split = fake(`rl.on('line',(l)=>{const m=JSON.parse(l);
+ if(m.method==='initialize') out({id:m.id,result:{}});
+ else if(m.method==='thread/start') out({id:m.id,result:{thread:{id:'T'}}});
+ else if(m.method==='turn/start'){ out({id:m.id,result:{turn:{id:'U'}}});
+   const b=Buffer.from(JSON.stringify({method:'item/completed',params:{item:{type:'agentMessage',id:'m',text:'na\\u00efve caf\\u00e9',phase:'final_answer'}}})+'\\n'+JSON.stringify({method:'turn/completed',params:{turn:{id:'U',status:'completed'}}})+'\\n');
+   const cut=b.indexOf(0xc3)+1; process.stdout.write(b.subarray(0,cut)); setTimeout(()=>process.stdout.write(b.subarray(cut)),100); }
+});`)
+    expect((await runCodexServer({ cwd: process.cwd(), prompt: 'go', write: true, model: 'm' }, split)).text).toBe('naïve café')
+  })
 })

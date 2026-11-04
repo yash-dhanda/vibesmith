@@ -1,5 +1,6 @@
+import { EventEmitter } from 'node:events'
 import { afterEach, describe, expect, it } from 'vitest'
-import { TeamHub } from './hub'
+import { hubBusy, TeamHub } from './hub'
 import { handleRpc, hubCaller, TOOLS } from './mcpServer'
 
 let hub: TeamHub | null = null
@@ -39,5 +40,17 @@ describe('hub + mcp server', () => {
     expect(await call('inbox', {})).toBe('fast')
     release('allowed')
     expect(await slow).toBe('allowed')
+  })
+
+  it('stops counting a pending call when the agent that made it goes away', async () => {
+    const h = new TeamHub(() => new Promise(() => {}))
+    const sock: any = new EventEmitter()
+    Object.assign(sock, { writable: true, write: () => true, setEncoding: () => {} })
+    ;(h as any).serve(sock)
+    sock.emit('data', JSON.stringify({ id: 1, token: h.token, op: 'ask', ctx: { runId: 'rx', taskId: 'tx', agent: 'claude' } }) + '\n')
+    await new Promise((r) => setTimeout(r, 20))
+    expect(hubBusy('rx', 'tx')).toBe(true)
+    sock.emit('close')
+    expect(hubBusy('rx', 'tx')).toBe(false)
   })
 })

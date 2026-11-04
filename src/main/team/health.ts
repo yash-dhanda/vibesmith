@@ -39,7 +39,7 @@ export function judgeClaudeAuth(statusJson: string): { ok: boolean; detail: stri
 }
 
 export function judgeCodexAuth(statusText: string): { ok: boolean; detail: string; fix?: string } {
-  const t = statusText.trim().split('\n')[0] ?? ''
+  const t = statusText.split('\n').find((l) => /logged in/i.test(l))?.trim() ?? '' // not the first line: codex may print a warning before it
   if (!/logged in/i.test(statusText) || /not logged in/i.test(statusText)) return { ok: false, detail: 'Codex is not signed in.', fix: 'Run `codex login` and choose "Sign in with ChatGPT".' }
   if (/api key/i.test(t)) return { ok: false, detail: 'Codex is signed in with an API key, which bills per use instead of using your ChatGPT plan.', fix: 'Run `codex logout`, then `codex login` and choose "Sign in with ChatGPT".' }
   return { ok: true, detail: t || 'signed in with your ChatGPT plan' }
@@ -106,8 +106,9 @@ export function codexLimits(bin = 'codex', timeoutMs = 12_000): Promise<LimitInf
     const send = (m: object) => child.stdin?.write(JSON.stringify({ jsonrpc: '2.0', ...m }) + '\n')
     child.on('error', () => end(null))
     child.on('close', () => end(null))
-    child.stdout?.on('data', (d: Buffer) => {
-      buf += d.toString()
+    child.stdout?.setEncoding('utf8')
+    child.stdout?.on('data', (d: string) => {
+      buf += d
       let i: number
       while ((i = buf.indexOf('\n')) !== -1) {
         const line = buf.slice(0, i)

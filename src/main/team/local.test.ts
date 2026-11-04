@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -44,6 +44,22 @@ describe('local agent', () => {
     expect(existsSync(join(dir, 'x.txt'))).toBe(false)
     expect(await guardedBox(dir, false).run('create_file', { path: 'y.txt', content: 'z' })).toMatch(/read-only/)
     expect(r.text).toContain('VERDICT')
+  })
+
+  it('read-only jobs run no commands, and build jobs cannot push, touch the shared stash or write outside their folder', async () => {
+    writeFileSync(join(dir, 'a.txt'), 'orig')
+    expect(await guardedBox(dir, false).run('run_command', { command: 'echo changed > a.txt' })).toMatch(/read-only/)
+    expect(readFileSync(join(dir, 'a.txt'), 'utf8')).toBe('orig')
+    const box = guardedBox(dir, true)
+    for (const command of ['git push origin HEAD', 'git -C . push', 'git stash', 'cp a.txt /home/u/code/other/a.txt']) expect(await box.run('run_command', { command }), command).toMatch(/not allowed/)
+    expect(await box.run('run_command', { command: 'echo fine' })).toContain('fine')
+  })
+  it('a command the policy would ask about goes to the approval hook, and is refused without one or without a yes', async () => {
+    const asked: string[] = []
+    expect(await guardedBox(dir, true).run('run_command', { command: 'rm -rf build' })).toMatch(/not allowed/)
+    expect(await guardedBox(dir, true, async (a) => (asked.push(a.command ?? ''), false)).run('run_command', { command: 'rm -rf build' })).toMatch(/not allowed/)
+    expect(await guardedBox(dir, true, async () => true).run('run_command', { command: 'rm -rf build' })).not.toMatch(/not allowed/)
+    expect(asked).toEqual(['rm -rf build'])
   })
 
   it('reports an unreachable model as an error the team can read', async () => {

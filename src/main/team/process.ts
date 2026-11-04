@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { killTree } from '../agent/commands'
 import { resolveCommand } from './bin'
 import { classifyError, type AgentName, type ErrorKind, type Parser, type TeamEvent } from './events'
@@ -10,6 +10,7 @@ export type RunOpts = {
   onEvent?: (e: TeamEvent) => void
   idleMs?: number // no output for this long: the agent is stuck
   maxMs?: number // hard ceiling for the whole run
+  hold?: () => boolean // true while something is waiting on the agent's behalf (an approval or question for the user): the idle and total limits do not run
   env?: Record<string, string>
 }
 export type RunResult = {
@@ -28,6 +29,38 @@ export function cleanEnv(env: NodeJS.ProcessEnv = process.env, extra: Record<str
   const out: NodeJS.ProcessEnv = {}
   for (const [k, v] of Object.entries(env)) if (!DROP.test(k)) out[k] = v
   return { ...out, ...extra }
+}
+
+// Asks an agent to stop (SIGTERM), then kills it after a grace period. Claude Code starts its commands detached, in their own process
+// groups, so a plain kill of the agent's group would leave them running: the agent's descendants are collected first and stopped with it.
+export function stopTree(child: ChildProcess, graceMs = 3000) {
+  if (!child.pid) return
+  if (process.platform === 'win32') return killTree(child)
+  const kids = descendants(child.pid)
+  killTree(child, 'SIGTERM')
+  for (const pid of kids) signal(pid, 'SIGTERM')
+  setTimeout(() => {
+    killTree(child)
+    for (const pid of kids) signal(pid, 'SIGKILL')
+  }, graceMs).unref()
+}
+const signal = (pid: number, sig: NodeJS.Signals) => {
+  try {
+    process.kill(pid, sig)
+  } catch {}
+}
+function descendants(root: number): number[] {
+  try {
+    const rows = execFileSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8', timeout: 2000 }).split('\n').map((l) => l.trim().split(/\s+/).map(Number))
+    const found = new Set<number>()
+    for (let grew = true; grew; ) {
+      grew = false
+      for (const [pid, ppid] of rows) if (!found.has(pid) && (ppid === root || found.has(ppid))) (found.add(pid), (grew = true))
+    }
+    return [...found]
+  } catch {
+    return []
+  }
 }
 
 // The agents' output is not ours to trust: a line that breaks a parser must cost one line, not the whole app.
@@ -92,31 +125,42 @@ export function runCli(agent: AgentName, bin: string, args: string[], parse: Par
     const child = spawn(cmd.cmd, cmd.args, { cwd: o.cwd, env: cleanEnv(process.env, { ...cmd.env, ...o.env }), stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32', windowsHide: true })
     const stop = (kind: ErrorKind, message: string) => {
       if (!res.error) push({ type: 'error', agent, kind, message })
-      killTree(child)
+      stopTree(child)
     }
-    let idle = setTimeout(() => stop('timeout', `no output for ${Math.round((o.idleMs ?? 300_000) / 1000)}s`), o.idleMs ?? 300_000)
+    // An agent waiting for the user (approval, question) prints nothing for as long as the person takes: that is not being stuck.
+    const idleMs = o.idleMs ?? 300_000
+    const maxMs = o.maxMs ?? 1_800_000
+    const onIdle = () => (o.hold?.() ? poke() : stop('timeout', `no output for ${Math.round(idleMs / 1000)}s`))
+    let idle = setTimeout(onIdle, idleMs)
     const poke = () => {
       clearTimeout(idle)
-      idle = setTimeout(() => stop('timeout', `no output for ${Math.round((o.idleMs ?? 300_000) / 1000)}s`), o.idleMs ?? 300_000)
+      idle = setTimeout(onIdle, idleMs)
     }
-    const max = setTimeout(() => stop('timeout', `took longer than ${Math.round((o.maxMs ?? 1_800_000) / 60_000)} minutes`), o.maxMs ?? 1_800_000)
+    const onMax = () => (o.hold?.() ? (max = setTimeout(onMax, Math.min(maxMs, 60_000))) : stop('timeout', `took longer than ${Math.round(maxMs / 60_000)} minutes`))
+    let max = setTimeout(onMax, maxMs)
     const onAbort = () => stop('aborted', 'stopped by user')
     if (o.signal?.aborted) onAbort()
     else o.signal?.addEventListener('abort', onAbort, { once: true })
 
-    child.stdout.on('data', (d: Buffer) => {
+    child.stdout.setEncoding('utf8') // a character split across two reads stays whole
+    child.stderr.setEncoding('utf8')
+    child.stdout.on('data', (d: string) => {
       poke()
-      buf += d.toString()
+      buf += d
       let i: number
       while ((i = buf.indexOf('\n')) !== -1) {
         const line = buf.slice(0, i).trim()
         buf = buf.slice(i + 1)
-        if (line) safeParse(parse, line).forEach(push)
+        if (!line) continue
+        for (const e of safeParse(parse, line)) {
+          push(e)
+          if (e.type === 'error' && e.kind === 'auth') stopTree(child) // signed in the wrong way (see claudeStream): nothing more should be spent
+        }
       }
     })
-    child.stderr.on('data', (d: Buffer) => {
+    child.stderr.on('data', (d: string) => {
       poke()
-      tail = (tail + d.toString()).slice(-2000)
+      tail = (tail + d).slice(-2000)
     })
     child.stdin.on('error', () => {}) // the process may exit before reading its prompt
     child.stdin.end(o.prompt)
