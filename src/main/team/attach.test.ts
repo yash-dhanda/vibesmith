@@ -1,9 +1,9 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { attachmentsBlock, cleanAttachments, imagePaths, kindOf, saveAttachments, safeName, sweepAttachments } from './attach'
+import { attachmentsBlock, cleanAttachments, imagePaths, kindOf, PartUploads, saveAttachments, safeName, sweepAttachments } from './attach'
 import { codexArgs } from './codex'
 
 const b64 = (s: string) => Buffer.from(s).toString('base64')
@@ -89,5 +89,81 @@ describe('crew attachments', () => {
     for (const a of [used, stale]) utimesSync(join(a.path, '..'), old, old)
     sweepAttachments(root, [used])
     expect([used, fresh, stale].map((a) => existsSync(a.path))).toEqual([true, true, false])
+  })
+})
+
+describe('attachments sent in parts', () => {
+  const id = 'upload-12345678'
+  const part = (index: number, total: number, text: string, extra: object = {}) => ({ uploadId: id, index, total, name: 'big.pdf', data: b64(text), ...extra })
+  const leftovers = (root: string) => readdirSync(root).filter((n) => n.startsWith('.part-'))
+
+  it('puts the pieces back together into the same bytes', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'att-'))
+    const up = new PartUploads(root)
+    expect(await up.add(part(0, 3, 'hello '))).toBeNull()
+    expect(await up.add(part(1, 3, 'big '))).toBeNull()
+    const a = (await up.add(part(2, 3, 'world')))!
+    expect([a.name, a.kind, a.size]).toEqual(['big.pdf', 'file', 15])
+    expect(readFileSync(a.path, 'utf8')).toBe('hello big world')
+    expect(a.path.startsWith(root)).toBe(true)
+    expect(leftovers(root)).toEqual([])
+  })
+
+  it('refuses a piece that is out of order or repeated, and forgets the upload', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'att-'))
+    const up = new PartUploads(root)
+    await up.add(part(0, 3, 'a'))
+    await expect(up.add(part(2, 3, 'c'))).rejects.toThrow(/out of order/)
+    expect(leftovers(root)).toEqual([])
+    await up.add(part(0, 3, 'a'))
+    await up.add(part(1, 3, 'b'))
+    await expect(up.add(part(1, 3, 'b'))).rejects.toThrow(/out of order/)
+    await expect(up.add(part(1, 3, 'b'))).rejects.toThrow(/out of order/) // the upload is gone
+    expect(leftovers(root)).toEqual([])
+  })
+
+  it('refuses a bad id, a bad part count and a piece bigger than 8 MB', async () => {
+    const up = new PartUploads(mkdtempSync(join(tmpdir(), 'att-')))
+    for (const uploadId of ['short', '../../etc/passwd-x', 'has space 12345', 'x'.repeat(65)]) await expect(up.add(part(0, 1, 'a', { uploadId }))).rejects.toThrow(/id/)
+    await expect(up.add(part(0, 41, 'a'))).rejects.toThrow(/part number/)
+    await expect(up.add(part(1, 1, 'a'))).rejects.toThrow(/part number/)
+    await expect(up.add(part(0, 1, 'a', { data: Buffer.alloc(8 * 1024 * 1024 + 1).toString('base64') }))).rejects.toThrow(/too big/)
+  })
+
+  it('refuses a file over 200 MB and deletes what it had', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'att-'))
+    const up = new PartUploads(root)
+    const chunk = Buffer.alloc(8 * 1024 * 1024).toString('base64')
+    let err: Error | undefined
+    for (let i = 0; i < 26 && !err; i++) await up.add({ uploadId: id, index: i, total: 26, name: 'huge.bin', data: chunk }).catch((e) => { err = e })
+    expect(err?.message).toMatch(/too big/)
+    expect(leftovers(root)).toEqual([])
+  })
+
+  it('deletes an upload nobody finishes', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'att-'))
+    const up = new PartUploads(root, 30)
+    await up.add(part(0, 2, 'a'))
+    expect(leftovers(root)).toHaveLength(1)
+    await new Promise((r) => setTimeout(r, 120))
+    expect(leftovers(root)).toEqual([])
+    await expect(up.add(part(1, 2, 'b'))).rejects.toThrow(/out of order/)
+  })
+
+  it('allows only a few uploads open at once', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'att-'))
+    const up = new PartUploads(root)
+    for (let i = 0; i < 4; i++) await up.add(part(0, 2, 'a', { uploadId: `upload-0000000${i}` }))
+    await expect(up.add(part(0, 2, 'a', { uploadId: 'upload-00000009' }))).rejects.toThrow(/Too many/)
+    expect(leftovers(root)).toHaveLength(4)
+  })
+
+  it('neutralises a path in the file name', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'att-'))
+    const a = (await new PartUploads(root).add(part(0, 1, 'x', { name: '../../evil name.png' })))!
+    expect(a.name).toBe('evil_name.png')
+    expect(a.kind).toBe('image')
+    expect(a.path.startsWith(root)).toBe(true)
+    expect(existsSync(join(root, '..', 'evil_name.png'))).toBe(false)
   })
 })

@@ -25,6 +25,7 @@ const api = {
   remotePair: (): Promise<{ url: string; qr: string }> => ipcRenderer.invoke('remote:pair'),
   remoteRevoke: (id: string): Promise<import('../main/remote').RemoteStatus> => ipcRenderer.invoke('remote:revoke', id),
   teamAttach: (files: { name: string; data: string }[]): Promise<import('../main/team/attach').TeamAttachment[]> => ipcRenderer.invoke('team:attach', files),
+  teamAttachPart: (part: { uploadId: string; index: number; total: number; name: string; data: string }): Promise<import('../main/team/attach').TeamAttachment[]> => ipcRenderer.invoke('team:attach-part', part), // [] until the last part, then the one stored file
   skillsCatalog: (): Promise<{ entries: import('../main/skillCatalog').CatalogEntry[]; packs: { id: string; name: string; blurb: string; repos: string[] }[]; categories: Record<string, string> }> => ipcRenderer.invoke('skills:catalog'),
   skillsList: (): Promise<SkillRepo[]> => ipcRenderer.invoke('skills:list'),
   skillsAdd: (url: string): Promise<SkillRepo> => ipcRenderer.invoke('skills:add', url),

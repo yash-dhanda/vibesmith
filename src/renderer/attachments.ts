@@ -33,14 +33,37 @@ export function nameFor(f: File, now = new Date()): File {
 }
 
 // Base64 without building it in script: the browser encodes off the main thread and reports progress as it reads.
-export function readBase64(file: File, progress: (fraction: number) => void): Promise<string> {
+export function readBase64(file: Blob, progress: (fraction: number) => void): Promise<string> {
   return new Promise((resolve, reject) => {
     const r = new FileReader()
     r.onprogress = (e) => { if (e.lengthComputable) progress(e.loaded / e.total) }
     r.onload = () => resolve(String(r.result).slice(String(r.result).indexOf(',') + 1))
-    r.onerror = () => reject(r.error ?? new Error(`Could not read ${file.name}.`))
+    r.onerror = () => reject(r.error ?? new Error(`Could not read ${(file as File).name ?? 'the file'}.`))
     r.readAsDataURL(file)
   })
+}
+
+const PART = 8 * 1024 * 1024
+const BIG = 24 * 1024 * 1024
+
+// A Crew file goes in one call, or, over 24 MB, in 8 MB parts (a phone cannot send a 200 MB request). Parts keep the progress honest.
+export async function uploadCrewFile(file: File, progress: (fraction: number) => void): Promise<Uploaded> {
+  if (file.size <= BIG) {
+    const data = await readBase64(file, progress); progress(1)
+    const [a] = await window.forge.teamAttach([{ name: file.name, data }])
+    if (!a) throw new Error(`Forge did not keep ${file.name}.`)
+    return a
+  }
+  const total = Math.ceil(file.size / PART)
+  const uploadId = (crypto.randomUUID?.() ?? `${Date.now()}${Math.random().toString(36).slice(2)}`).replace(/[^\w-]/g, '')
+  let a: Uploaded | undefined
+  for (let index = 0; index < total; index++) {
+    const data = await readBase64(file.slice(index * PART, (index + 1) * PART), () => {})
+    ;[a] = await window.forge.teamAttachPart({ uploadId, index, total, name: file.name, data })
+    progress((index + 1) / total)
+  }
+  if (!a) throw new Error(`Forge did not keep ${file.name}.`)
+  return a
 }
 
 export function attachmentStrip(o: Options) {

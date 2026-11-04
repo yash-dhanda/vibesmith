@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { basename, extname, join, resolve, sep } from 'node:path'
 
@@ -45,16 +45,74 @@ export async function saveAttachments(root: string, files: { name: string; data:
   const dir = join(root, randomBytes(5).toString('hex'))
   mkdirSync(dir, { recursive: true })
   const out: TeamAttachment[] = []
-  for (const [i, f] of decoded.entries()) {
-    const name = `${String(i + 1).padStart(2, '0')}-${f.name}`
-    const path = join(dir, name)
-    writeFileSync(path, f.buf)
-    const kind = kindOf(f.name)
-    const att: TeamAttachment = { id: randomBytes(4).toString('hex'), name: f.name, path, kind, size: f.buf.length }
-    if (kind === 'video') Object.assign(att, await frames(path, dir, name.replace(/\.[^.]+$/, '')))
-    out.push(att)
-  }
+  for (const [i, f] of decoded.entries()) out.push(await place(dir, i, f.name, f.buf.length, (path) => writeFileSync(path, f.buf)))
   return out
+}
+
+// Names, stores and (for a video) takes the stills of one file; `put` puts the bytes at the path it is given.
+async function place(dir: string, i: number, name: string, size: number, put: (path: string) => void): Promise<TeamAttachment> {
+  const file = `${String(i + 1).padStart(2, '0')}-${name}`
+  const path = join(dir, file)
+  put(path)
+  const kind = kindOf(name)
+  const att: TeamAttachment = { id: randomBytes(4).toString('hex'), name, path, kind, size }
+  if (kind === 'video') Object.assign(att, await frames(path, dir, file.replace(/\.[^.]+$/, '')))
+  return att
+}
+
+export type AttachPart = { uploadId: string; index: number; total: number; name: string; data: string }
+const MAX_PART = 8 * 1024 * 1024
+const MAX_PARTS = 40
+const MAX_OPEN = 4
+const IDLE_MS = 10 * 60_000
+
+// One big file arriving in pieces (the phone cannot send 200 MB in one request). Pieces are appended to a temp file in the attachment
+// folder; the last one turns it into an ordinary attachment. Any error, or ten idle minutes, deletes the temp file.
+export class PartUploads {
+  private open = new Map<string, { tmp: string; name: string; next: number; total: number; size: number; timer: NodeJS.Timeout }>()
+  constructor(private root: string, private idleMs = IDLE_MS) {}
+
+  private drop(id: string) {
+    const u = this.open.get(id)
+    if (!u) return
+    clearTimeout(u.timer)
+    this.open.delete(id)
+    rmSync(u.tmp, { force: true })
+  }
+
+  async add(p: AttachPart): Promise<TeamAttachment | null> {
+    const id = String(p?.uploadId ?? '')
+    if (!/^[A-Za-z0-9_-]{8,64}$/.test(id)) throw new Error('bad upload id')
+    const { index, total } = p
+    if (!Number.isInteger(total) || total < 1 || total > MAX_PARTS || !Number.isInteger(index) || index < 0 || index >= total) throw new Error('bad part number')
+    let u = this.open.get(id)
+    try {
+      if (index === 0 ? !!u : !u || u.next !== index || u.total !== total) throw new Error('Upload parts arrived out of order. Attach the file again.')
+      const buf = Buffer.from(String(p.data ?? ''), 'base64')
+      if (buf.length > MAX_PART) throw new Error('That part of the file is too big.')
+      if (!u) {
+        if (this.open.size >= MAX_OPEN) throw new Error('Too many files are uploading at once. Try again in a moment.')
+        mkdirSync(this.root, { recursive: true })
+        u = { tmp: join(this.root, `.part-${id}`), name: safeName(p.name), next: 0, total, size: 0, timer: undefined as never }
+        this.open.set(id, u)
+        writeFileSync(u.tmp, '')
+      }
+      u.size += buf.length
+      if (u.size > MAX_FILE) throw new Error(`${u.name} is too big (up to ${MAX_FILE / 1024 / 1024} MB).`)
+      appendFileSync(u.tmp, buf)
+      u.next++
+      clearTimeout(u.timer)
+      if (u.next < u.total) { u.timer = setTimeout(() => this.drop(id), this.idleMs); u.timer.unref(); return null }
+      const dir = join(this.root, randomBytes(5).toString('hex'))
+      mkdirSync(dir, { recursive: true })
+      const done = u
+      this.open.delete(id)
+      try { return await place(dir, 0, done.name, done.size, (path) => renameSync(done.tmp, path)) } catch (e) { rmSync(dir, { recursive: true, force: true }); rmSync(done.tmp, { force: true }); throw e }
+    } catch (e) {
+      this.drop(id)
+      throw e
+    }
+  }
 }
 
 // Only attachments that really are inside Forge's attachment folder are accepted back from the window.

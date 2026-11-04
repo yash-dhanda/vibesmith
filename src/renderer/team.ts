@@ -9,7 +9,7 @@ import { historyButton } from './projectHistory'
 import { AGENT_FULL, AGENT_NAME, N } from './names'
 import { RUN_GLYPH, STEP_GLYPH, TASK_GLYPH, TOOL_GLYPH } from './glyphs'
 import { buildStage, pushCode, type StageCode } from './teamStage'
-import { attachmentStrip, kindOf, readBase64, sentChips } from './attachments'
+import { attachmentStrip, kindOf, sentChips, uploadCrewFile } from './attachments'
 import type { TeamAttachment } from '../main/team/attach'
 import { cacheGet, cacheSet, isRemote, onResync, phone, toggleDrawer } from './phone'
 import { colorize, mountDiff } from './codeColor'
@@ -172,14 +172,11 @@ async function showEntry() {
   const goal = document.createElement('textarea'); goal.rows = 5; goal.placeholder = 'Describe what the crew should build'; goal.setAttribute('aria-label', 'Crew goal')
   // Files go to Forge as soon as they are added, so the run only carries their stored locations.
   const att = attachmentStrip({
-    host: form, textarea: goal, max: 12, maxBytes: (isRemote() ? 60 : 200) * 1024 * 1024, limits: `Up to 12 files per run, ${isRemote() ? 60 : 200} MB each.`, // a phone sends each file in one request
+    host: form, textarea: goal, max: 12, maxBytes: 200 * 1024 * 1024, limits: 'Up to 12 files per run, 200 MB each.',
     note: 'Agents get the file locations and look at pictures and video frames themselves.',
     upload: async (file, progress) => {
       if (replay) return { id: String(file.size), name: file.name, size: file.size, path: `/tmp/forge-replay/${file.name}`, kind: kindOf(file), frames: kindOf(file) === 'video' ? ['/tmp/forge-replay/f1.jpg'] : undefined }
-      const data = await readBase64(file, progress); progress(1)
-      const [a] = await window.forge.teamAttach([{ name: file.name, data }])
-      if (!a) throw new Error(`Forge did not keep ${file.name}.`)
-      return a
+      return uploadCrewFile(file, progress)
     },
     onChange: () => { start.disabled = !ready.length || att.busy(); start.title = att.busy() ? 'Waiting for the files to finish uploading' : '' },
   })

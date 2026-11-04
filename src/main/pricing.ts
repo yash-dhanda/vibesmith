@@ -8,7 +8,7 @@ export type Price = { input: number; output: number; tier?: { above: number; inp
 const PRICES: Record<string, Price> = {
   'anthropic:claude-sonnet-5-5': { input: 2, output: 10 },
   'anthropic:claude-opus-5-5': { input: 4, output: 20 },
-  'anthropic:claude-haiku-5-5': { input: 0.1, output: 0.5, tier: { above: 100_000, input: 0.5, output: 2.5 } }, // Forge's cloud runs trim only above ~112K, so calls over 100K do happen
+  'anthropic:claude-haiku-5-5': { input: 0.1, output: 0.5, tier: { above: 100_000, input: 0.5, output: 2.5 } }, // cloud runs trim at 75% of the model's window (150K for Claude), so calls over 100K do happen
 }
 
 export const priceFor = (model: string): Price | null => PRICES[model] ?? null

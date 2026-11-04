@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import { git, initRepo, isRepo } from '../checkpoint'
 import { readdirSync } from 'node:fs'
 import { isAgent, type AgentName } from './events'
-import { cleanAttachments, saveAttachments, sweepAttachments } from './attach'
+import { cleanAttachments, PartUploads, saveAttachments, sweepAttachments, type AttachPart } from './attach'
 import { checkTeamTools, codexLimits, codexModels, localModels, type Health, type LimitInfo } from './health'
 import { TeamOrchestrator } from './orchestrator'
 import { realRunner } from './runner'
@@ -108,11 +108,13 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
   void orch.sweep()
   sweepAttachments(join(teamDir, 'attachments'), orch.list().flatMap((r) => r.config.attachments ?? []))
   const settings = new TeamSettingsStore(teamDir)
+  const parts = new PartUploads(join(teamDir, 'attachments'))
 
   return {
     orch,
     health: async () => ({ agents: await health(true), codexModels: await codexModels(), localModels: await localModels(), limits: { codex: (await codexLimits()) ?? undefined } as { codex?: LimitInfo } }),
     attach: (files: { name: string; data: string }[]) => saveAttachments(join(teamDir, 'attachments'), files),
+    attachPart: async (part: AttachPart) => { const a = await parts.add(part); return a ? [a] : [] },
     async start(project: string, goal: string, config?: Partial<TeamConfig>, attachments?: unknown) {
       if (!goal.trim()) throw new Error('Describe what the team should build.')
       if (orch.list().some((r) => r.project === project && ACTIVE.includes(r.status))) throw new Error('This project already has a team run in progress. Finish, apply or cancel it first.')

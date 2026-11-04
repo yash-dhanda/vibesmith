@@ -1,6 +1,6 @@
 import type { TeamConfig } from '../main/team/types'
 import { getCustomIds, loadModels, setCustomIds } from './models'
-import { $, MINUTE_CHOICES, STEP_CHOICES, agentLimits, cleanErr, copy, h, numCtxPref, onOff, setThemePref, themePref, toast, type ThemePref } from './ui'
+import { $, MINUTE_CHOICES, STEP_CHOICES, agentLimits, cleanErr, cloudContextPref, copy, h, numCtxPref, onOff, setThemePref, themePref, toast, type ThemePref } from './ui'
 import { renderSkillsPanel } from './skillsPanel'
 import { openProjectHistory } from './projectHistory'
 import { icon, type IconName } from './icons'
@@ -284,6 +284,11 @@ async function agent(into: HTMLElement) {
     row('Steps per run', 'One step is one model call. Reading a file, editing it and running tests are three or more.', choose(STEP_CHOICES.map((n) => [String(n), `${n} steps`] as [string, string]), String(lim.maxSteps), (v) => save('forge.maxsteps', v))),
     row('Time per run', 'The longest one run may keep working.', choose(MINUTE_CHOICES.map((n) => [String(n), n >= 60 ? `${n / 60} ${n === 60 ? 'hour' : 'hours'}` : `${n} minutes`] as [string, string]), String(lim.maxMinutes), (v) => save('forge.maxmin', v))),
   )
+  const cloudCtx = field('number', String(cloudContextPref()))
+  cloudCtx.min = '0'
+  cloudCtx.step = '1000'
+  cloudCtx.onchange = () => cloudCtx.checkValidity() && save('forge.cloudctx', String(Math.max(0, Math.round(Number(cloudCtx.value) || 0))))
+  l.box.append(row('Cloud context window', 'Tokens of conversation sent to cloud models before old tool output is trimmed. 0 = automatic by model.', cloudCtx))
   into.append(l.g)
 
   const verify = await window.forge.verifyGet()

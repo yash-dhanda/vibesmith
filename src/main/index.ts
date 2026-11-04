@@ -17,6 +17,7 @@ import { isRemote } from './ollamaHost'
 import { BriefStore, type BriefEdit } from './briefStore'
 import { applyUserPlan, planFromTranscript, planNote, type PlanState } from './agent/plan'
 import { runVerify } from './agent/commands'
+import { contextWindowFor } from './agent/contextWindow'
 import { runAgent, systemPromptFor, type AgentEvent, type Mode } from './agent/loop'
 import { ToolBox } from './agent/tools'
 import { changesSince, createCheckpoint, diffOf, fileAt, hasGit, initRepo, isRepo, SECRET_PATH, undoFile, undoTo, type Change, type Checkpoint } from './checkpoint'
@@ -499,7 +500,7 @@ ipcMain.handle('attachments:preview', (_e, chatId: string, id: string) => {
 // ---- the agent ----
 // A send awaits several things (git, the undo question) before its run exists: a second send in that gap must not start another run.
 const sending = new Set<string>()
-type SendArgs = { chatId: string; text: string; attachments?: string[]; mode: Mode; model: string; numCtx?: number; maxSteps?: number; maxMinutes?: number }
+type SendArgs = { chatId: string; text: string; attachments?: string[]; mode: Mode; model: string; numCtx?: number; maxSteps?: number; maxMinutes?: number; cloudContext?: number }
 ipcMain.handle('agent:send', async (e, p: SendArgs) => {
   if (sending.has(p.chatId) || sessionFor(p.chatId)?.run) throw new Error('This chat is still working. Wait for it, or press stop.')
   sending.add(p.chatId)
@@ -606,7 +607,7 @@ async function send(e: IpcMainInvokeEvent, p: SendArgs) {
     signal: run.ctl.signal,
     maxSteps: clamp(p.maxSteps, 5, 500, 50),
     maxMs: clamp(p.maxMinutes, 1, 240, 30) * 60_000,
-    contextLimit: local ? numCtx : 150_000,
+    contextLimit: local ? numCtx : contextWindowFor(p.model, undefined, p.cloudContext), // the shrinker keeps its own headroom below this
     verify: verifyCmd ? () => runVerify(verifyCmd, root, run.ctl.signal) : undefined,
     plan: planOf(session),
     takeSteering: () => (session.steer.length ? session.steer.splice(0).join('\n') : null),
@@ -822,6 +823,7 @@ const teamId = (v: unknown): string => {
 }
 ipcMain.handle('team:health', () => teamSvc().health())
 ipcMain.handle('team:attach', (_e, files: unknown) => teamSvc().attach(Array.isArray(files) ? (files as { name: string; data: string }[]) : []))
+ipcMain.handle('team:attach-part', (_e, part: unknown) => teamSvc().attachPart(part as import('./team/attach').AttachPart))
 ipcMain.handle('team:start', (e, goal: unknown, config: unknown) => {
   const root = rootOf(e)
   if (!root) throw new Error('Choose a folder to work in first.')
