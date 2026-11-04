@@ -92,6 +92,14 @@ export function initPhone() {
   addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('app').classList.contains('drawer')) toggleDrawer(false) })
   phone.addEventListener('change', () => toggleDrawer(false))
 
+  // The status bar and Safari's bars take their colour from theme-color (the phone link's index.html has it): keep it on the canvas in use.
+  const tint = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+  if (tint) {
+    const paint = () => { tint.content = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() }
+    addEventListener('forge-theme', paint)
+    paint()
+  }
+
   // iOS keeps the layout viewport when the keyboard opens and scrolls the page instead: size the app to what is visible.
   const vv = window.visualViewport
   if (!vv) return
@@ -99,9 +107,11 @@ export function initPhone() {
     const on = phone.matches || touch.matches
     const root = document.documentElement
     if (!on) { root.style.removeProperty('--vvh'); root.classList.remove('kb'); return }
-    root.style.setProperty('--vvh', `${Math.round(vv.height)}px`)
-    root.classList.toggle('kb', innerHeight - vv.height > 120)
-    if (vv.offsetTop > 0) scrollTo(0, 0)
+    // Pinch zoom shrinks the visual viewport too, but only the keyboard should shrink the app; and never past the page, or it scrolls.
+    const h = Math.min(innerHeight, Math.round(vv.height * vv.scale))
+    root.style.setProperty('--vvh', `${h}px`)
+    root.classList.toggle('kb', innerHeight - h > 120)
+    if (vv.offsetTop > 0 && vv.scale < 1.01) scrollTo(0, 0) // not while zoomed in: that offset is the user panning
   }
   vv.addEventListener('resize', fit)
   vv.addEventListener('scroll', fit)

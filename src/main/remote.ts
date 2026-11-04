@@ -253,7 +253,7 @@ export class RemoteServer {
       const key = sha(t)
       const known = this.state.pairing.includes(key)
       if (known) { this.state.pairing = this.state.pairing.filter((x) => x !== key); this.save() } // one use
-      if (!t || !known) { this.fail(ip); res.writeHead(403, { 'content-type': 'text/html; charset=utf-8' }); return void res.end('<meta name=viewport content="width=device-width"><body style="font:16px system-ui;padding:24px;background:#101010;color:#eee">This link has already been used or was replaced. Make a new one in Forge: Settings, Remote access.') }
+      if (!t || !known) { this.fail(ip); res.writeHead(403, { 'content-type': 'text/html; charset=utf-8' }); return void res.end('<meta name=viewport content="width=device-width"><body style="font:16px system-ui;padding:24px;background:#141414;color:#eee">This link has already been used or was replaced. Make a new one in Forge: Settings, Remote access.') }
       const secret = randomBytes(32).toString('hex')
       const id = randomBytes(6).toString('hex')
       const ua = String(req.headers['user-agent'] ?? '')
@@ -266,7 +266,7 @@ export class RemoteServer {
 
     const dev = this.deviceOf(req)
     if (!dev) {
-      if (url.pathname === '/__unpaired' || req.method === 'GET' && url.pathname === '/') { res.writeHead(401, { 'content-type': 'text/html; charset=utf-8' }); return void res.end('<meta name=viewport content="width=device-width"><body style="font:16px system-ui;padding:24px;background:#101010;color:#eee"><h2>Forge</h2>This device is not paired. In Forge on your computer open Settings, Remote access, and scan the QR code.') }
+      if (url.pathname === '/__unpaired' || req.method === 'GET' && url.pathname === '/') { res.writeHead(401, { 'content-type': 'text/html; charset=utf-8' }); return void res.end('<meta name=viewport content="width=device-width"><body style="font:16px system-ui;padding:24px;background:#141414;color:#eee"><h2>Forge</h2>This device is not paired. In Forge on your computer open Settings, Remote access, and scan the QR code.') }
       this.fail(ip)
       return void this.json(res, 401, { error: 'not paired' })
     }
@@ -323,7 +323,7 @@ export class RemoteServer {
     }
     if (url.pathname === '/manifest.webmanifest') {
       res.writeHead(200, { 'content-type': MIME['.webmanifest'] })
-      return void res.end(JSON.stringify({ name: 'Forge', short_name: 'Forge', start_url: '/', display: 'standalone', background_color: '#101010', theme_color: '#101010', icons: [{ src: '/icon.png', sizes: '512x512', type: 'image/png' }] }))
+      return void res.end(JSON.stringify({ name: 'Forge', short_name: 'Forge', start_url: '/', display: 'standalone', background_color: '#141414', theme_color: '#141414', icons: [{ src: '/icon.png', sizes: '512x512', type: 'image/png' }] }))
     }
     
     const rel = decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname)
@@ -332,7 +332,7 @@ export class RemoteServer {
     if (rel === '/index.html') {
       const html = (await readFile(abs, 'utf8'))
         .replace('width=device-width, initial-scale=1', 'width=device-width, initial-scale=1, viewport-fit=cover')
-        .replace('</head>', '  <link rel="manifest" href="/manifest.webmanifest" />\n  <link rel="apple-touch-icon" href="/icon.png" />\n  <meta name="apple-mobile-web-app-capable" content="yes" />\n  <meta name="mobile-web-app-capable" content="yes" />\n  <meta name="apple-mobile-web-app-title" content="Forge" />\n  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />\n  <meta name="theme-color" content="#101010" />\n  <script src="/__forge-remote.js"></script>\n</head>')
+        .replace('</head>', '  <link rel="manifest" href="/manifest.webmanifest" />\n  <link rel="apple-touch-icon" href="/icon.png" />\n  <meta name="apple-mobile-web-app-capable" content="yes" />\n  <meta name="mobile-web-app-capable" content="yes" />\n  <meta name="apple-mobile-web-app-title" content="Forge" />\n  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />\n  <meta name="theme-color" content="#141414" />\n  <script src="/__forge-remote.js"></script>\n</head>')
       const z = /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? '')) ? await gz(Buffer.from(html)) : null
       res.writeHead(200, { 'content-type': MIME['.html'], 'cache-control': 'no-store', vary: 'Accept-Encoding', ...(z ? { 'content-encoding': 'gzip' } : {}) })
       return void res.end(z ?? html)
