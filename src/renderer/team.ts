@@ -12,6 +12,10 @@ import { buildStage, pushCode, type StageCode } from './teamStage'
 import { renderCrewPreview, visualCheckButton } from './crewPreview'
 import { renderGitPanel } from './gitPanel'
 import { openDiffReview } from './diffReview'
+import { attachVoice } from './voice'
+import { renderCrewStats } from './crewStats'
+import { openRules } from './rulesPanel'
+import { openReferences } from './referencesPanel'
 import { attachmentStrip, kindOf, sentChips, uploadCrewFile } from './attachments'
 import type { TeamAttachment } from '../main/team/attach'
 import { cacheGet, cacheSet, isRemote, onResync, phone, toggleDrawer } from './phone'
@@ -258,7 +262,7 @@ async function showEntry() {
   start.disabled = !ready.length
   const diagnostics = h('button', 'icon-btn') as HTMLButtonElement; diagnostics.type = 'button'; diagnostics.append(icon('info')); diagnostics.setAttribute('aria-label', 'Copy diagnostics'); diagnostics.title = 'Copy diagnostics: versions, agent status and recent runs for a bug report. No secrets or file contents.'
   diagnostics.onclick = () => void call(async () => { const text = replay ? 'Forge replay diagnostics' : await window.forge.teamDiagnostics(); await writeClipboard(text); toast('Diagnostics copied') })
-  const actions = h('div', 'team-start-actions'); actions.append(project, att.button, att.input, diagnostics, historyButton(), h('span', 'grow'), start)
+  const actions = h('div', 'team-start-actions'); actions.append(project, att.button, att.input, attachVoice(goal, form), diagnostics, historyButton(), h('span', 'grow'), start)
   // The agents as one row of chips ("Claude · Default · High"); a chip opens its model and effort selects in a popover.
   // The popover closes on Escape (focus goes back to its chip) or a click outside.
   const agentsBox = h('div', 'crew-agents'); agentsBox.setAttribute('role', 'group'); agentsBox.setAttribute('aria-label', 'Models and effort')
@@ -397,7 +401,7 @@ function renderRun() {
   if (run.status === 'done' && run.applied) page.append(renderApplied())
   const hadFocus = !!steerUi && document.activeElement === steerUi.text
   if (!isRemote() && run.tasks.some(t => t.status === 'done')) { const tools = h('div', 'team-tools-row'); tools.append(renderCrewPreview(run.id), visualCheckButton(run.id)); page.append(tools) } // the site beside the work, and the page screenshots
-  page.append(renderBoard(), renderStory(), renderSteer())
+  page.append(renderBoard(), renderStory(), renderCrewStats(run.id), renderSteer())
   root.replaceChildren(page); root.scrollTop = scrollTop
   if (hadFocus) steerUi?.text.focus({ preventScroll: true })
 }
@@ -830,7 +834,7 @@ function buildSteer(runId: string): SteerUi {
   const grow = () => { text.style.height = 'auto'; text.style.height = `${Math.min(text.scrollHeight, 160)}px`; sync() }
   text.oninput = () => { steerDraft = text.value; grow() }
   const to = select([['all', 'Everyone'], ['claude', 'Claude'], ['codex', 'Codex'], ['local', AGENT_NAME.local]], steerTarget); to.onchange = () => { steerTarget = to.value as typeof steerTarget }
-  row.append(att.button, att.input, text, selectButton('users', to, 'Send to'), send); form.append(att.strip, row); queueMicrotask(grow)
+  row.append(att.button, att.input, attachVoice(text, form), text, selectButton('users', to, 'Send to'), send); form.append(att.strip, row); queueMicrotask(grow)
   text.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit() } }
   const sent = () => { steerDraft = ''; text.value = ''; att.clear(); grow() }
   form.onsubmit = e => {

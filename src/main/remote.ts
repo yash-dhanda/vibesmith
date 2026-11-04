@@ -30,7 +30,7 @@ export type RemoteDeps = {
 }
 
 // Computer-only: they open dialogs, windows, a shell or the workspace on the computer, which a phone can neither see nor use.
-export const BLOCKED = (c: string) => /^(remote|term|fs|open|push):/.test(c) || /^preview:(attach|bounds|visible|reload|detach)$/.test(c) || c === 'save:text' || c === 'project:pick' || c === 'app:open-data' || c === 'team:history-open' || c === 'team:export-report'
+export const BLOCKED = (c: string) => /^(remote|term|fs|open|push):/.test(c) || /^preview:(attach|bounds|visible|reload|detach|crew-attach|crew-bounds)$/.test(c) || c === 'save:text' || c === 'project:pick' || c === 'app:open-data' || c === 'team:history-open' || c === 'team:export-report' || c === 'voice:set' || c === 'projects:open-folder'
 const MIME: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf', '.map': 'application/json', '.webmanifest': 'application/manifest+json' }
 const MANIFEST = JSON.stringify({ name: 'Forge', short_name: 'Forge', start_url: '/', display: 'standalone', background_color: '#141414', theme_color: '#141414', icons: [{ src: '/icon.png', sizes: '512x512', type: 'image/png' }] })
 const brotli = promisify(brotliCompress)
