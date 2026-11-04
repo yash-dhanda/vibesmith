@@ -12,3 +12,5 @@
   #app.no-hist .usage-badge { margin: 0; padding: 4px; }
 }
 @keyframes rail-in { from { opacity: 0; transform: translateX(-6px); } }
+/* the sidebar's own button (brand row, or the rail) collapses and expands it, so the page headers do not repeat it; phones keep it as the menu button */
+@media (min-width: 801px) { #hist-toggle, #team-hist-toggle { display: none; } }
