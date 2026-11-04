@@ -74,6 +74,7 @@ export type TeamConfig = {
   claudeModel?: string
   bypassPermissions?: boolean // never ask the user to allow a command or file read (default on). Hard limits stay: no push, no sudo, no writes outside the task folder or to secrets
   claudeEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+  webResearch?: boolean // agents may search the web and read pages for research (default on)
   askQuestions?: boolean // agents may ask the user a question when they are really unsure (default on)
   codexEffort?: 'low' | 'medium' | 'high' | 'xhigh' // Codex's reasoning effort
   maxParallelPerAgent: number

@@ -8,6 +8,7 @@ export type ClaudeOpts = RunOpts & {
   effort?: string
   resume?: string // session id from an earlier run
   systemAppend?: string
+  web?: boolean // false: no WebSearch / WebFetch
   addDirs?: string[] // extra folders Claude may read, for example the skill libraries
   mcpConfig?: string // path to an MCP config file (the Forge team server)
   team?: TeamLink // when set, permission prompts are answered by Forge's policy and the user instead of being denied
@@ -31,10 +32,10 @@ export function claudeArgs(o: ClaudeOpts): string[] {
   if (o.systemAppend) a.push('--append-system-prompt', o.systemAppend)
   if (o.addDirs?.length) a.push('--add-dir', ...o.addDirs)
   if (o.mcpConfig) a.push('--mcp-config', o.mcpConfig, '--strict-mcp-config')
-  const allow = [...(o.allow ?? (o.write ? CLAUDE_ALLOW : [])), ...(o.team ? [`mcp__${SERVER}`] : [])]
+  const allow = [...(o.allow ?? (o.write ? CLAUDE_ALLOW : [])), ...(o.web === true ? ['WebSearch', 'WebFetch'] : []), ...(o.team ? [`mcp__${SERVER}`] : [])]
   if (allow.length) a.push('--allowedTools', allow.join(','))
   if (o.team) a.push('--permission-prompt-tool', PERMISSION_TOOL)
-  a.push('--disallowedTools', (o.deny ?? (o.team ? CLAUDE_DENY : CLAUDE_DENY_NO_GATE)).join(','))
+  a.push('--disallowedTools', [...(o.deny ?? (o.team ? CLAUDE_DENY : CLAUDE_DENY_NO_GATE)), ...(o.web === false ? ['WebSearch', 'WebFetch'] : [])].join(','))
   return a
 }
 

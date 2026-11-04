@@ -23,6 +23,7 @@ export type AgentCall = {
   codexMode?: 'exec' | 'app-server'
   onApproval?: (a: ApprovalAsk) => Promise<boolean> // Codex app-server asks before leaving its sandbox
   onHandle?: (h: ServerHandle | null) => void // lets the orchestrator steer a running agent
+  web?: boolean // may search the web and read pages
   addDirs?: string[] // extra folders the agent may read (the skill libraries)
 }
 export type AgentRunner = (agent: AgentName, o: AgentCall) => Promise<RunResult>
@@ -620,6 +621,7 @@ export class TeamOrchestrator {
       effort: agent === 'claude' ? run.config.claudeEffort : agent === 'codex' ? run.config.codexEffort : undefined,
       codexMode: run.config.codexMode,
       addDirs: skills?.dirs,
+      web: run.config.webResearch !== false,
       onEvent: (ev) => {
         if (ev.type === 'limits') {
           const { agent: _a, type: _t, ...rest } = ev

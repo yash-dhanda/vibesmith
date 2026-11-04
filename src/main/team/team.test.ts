@@ -94,6 +94,12 @@ describe('argument builders', () => {
     const rw = claudeArgs({ cwd: '/p', prompt: 'x', write: true, resume: 'abc', mcpConfig: '/m.json', model: 'sonnet', effort: 'high' })
     expect(rw).toEqual(expect.arrayContaining(['acceptEdits', '--resume', 'abc', '--mcp-config', '/m.json', '--model', 'sonnet', '--effort', 'high', '--allowedTools']))
   })
+  it('web research: allowed and live for Claude and Codex when on, and denied for Claude when off', () => {
+    expect(claudeArgs({ cwd: '/p', prompt: 'x', write: true, web: true }).join(' ')).toMatch(/--allowedTools [^ ]*WebSearch,WebFetch/)
+    expect(claudeArgs({ cwd: '/p', prompt: 'x', write: true, web: false }).join(' ')).toMatch(/--disallowedTools [^ ]*WebSearch,WebFetch/)
+    expect(codexArgs({ cwd: '/p', prompt: 'x', write: true, model: 'm', web: true })).toContain('web_search="live"')
+    expect(codexArgs({ cwd: '/p', prompt: 'x', write: true, model: 'm', web: false }).join(' ')).not.toContain('web_search')
+  })
   it('claude: may read the skill libraries through --add-dir, and gets no extra folders otherwise', () => {
     const a = claudeArgs({ cwd: '/p', prompt: 'x', write: true, addDirs: ['/skills/a__b'] })
     expect(a.slice(a.indexOf('--add-dir'), a.indexOf('--add-dir') + 2)).toEqual(['--add-dir', '/skills/a__b'])

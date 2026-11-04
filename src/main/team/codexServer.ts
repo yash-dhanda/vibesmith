@@ -18,6 +18,7 @@ export type CodexServerOpts = RunOpts & {
   write: boolean
   model: string
   effort?: string
+  web?: boolean
   resume?: string
   team?: TeamLink
   onApproval?: (a: ApprovalAsk) => Promise<boolean>
@@ -41,7 +42,7 @@ export function runCodexServer(o: CodexServerOpts, bin = 'codex'): Promise<RunRe
     let nextId = 0
     const waiting = new Map<number, { ok: (v: any) => void; fail: (e: Error) => void }>()
 
-    const cmd = resolveCommand(bin, ['app-server', ...codexLeanArgs(), ...(o.team ? codexMcpArgs(o.team) : [])])
+    const cmd = resolveCommand(bin, ['app-server', ...(o.web === true ? ['-c', 'web_search="live"'] : []), ...codexLeanArgs(), ...(o.team ? codexMcpArgs(o.team) : [])])
     const child = spawn(cmd.cmd, cmd.args, { cwd: o.cwd, env: cleanEnv(process.env, { ...cmd.env, ...o.env }), stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32', windowsHide: true })
     const write = (m: object) => child.stdin.writable && child.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...m }) + '\n')
     const request = (method: string, params: object) =>
