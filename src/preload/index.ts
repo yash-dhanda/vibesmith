@@ -20,6 +20,7 @@ const api = {
   appInit: (): Promise<{ chats: ChatListItem[]; project: string | null; usage: UsageSummary }> => ipcRenderer.invoke('app:init'),
   teamHistory: (): Promise<{ path: string; text: string } | null> => ipcRenderer.invoke('team:history'),
   teamHistoryOpen: (): Promise<void> => ipcRenderer.invoke('team:history-open'),
+  teamAttach: (files: { name: string; data: string }[]): Promise<import('../main/team/attach').TeamAttachment[]> => ipcRenderer.invoke('team:attach', files),
   skillsList: (): Promise<SkillRepo[]> => ipcRenderer.invoke('skills:list'),
   skillsAdd: (url: string): Promise<SkillRepo> => ipcRenderer.invoke('skills:add', url),
   skillsUpdate: (id: string): Promise<SkillRepo> => ipcRenderer.invoke('skills:update', id),

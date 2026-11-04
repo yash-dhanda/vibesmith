@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { initRepo, isRepo } from '../checkpoint'
 import { readdirSync } from 'node:fs'
 import { isAgent, type AgentName } from './events'
+import { cleanAttachments, saveAttachments } from './attach'
 import { checkTeamTools, codexLimits, codexModels, localModels, type Health, type LimitInfo } from './health'
 import { TeamOrchestrator } from './orchestrator'
 import { realRunner } from './runner'
@@ -102,11 +103,13 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
   return {
     orch,
     health: async () => ({ agents: await health(true), codexModels: await codexModels(), localModels: await localModels(), limits: { codex: (await codexLimits()) ?? undefined } as { codex?: LimitInfo } }),
-    async start(project: string, goal: string, config?: Partial<TeamConfig>) {
+    attach: (files: { name: string; data: string }[]) => saveAttachments(join(teamDir, 'attachments'), files),
+    async start(project: string, goal: string, config?: Partial<TeamConfig>, attachments?: unknown) {
       if (!goal.trim()) throw new Error('Describe what the team should build.')
       if (orch.list().some((r) => r.project === project && ACTIVE.includes(r.status))) throw new Error('This project already has a team run in progress. Finish, apply or cancel it first.')
       await ensureRepo(project)
-      return summarize(await orch.start(project, goal, { ...settings.get(project), ...config, budget: { maxTasks: settings.get(project).budget?.maxTasks, ...config?.budget } }))
+      const files = cleanAttachments(join(teamDir, 'attachments'), attachments)
+      return summarize(await orch.start(project, goal, { ...settings.get(project), ...config, ...(files.length ? { attachments: files } : {}), budget: { maxTasks: settings.get(project).budget?.maxTasks, ...config?.budget } }))
     },
     list: () => orch.list().map(summarize),
     // A plain-text summary to paste into a bug report: versions, sign-ins, plan allowance, recent runs. No secrets, no file contents.

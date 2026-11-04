@@ -666,10 +666,11 @@ const teamId = (v: unknown): string => {
   return v
 }
 ipcMain.handle('team:health', () => teamSvc().health())
+ipcMain.handle('team:attach', (_e, files: unknown) => teamSvc().attach(Array.isArray(files) ? (files as { name: string; data: string }[]) : []))
 ipcMain.handle('team:start', (_e, goal: unknown, config: unknown) => {
   const root = getRoot()
   if (!root) throw new Error('Choose a folder to work in first.')
-  return teamSvc().start(root, String(goal ?? ''), sanitizeConfig(config))
+  return teamSvc().start(root, String(goal ?? ''), sanitizeConfig(config), (config as { attachments?: unknown } | null)?.attachments)
 })
 ipcMain.handle('team:list', () => teamSvc().list())
 ipcMain.handle('team:get', (_e, id: unknown) => teamSvc().orch.get(teamId(id)))

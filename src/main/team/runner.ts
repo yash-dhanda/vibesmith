@@ -16,13 +16,13 @@ export const realRunner: AgentRunner = async (agent, o): Promise<RunResult> => {
   if (agent === 'codex') {
     const model = o.model ?? ''
     if (o.codexMode === 'app-server') {
-      const r = await runCodexServer({ ...common, model, effort: o.effort, web: o.web, team: o.link ?? undefined, onApproval: o.onApproval, onHandle: o.onHandle })
+      const r = await runCodexServer({ ...common, model, effort: o.effort, web: o.web, images: o.images, team: o.link ?? undefined, onApproval: o.onApproval, onHandle: o.onHandle })
       // app-server is experimental: if it could not even start a conversation, do the same job through exec
       const started = r.events.some((e) => e.type === 'text' || e.type === 'tool')
       if (r.error?.kind !== 'protocol' || started) return r
       o.onEvent({ type: 'note', agent: 'codex', text: `Codex app-server did not start (${r.error.message.slice(0, 120)}); using codex exec.` })
     }
-    return runCodex({ ...common, model, effort: o.effort, web: o.web, team: o.link ?? undefined })
+    return runCodex({ ...common, model, effort: o.effort, web: o.web, images: o.images, team: o.link ?? undefined })
   }
   if (!o.link) return runClaude({ ...common, model: o.model, effort: o.effort, addDirs: o.addDirs, web: o.web })
   const dir = mkdtempSync(join(tmpdir(), 'forge-mcp-'))

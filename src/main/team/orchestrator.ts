@@ -11,6 +11,7 @@ import { redact, redactEvent } from './redact'
 import type { ApprovalAsk, ServerHandle } from './codexServer'
 import { errorSignature, ProjectMemoryStore, rank, routeAgent } from './memory'
 import { decideCommand, decideTool } from './policy'
+import { attachmentsBlock, imagePaths, removeAttachmentDirs } from './attach'
 import { historyBlock, HistoryRecorder, HISTORY_DIR, writeHistory } from './history'
 import { buildReport, conflictPrompt, contextFor, finalReviewPrompt, fixPrompt, forLocal, parsePlan, parseVerdict, planPrompt, reviewPrompt, verifyFixPrompt, workPrompt } from './prompts'
 import type { RunResult } from './process'
@@ -25,6 +26,7 @@ export type AgentCall = {
   onApproval?: (a: ApprovalAsk) => Promise<boolean> // Codex app-server asks before leaving its sandbox
   onHandle?: (h: ServerHandle | null) => void // lets the orchestrator steer a running agent
   web?: boolean // may search the web and read pages
+  images?: string[] // pictures to show the agent directly (Codex): the user's pictures and video frames
   addDirs?: string[] // extra folders the agent may read (the skill libraries)
 }
 export type AgentRunner = (agent: AgentName, o: AgentCall) => Promise<RunResult>
@@ -147,7 +149,7 @@ export class TeamOrchestrator {
     const run: Run = { id: runId, project, goal: goal.trim(), status: 'planning', createdAt: Date.now(), updatedAt: Date.now(), baseCommit, integrationBranch, integrationWorktree, plan: { summary: '', plannedBy: null }, tasks: [], messages: [], decisions: [], errors: [], approvals: [], usage: { claude: emptyUsage(), codex: emptyUsage(), local: emptyUsage() }, config }
     this.runs.set(runId, run)
     this.saveNow(run)
-    writeHistory(project, `Run ${runId} started. Goal: ${run.goal.replace(/\s+/g, ' ').slice(0, 800)} (crew: ${available.join(', ')}; review ${config.review}; web ${config.webResearch === false ? 'off' : 'on'})`)
+    writeHistory(project, `Run ${runId} started. Goal: ${run.goal.replace(/\s+/g, ' ').slice(0, 800)} (${config.attachments?.length ? `attachments: ${config.attachments.map((a) => a.name).join(', ')}; ` : ''}crew: ${available.join(', ')}; review ${config.review}; web ${config.webResearch === false ? 'off' : 'on'})`)
     for (const note of skipped) this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: note })
     const live = this.newLive(available)
     this.live.set(runId, live)
@@ -219,6 +221,7 @@ export class TeamOrchestrator {
     this.live.delete(runId)
     this.d.store.delete(runId)
     await rm(join(this.d.teamDir, 'wt', runId), { recursive: true, force: true }).catch(() => {})
+    removeAttachmentDirs(join(this.d.teamDir, 'attachments'), run.config.attachments)
     return true
   }
 
@@ -617,6 +620,8 @@ export class TeamOrchestrator {
   private async agentRun(run: Run, task: Task, agent: AgentName, phase: TaskPhase | 'plan' | 'final-review', prompt: string, write: boolean, cwd: string, resume?: string): Promise<RunResult> {
     const live = this.liveOf(run)
     const skills = ['work', 'fix', 'plan'].includes(phase) && agent !== 'local' ? this.d.skills?.() : undefined // the local model cannot read outside its task folder
+    const att = agent !== 'local' && ['work', 'fix', 'plan', 'review', 'final-review'].includes(phase) ? run.config.attachments : undefined
+    if (att?.length) prompt = `${attachmentsBlock(att)}\n\n${prompt}`
     const past = ['work', 'fix', 'plan'].includes(phase) ? historyBlock(run.project) : ''
     if (past) prompt = `${past}\n\n${prompt}`
     if (skills?.block) prompt = `${skills.block}\n\n${prompt}`
@@ -628,7 +633,8 @@ export class TeamOrchestrator {
       model: agent === 'codex' ? run.config.codexModel : agent === 'local' ? run.config.localModel : run.config.claudeModel,
       effort: agent === 'claude' ? run.config.claudeEffort : agent === 'codex' ? run.config.codexEffort : undefined,
       codexMode: run.config.codexMode,
-      addDirs: [...(skills?.dirs ?? []), ...(past ? [join(run.project, HISTORY_DIR)] : [])],
+      addDirs: [...(skills?.dirs ?? []), ...(past ? [join(run.project, HISTORY_DIR)] : []), ...(att?.length ? [join(this.d.teamDir, 'attachments')] : [])],
+      images: imagePaths(att),
       web: run.config.webResearch !== false,
       onEvent: (ev) => {
         if (ev.type === 'limits') {
