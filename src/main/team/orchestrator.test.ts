@@ -213,6 +213,32 @@ describe('team orchestrator', () => {
     expect(r2.config.attachments?.filter((f) => f.path === shot.path)).toHaveLength(1)
   })
 
+  it('page check: screenshots go to the final reviewer when the owner turned it on, a failing capture never blocks, and off means no capture', async () => {
+    const prompts: string[] = []
+    const mk = (visualCheck: 'off' | 'always', shots: () => Promise<{ route: string; size: string; path: string }[]>) => {
+      const x = h({ plan: { tasks: [T('a')] } })
+      const orig = (x.orch as any).d.runner
+      ;(x.orch as any).d.runner = async (agent: AgentName, o: AgentCall) => { if (/The team finished this goal/.test(o.prompt)) prompts.push(o.prompt + '\nIMAGES:' + (o.images ?? []).join(',')); return orig(agent, o) }
+      ;(x.orch as any).d.visualShots = shots
+      return { x, visualCheck }
+    }
+    const on = mk('always', async () => [{ route: '/', size: 'phone', path: '/tmp/shot-phone.png' }])
+    const r = await on.x.orch.start(on.x.proj, 'ui', { finalReview: true, visualCheck: 'always' })
+    await until(on.x.orch, r.id, (v) => v.status === 'awaiting_approval')
+    const seen = prompts.find((p) => p.includes('/tmp/shot-phone.png'))
+    expect(seen).toBeTruthy()
+    expect(seen).toContain('IMAGES:/tmp/shot-phone.png')
+    let called = 0
+    const off = mk('off', async () => (called++, []))
+    const r2 = await off.x.orch.start(off.x.proj, 'ui', { finalReview: true, visualCheck: 'off' })
+    await until(off.x.orch, r2.id, (v) => v.status === 'awaiting_approval')
+    expect(called).toBe(0)
+    const bad = mk('always', async () => { throw new Error('no dev server') })
+    const r3 = await bad.x.orch.start(bad.x.proj, 'ui', { finalReview: true, visualCheck: 'always' })
+    const done = await until(bad.x.orch, r3.id, (v) => v.status === 'awaiting_approval')
+    expect(done.messages.some((m) => /Page check skipped: no dev server/.test(m.body))).toBe(true)
+  })
+
   it('takes an applied result back out of the project with undo', async () => {
     const x = h({ plan: { tasks: [T('a'), T('b')] } })
     const run = await x.orch.start(x.proj, 'undo me')
@@ -1506,5 +1532,97 @@ describe('crew engine: auto-switch, effort, stats, test agent, security review',
     const paused = await until(out.orch, r3.id, (r) => r.status === 'paused')
     expect(paused.pausedReason).toMatch(/could not do the security review/)
     expect(paused.final).toBeUndefined()
+  })
+})
+
+describe('landing part of a run', () => {
+  const three = () => h({ plan: { tasks: [T('a'), T('b'), T('c')] } })
+  const readyRun = async (x: ReturnType<typeof three>) => {
+    const run = await x.orch.start(x.proj, 'three things')
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    return run
+  }
+
+  it('applies only the chosen files, keeps the approval open, and a later full landing applies the rest', async () => {
+    const x = three()
+    const run = await readyRun(x)
+    const p = await x.orch.approveFinal(run.id, false, ['t1.txt'])
+    expect(p.ok).toBe(true)
+    expect(existsSync(join(x.proj, 't1.txt'))).toBe(true)
+    expect(existsSync(join(x.proj, 't2.txt'))).toBe(false)
+    const mid = x.orch.get(run.id)!
+    expect(mid.status).toBe('awaiting_approval')
+    expect(mid.applied).toBeFalsy()
+    expect(mid.landedFiles).toEqual(['t1.txt'])
+    expect(mid.final!.files).toHaveLength(3) // the list itself is intact
+    expect(mid.approvals.filter((a) => a.kind === 'final' && a.status === 'pending')).toHaveLength(1)
+    const view = x.orch.landings(run.id)!
+    expect(view.files.map((f) => `${f.path}:${f.state}`).sort()).toEqual(['t1.txt:landed', 't2.txt:pending', 't3.txt:pending'])
+    expect(view.tasks.map((t) => t.files)).toEqual([['t1.txt'], ['t2.txt'], ['t3.txt']])
+    const rest = await x.orch.approveFinal(run.id) // t1.txt is in the project already: it must not be applied again
+    expect(rest.ok).toBe(true)
+    expect(['t1.txt', 't2.txt', 't3.txt'].every((f) => existsSync(join(x.proj, f)))).toBe(true)
+    const done = x.orch.get(run.id)!
+    expect(done.status).toBe('done')
+    expect(done.applied).toBe(true)
+    expect(done.landings).toHaveLength(2)
+    expect(done.landings![1].files.sort()).toEqual(['t2.txt', 't3.txt'])
+  })
+
+  it('refuses unknown paths, path traversal and empty picks without touching the folder', async () => {
+    const x = three()
+    const run = await readyRun(x)
+    for (const only of [[], ['nope.txt'], ['../outside.txt'], ['t1.txt', '/etc/passwd'], ['t1.txt', 't1.txt/../base.txt']]) {
+      const r = await x.orch.approveFinal(run.id, false, only)
+      expect(r.ok).toBe(false)
+    }
+    expect(sh(x.proj, 'status', '--porcelain').trim()).toBe('')
+    expect(x.orch.get(run.id)!.landings ?? []).toHaveLength(0)
+    expect((await x.orch.approveFinal(run.id, false, ['t1.txt'])).ok).toBe(true)
+    expect((await x.orch.approveFinal(run.id, false, ['t1.txt'])).message).toMatch(/already landed/)
+  })
+
+  it('undoes one landing and leaves the other alone', async () => {
+    const x = three()
+    const run = await readyRun(x)
+    const first = await x.orch.approveFinal(run.id, false, ['t1.txt'])
+    const second = await x.orch.approveFinal(run.id, false, ['t2.txt'])
+    expect(first.checkpoint && second.checkpoint && first.checkpoint !== second.checkpoint).toBe(true)
+    const u = await x.orch.undoLanding(run.id, second.checkpoint!)
+    expect(u).toMatchObject({ ok: true, paths: ['t2.txt'] })
+    expect(existsSync(join(x.proj, 't1.txt'))).toBe(true)
+    expect(existsSync(join(x.proj, 't2.txt'))).toBe(false)
+    expect(x.orch.get(run.id)!.landedFiles).toEqual(['t1.txt'])
+    expect((await x.orch.undoLanding(run.id, second.checkpoint!)).message).toMatch(/Already/)
+    expect((await x.orch.approveFinal(run.id, false, ['t2.txt'])).ok).toBe(true) // back to pending, so it can land again
+    expect((await x.orch.undoLanding(run.id, 'nope')).ok).toBe(false)
+  })
+
+  it('the last pick completes the run, and Undo then takes back just that landing', async () => {
+    const x = three()
+    const run = await readyRun(x)
+    await x.orch.approveFinal(run.id, false, ['t1.txt'])
+    const last = await x.orch.approveFinal(run.id, false, ['t2.txt', 't3.txt'])
+    expect(x.orch.get(run.id)).toMatchObject({ status: 'done', applied: true, appliedCheckpoint: last.checkpoint })
+    const u = await x.orch.undoApply(run.id)
+    expect(u.paths.sort()).toEqual(['t2.txt', 't3.txt'])
+    expect(existsSync(join(x.proj, 't1.txt'))).toBe(true)
+  })
+
+  it('a failed partial landing leaves the folder as it was and nothing recorded', async () => {
+    const x = h({ plan: { tasks: [T('a'), T('b')] }, work: (_a, t, cwd) => writeFileSync(join(cwd, t === 't1' ? 'base.txt' : 't2.txt'), 'team version\n') })
+    const run = await x.orch.start(x.proj, 'conflict')
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    writeFileSync(join(x.proj, 'base.txt'), 'my own edit\n')
+    sh(x.proj, 'commit', '-q', '-am', 'mine')
+    const r = await x.orch.approveFinal(run.id, false, ['base.txt'])
+    expect(r.ok).toBe(false)
+    expect(readFileSync(join(x.proj, 'base.txt'), 'utf8')).toBe('my own edit\n')
+    expect(sh(x.proj, 'status', '--porcelain').trim()).toBe('')
+    const after = x.orch.get(run.id)!
+    expect(after.landedFiles ?? []).toEqual([])
+    expect(after.status).toBe('awaiting_approval')
+    expect((await x.orch.approveFinal(run.id, false, ['t2.txt'])).ok).toBe(true) // the other file is unaffected
+    expect(readFileSync(join(x.proj, 't2.txt'), 'utf8')).toBe('team version\n')
   })
 })

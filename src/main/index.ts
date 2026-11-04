@@ -28,13 +28,20 @@ import { listModels, makeProvider, modelSupportsVision, ollamaStatus } from './m
 import { AttachmentStore, inlineText } from './attachments'
 import { getVerify, setVerify } from './settings'
 import { registerLibrary } from './library'
+import { registerGitSearch } from './registerGitSearch'
+import { registerProjectTools } from './registerProjectTools'
+import { effectiveRules } from './projectRules'
+import { registerProjectKnowledge } from './registerProjectKnowledge'
 import { rankProjects, scanProjects, type ProjectHit } from './projectScan'
 import { SkillStore, type SkillRepo } from './skills'
 import { CATEGORY_LABEL, SKILL_CATALOG, SKILL_PACKS } from './skillCatalog'
 import { historyPath, readHistory } from './team/history'
 import { RemoteServer, type Handler } from './remote'
+import { PushNotifier, type PushKind } from './notify'
 import { UsageStore } from './usageStore'
 import { createTeamService, sanitizeConfig, type TeamService } from './team/service'
+import { electronCapture, registerPreviewCrew } from './registerPreviewCrew'
+import { registerQueue } from './registerQueue'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -250,7 +257,13 @@ function hold(n: Notification) {
   n.on('click', () => shown.delete(n))
 }
 
+// Phone notifications (ntfy): the same events as the desktop ones, only while the window is not in front. See notify.ts for what is sent.
+let pushInst: PushNotifier | null = null
+const push = () => (pushInst ??= new PushNotifier(app.getPath('userData')))
+const away = () => !win || win.isDestroyed() || !win.isFocused()
+
 function notify(title: string, body: string, chatId: string) {
+  if (away()) void push().event(/approval/.test(title) ? 'chatQuestion' : 'chatDone')
   if (!Notification.isSupported() || readState().notify === false) return
   const n = new Notification({ title, body })
   hold(n)
@@ -304,12 +317,21 @@ ipcMain.handle('team:history-open', async (e, runId?: unknown) => {
 
 // Remote access: the Forge window served to a paired phone over Tailscale (or this computer only). Off until the user turns it on.
 ipcMain.handle('remote:status', () => remoteSrv().status())
-ipcMain.handle('remote:set', (_e, o: unknown) => remoteSrv().configure({ enabled: typeof (o as { enabled?: unknown })?.enabled === 'boolean' ? (o as { enabled: boolean }).enabled : undefined, lan: typeof (o as { lan?: unknown })?.lan === 'boolean' ? (o as { lan: boolean }).lan : undefined }))
+ipcMain.handle('remote:set', (_e, o: unknown) => remoteSrv().configure({ enabled: typeof (o as { enabled?: unknown })?.enabled === 'boolean' ? (o as { enabled: boolean }).enabled : undefined, lan: typeof (o as { lan?: unknown })?.lan === 'boolean' ? (o as { lan: boolean }).lan : undefined, https: typeof (o as { https?: unknown })?.https === 'boolean' ? (o as { https: boolean }).https : undefined }))
 ipcMain.handle('remote:pair', async () => {
   if (!remoteSrv().status().listening) throw new Error('Turn on remote access first.')
   return remoteSrv().pairLink()
 })
 ipcMain.handle('remote:revoke', (_e, id: unknown) => remoteSrv().revoke(String(id ?? '')))
+
+// Phone notifications through an ntfy server. The topic works like a password, so a paired phone cannot reach these (see BLOCKED in remote.ts).
+ipcMain.handle('push:get', () => push().get())
+ipcMain.handle('push:set', (_e, o: unknown) => {
+  const v = (o ?? {}) as { enabled?: unknown; server?: unknown; includeProject?: unknown }
+  return push().set({ enabled: typeof v.enabled === 'boolean' ? v.enabled : undefined, server: typeof v.server === 'string' ? v.server : undefined, includeProject: typeof v.includeProject === 'boolean' ? v.includeProject : undefined })
+})
+ipcMain.handle('push:test', () => push().test())
+ipcMain.handle('push:new-topic', () => push().newTopic())
 
 // Skill libraries: GitHub repositories the user adds; the agents of a team run read the skills that fit their task.
 let skillStoreInst: SkillStore | null = null
@@ -542,14 +564,14 @@ async function send(e: IpcMainInvokeEvent, p: SendArgs) {
 
   if (!s) {
     const chat = store.create(root, p.chatId)
-    chat.messages.push({ role: 'system', content: systemPromptFor(briefStore().get(root)) })
+    chat.messages.push({ role: 'system', content: systemPromptFor(briefOf(root)) })
     s = { chat, tools: new ToolBox(root), run: null, dirty: false, saveTimer: null, plan: null, steer: [] }
     sessions.set(chat.id, s)
   }
   const session = s
   const { chat, tools } = session
   // The project's description and rules can change between messages: the model always gets the current ones.
-  if (chat.messages[0]?.role === 'system') chat.messages[0] = { role: 'system', content: systemPromptFor(briefStore().get(root)) }
+  if (chat.messages[0]?.role === 'system') chat.messages[0] = { role: 'system', content: systemPromptFor(briefOf(root)) }
   if (!chat.transcript.length) chat.title = titleFrom(p.text)
   const info = found.map(({ id, name, kind, size }) => ({ id, name, kind, size }))
   chat.transcript.push({ type: 'user', text: p.text, ...(info.length ? { attachments: info } : {}) })
@@ -785,13 +807,15 @@ app.on('second-instance', () => {
 let team: TeamService | null = null
 // A long team run goes on while the user is elsewhere: say so when it needs them or ends. Same switch as the chat notifications.
 function teamNotify(ev: import('./team/types').RunEvent) {
-  if (!win || win.isDestroyed() || win.isFocused() || !Notification.isSupported() || readState().notify === false) return
-  let title = '', body = ''
-  if (ev.type === 'approval' && ev.approval.status === 'pending' && ev.approval.kind !== 'final') (title = 'Your team needs an answer'), (body = ev.approval.title)
-  else if (ev.type === 'run' && ev.status === 'awaiting_approval') (title = 'Your team is done'), (body = 'Review the result and apply it.')
+  if (!win || win.isDestroyed() || win.isFocused()) return
+  let title = '', body = '', kind: PushKind = 'attention'
+  if (ev.type === 'approval' && ev.approval.status === 'pending' && ev.approval.kind !== 'final') (title = 'Your team needs an answer'), (body = ev.approval.title), (kind = 'question')
+  else if (ev.type === 'run' && ev.status === 'awaiting_approval') (title = 'Your team is done'), (body = 'Review the result and apply it.'), (kind = 'finished')
   else if (ev.type === 'run' && ev.status === 'failed') (title = 'Your team run failed'), (body = ev.reason ?? '')
   else if (ev.type === 'run' && ev.status === 'paused' && ev.reason && !/Paused by you/.test(ev.reason)) (title = 'Your team stopped'), (body = ev.reason)
   if (!title) return
+  void push().event(kind, team?.orch.get(ev.runId)?.project) // generic text only; the title and body above are for this computer
+  if (!Notification.isSupported() || readState().notify === false) return
   const n = new Notification({ title, body: body.slice(0, 200) })
   hold(n)
   n.on('click', () => {
@@ -807,16 +831,20 @@ const teamSvc = (): TeamService =>
     userData: app.getPath('userData'),
     mcpScript: join(here, 'team-mcp.js').replace('app.asar' + (process.platform === 'win32' ? '\\' : '/'), 'app.asar.unpacked' + (process.platform === 'win32' ? '\\' : '/')),
     recordUsage: (agent, u) => recordUsage(`crew:${agent}`, { input: u.input, output: u.output, genMs: 0 }),
+    visualCapture: electronCapture,
+    notify: (kind) => void push().event(kind),
     emit: (ev) => {
       win?.webContents.send('team:event', ev)
       teamNotify(ev)
     },
     skills: () => skillStore().catalog(),
     projectNotes: (p) => {
-      const b = briefStore().get(p)
+      const b = briefOf(p)
       return { brief: [b.name, b.description].filter(Boolean).join(': '), rules: b.rules }
     },
   }))
+// The project's rules: the editable .forge/rules.md when there is one, else the brief's older rules field. Solo and Crew read the same.
+const briefOf = (root: string) => { const b = briefStore().get(root); return { ...b, rules: effectiveRules(root, b.rules) } }
 const teamId = (v: unknown): string => {
   if (typeof v !== 'string' || !/^[\w-]{1,60}$/.test(v)) throw new Error('bad id')
   return v
@@ -874,10 +902,15 @@ ipcMain.handle('team:export-report', async (e, id: unknown) => {
 })
 ipcMain.handle('team:apply', (_e, id: unknown, withoutUndo?: unknown) => teamSvc().orch.approveFinal(teamId(id), withoutUndo === true))
 ipcMain.handle('team:reject', (_e, id: unknown) => teamSvc().orch.rejectFinal(teamId(id)))
+registerQueue({ team: teamSvc, rootOf })
+registerGitSearch({ getRun: (id) => teamSvc().orch.get(id) ?? null, listRuns: () => teamSvc().list(), listChats: () => store.list(), loadChat: (id) => store.load(id) })
+registerProjectTools({ getRun: (id) => teamSvc().orch.get(id) ?? null, listRuns: () => teamSvc().list(), listChats: () => store.list(), loadChat: (id) => store.load(id), scanned: () => scanCache?.hits ?? [], busy: (p) => [...sessions.values()].some((s) => s.run && s.chat.project === p) })
+registerProjectKnowledge({ rootOf, userData: app.getPath('userData'), briefRules: (p) => briefStore().get(p).rules, getRun: (id) => teamSvc().orch.get(id) ?? null, stats: (id) => teamSvc().stats(id) })
 
 app.whenReady().then(() => {
   if (!gotLock) return
   library = registerLibrary(() => win)
+  registerPreviewCrew({ getWin: () => win, views, runApp: (id) => teamSvc().runApp(id), shotsDir: (id) => join(app.getPath('userData'), 'visual', id) })
   teamSvc() // also recovers runs that were interrupted by the last shutdown
   library.ensureStarted()
   store = new ChatStore(join(app.getPath('userData'), 'chats'))

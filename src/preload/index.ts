@@ -5,7 +5,8 @@ import type { UsageSummary } from '../main/usageStore'
 import type { ProjectHit } from '../main/projectScan'
 import type { SkillRepo } from '../main/skills'
 import type { RunSummary, TeamMemory } from '../main/team/service'
-import type { Run as TeamRun, RunEvent as TeamRunEvent, TeamConfig } from '../main/team/types'
+import type { Run as TeamRun, RunEvent as TeamRunEvent, TeamConfig, TeamLandings } from '../main/team/types'
+import type { QueueItem } from '../main/team/queue'
 
 export type CatalogItem = { id: string; name: string; sizeGB: number; q: number; tags: string[]; blurb: string; fit: 'gpu' | 'partial' | 'cpu' | 'too-big'; best: boolean; installed: boolean }
 export type InstalledModel = { name: string; sizeBytes: number; modified: string; params: string; quant: string; loaded: boolean }
@@ -21,9 +22,13 @@ const api = {
   teamHistory: (runId?: string): Promise<{ path: string; text: string } | null> => ipcRenderer.invoke('team:history', runId),
   teamHistoryOpen: (runId?: string): Promise<void> => ipcRenderer.invoke('team:history-open', runId),
   remoteStatus: (): Promise<import('../main/remote').RemoteStatus> => ipcRenderer.invoke('remote:status'),
-  remoteSet: (o: { enabled?: boolean; lan?: boolean }): Promise<import('../main/remote').RemoteStatus> => ipcRenderer.invoke('remote:set', o),
+  remoteSet: (o: { enabled?: boolean; lan?: boolean; https?: boolean }): Promise<import('../main/remote').RemoteStatus> => ipcRenderer.invoke('remote:set', o),
   remotePair: (): Promise<{ url: string; qr: string }> => ipcRenderer.invoke('remote:pair'),
   remoteRevoke: (id: string): Promise<import('../main/remote').RemoteStatus> => ipcRenderer.invoke('remote:revoke', id),
+  pushGet: (): Promise<import('../main/notify').PushSettings> => ipcRenderer.invoke('push:get'),
+  pushSet: (o: { enabled?: boolean; server?: string; includeProject?: boolean }): Promise<import('../main/notify').PushSettings> => ipcRenderer.invoke('push:set', o),
+  pushTest: (): Promise<import('../main/notify').PushResult> => ipcRenderer.invoke('push:test'),
+  pushNewTopic: (): Promise<import('../main/notify').PushSettings> => ipcRenderer.invoke('push:new-topic'),
   teamAttach: (files: { name: string; data: string }[]): Promise<import('../main/team/attach').TeamAttachment[]> => ipcRenderer.invoke('team:attach', files),
   teamAttachPart: (part: { uploadId: string; index: number; total: number; name: string; data: string }): Promise<import('../main/team/attach').TeamAttachment[]> => ipcRenderer.invoke('team:attach-part', part), // [] until the last part, then the one stored file
   skillsCatalog: (): Promise<{ entries: import('../main/skillCatalog').CatalogEntry[]; packs: { id: string; name: string; blurb: string; repos: string[] }[]; categories: Record<string, string> }> => ipcRenderer.invoke('skills:catalog'),
@@ -107,6 +112,9 @@ const api = {
   teamAnswer: (id: string, approvalId: string, allow: boolean, note?: string): Promise<boolean> => ipcRenderer.invoke('team:answer', id, approvalId, allow, note),
   teamRunApp: (id: string): Promise<{ ok: boolean; message: string; url?: string }> => ipcRenderer.invoke('team:run-app', id),
   teamStopApp: (id: string): Promise<{ ok: boolean; message: string }> => ipcRenderer.invoke('team:stop-app', id),
+  previewCrewAttach: (runId: string, url: string, bounds: { x: number; y: number; width: number; height: number }): Promise<void> => ipcRenderer.invoke('preview:crew-attach', runId, url, bounds),
+  previewCrewBounds: (runId: string, bounds: { x: number; y: number; width: number; height: number }) => ipcRenderer.send('preview:crew-bounds', runId, bounds),
+  teamVisualCheck: (runId: string, routes?: string[]): Promise<{ url: string; shots: { route: string; size: string; path: string; thumb: string }[]; failures: { route: string; size: string; error: string }[] }> => ipcRenderer.invoke('team:visual-check', runId, routes),
   teamFollow: (id: string, text: string, to?: 'claude' | 'codex' | 'local' | 'all', attachments?: import('../main/team/attach').TeamAttachment[]): Promise<void> => ipcRenderer.invoke('team:follow', id, text, to, attachments),
   teamSteer: (id: string, text: string, to?: 'claude' | 'codex' | 'local' | 'all'): Promise<void> => ipcRenderer.invoke('team:steer', id, text, to),
   teamRetryTask: (id: string, taskId: string): Promise<void> => ipcRenderer.invoke('team:retry-task', id, taskId),
@@ -118,11 +126,26 @@ const api = {
   teamDiagnostics: (): Promise<string> => ipcRenderer.invoke('team:diagnostics'),
   teamUndo: (id: string): Promise<{ ok: boolean; paths: string[]; message: string }> => ipcRenderer.invoke('team:undo', id),
   teamDelete: (id: string): Promise<boolean> => ipcRenderer.invoke('team:delete', id),
+  teamLandPart: (id: string, files: string[]): Promise<{ ok: boolean; message: string; checkpoint?: string }> => ipcRenderer.invoke('team:land-part', id, files),
+  teamLandings: (id: string): Promise<TeamLandings | null> => ipcRenderer.invoke('team:landings', id),
+  teamUndoLanding: (id: string, checkpoint: string): Promise<{ ok: boolean; paths: string[]; message: string }> => ipcRenderer.invoke('team:undo-landing', id, checkpoint),
+  queueList: (): Promise<{ items: QueueItem[]; active: boolean }> => ipcRenderer.invoke('queue:list'),
+  queueAdd: (item: { goal: string; project?: string; config?: Partial<TeamConfig>; attachments?: unknown[]; autoLand?: boolean; continueOnFail?: boolean }): Promise<QueueItem> => ipcRenderer.invoke('queue:add', item),
+  queueRemove: (id: string): Promise<boolean> => ipcRenderer.invoke('queue:remove', id),
+  queueMove: (id: string, to: number): Promise<boolean> => ipcRenderer.invoke('queue:move', id, to),
+  queueStart: (): Promise<void> => ipcRenderer.invoke('queue:start'),
+  queuePause: (): Promise<void> => ipcRenderer.invoke('queue:pause'),
+  queueReport: (): Promise<string> => ipcRenderer.invoke('queue:report'),
   teamSettingsGet: (): Promise<Partial<TeamConfig>> => ipcRenderer.invoke('team:settings-get'),
   teamSettingsSet: (cfg: Partial<TeamConfig>): Promise<void> => ipcRenderer.invoke('team:settings-set', cfg),
   teamExportReport: (id: string): Promise<string | null> => ipcRenderer.invoke('team:export-report', id),
   teamApply: (id: string, withoutUndo?: boolean): Promise<{ ok: boolean; message: string; checkpoint?: string }> => ipcRenderer.invoke('team:apply', id, withoutUndo),
   teamReject: (id: string): Promise<void> => ipcRenderer.invoke('team:reject', id),
+  teamGitState: (id: string): Promise<import('../main/team/gitpr').GitState & { landed: boolean }> => ipcRenderer.invoke('team:git-state', id),
+  teamGitCommit: (id: string): Promise<import('../main/team/gitpr').GitResult> => ipcRenderer.invoke('team:git-commit', id),
+  teamGitPush: (id: string): Promise<import('../main/team/gitpr').GitResult> => ipcRenderer.invoke('team:git-push', id),
+  teamGitPr: (id: string): Promise<import('../main/team/gitpr').GitResult> => ipcRenderer.invoke('team:git-pr', id),
+  searchAll: (query: string): Promise<import('../main/search').SearchHit[]> => ipcRenderer.invoke('search:all', query),
   onTeamFocus: (cb: (runId: string) => void) => ipcRenderer.on('team:focus', (_e, runId: string) => cb(runId)),
   onTeamEvent: (cb: (ev: TeamRunEvent) => void) => ipcRenderer.on('team:event', (_e, ev: TeamRunEvent) => cb(ev)),
   updateCheck: (): Promise<{ available: boolean; version?: string; url?: string; notes?: string }> => ipcRenderer.invoke('update:check'),
@@ -146,6 +169,19 @@ const api = {
   onRunLog: (cb: (m: { chatId: string; text: string }) => void) => ipcRenderer.on('run:log', (_e, m) => cb(m)),
   onRunState: (cb: (m: { chatId: string } & Omit<RunStatus, 'logs'>) => void) => ipcRenderer.on('run:state', (_e, m) => cb(m)),
   openFolder: (chatId: string): Promise<void> => ipcRenderer.invoke('open:folder', chatId),
+  // project rules, reference library, voice prompts, Crew cost and time
+  rulesGet: (): Promise<import('../main/registerProjectKnowledge').RulesState> => ipcRenderer.invoke('rules:get'),
+  rulesSet: (text: string): Promise<void> => ipcRenderer.invoke('rules:set', text),
+  referencesList: (): Promise<import('../main/registerProjectKnowledge').ReferencesState> => ipcRenderer.invoke('references:list'),
+  referencesAdd: (item: import('../main/references').NewReference): Promise<import('../main/references').Reference> => ipcRenderer.invoke('references:add', item),
+  referencesRemove: (id: string): Promise<void> => ipcRenderer.invoke('references:remove', id),
+  referencesNote: (id: string, note: string): Promise<void> => ipcRenderer.invoke('references:note', id, note),
+  referencesAuto: (on: boolean): Promise<void> => ipcRenderer.invoke('references:auto', on),
+  referencesThumb: (id: string): Promise<string | null> => ipcRenderer.invoke('references:thumb', id),
+  voiceStatus: (): Promise<import('../main/registerProjectKnowledge').VoiceStatus> => ipcRenderer.invoke('voice:status'),
+  voiceSet: (o: { command?: string; model?: string; language?: string }): Promise<void> => ipcRenderer.invoke('voice:set', o),
+  voiceTranscribe: (audio: ArrayBuffer | string): Promise<string> => ipcRenderer.invoke('voice:transcribe', audio),
+  teamStats: (runId: string): Promise<import('../main/registerProjectKnowledge').CrewStats | null> => ipcRenderer.invoke('team:stats', runId),
   // workspace (files, editor, terminal)
   list: (dir: string): Promise<{ name: string; dir: boolean }[]> => ipcRenderer.invoke('fs:list', dir),
   read: (file: string): Promise<string> => ipcRenderer.invoke('fs:read', file),
@@ -153,6 +189,12 @@ const api = {
   termSpawn: (cols: number, rows: number): Promise<void> => ipcRenderer.invoke('term:spawn', cols, rows),
   termWrite: (d: string) => ipcRenderer.send('term:write', d),
   termResize: (cols: number, rows: number) => ipcRenderer.send('term:resize', cols, rows),
+  // project dashboard + restore points
+  projectsOverview: (fresh?: boolean): Promise<import('../main/dashboard').ProjectOverview[]> => ipcRenderer.invoke('projects:overview', fresh),
+  projectsOpenFolder: (path: string): Promise<void> => ipcRenderer.invoke('projects:open-folder', path),
+  restoreList: (project: string): Promise<import('../main/restorePoints').RestorePoint[]> => ipcRenderer.invoke('restore:list', project),
+  restoreDiff: (project: string, id: string): Promise<{ files: { path: string; status: 'added' | 'modified' | 'deleted'; added: number; removed: number }[]; diff: string; truncated: boolean }> => ipcRenderer.invoke('restore:diff', project, id),
+  restoreApply: (project: string, id: string, files?: string[]): Promise<{ restored: string[]; checkpoint: string | null }> => ipcRenderer.invoke('restore:apply', project, id, files),
   onTermData: (cb: (d: string) => void) => ipcRenderer.on('term:data', (_e, d: string) => cb(d)),
 }
 

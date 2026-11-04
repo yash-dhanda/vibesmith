@@ -20,7 +20,8 @@ import { onlyDocsOrConfig, touchesSecurity } from './security'
 import type { RunResult } from './process'
 import { TeamStore } from './store'
 import { isRunAppWords, isStopAppWords } from './runapp'
-import { DEFAULT_CONFIG, emptyUsage, type Approval, type ApprovalKind, type Message, type MessageKind, type Run, type RunEvent, type RunStatus, type Task, type TaskPhase, type TeamConfig } from './types'
+import { reviewImagesBlock } from './visual'
+import { DEFAULT_CONFIG, emptyUsage, type Approval, type ApprovalKind, type Message, type MessageKind, type Run, type RunEvent, type RunStatus, type Task, type TaskPhase, type TeamConfig, type TeamLandings } from './types'
 
 export type AgentCall = {
   cwd: string; prompt: string; write: boolean; resume?: string; model?: string; signal: AbortSignal; link: TeamLink | null; taskId: string
@@ -45,6 +46,7 @@ export type Deps = {
   emit: (ev: RunEvent) => void
   projectNotes?: (project: string) => { brief: string; rules: string }
   recordUsage?: (agent: AgentName, u: { input: number; output: number }) => void // feeds the daily token ledger
+  visualShots?: (run: Run) => Promise<{ route: string; size: string; path: string }[]> // screenshots of the running site for the final review
   runApp?: (run: Run) => Promise<{ ok: boolean; message: string }> // "run website": starts the project's dev server
   stopApp?: (run: Run) => { ok: boolean; message: string }
   limits?: () => Promise<Partial<Record<AgentName, { primaryPct: number; primaryResetsAt?: number; secondaryPct?: number; secondaryResetsAt?: number }>>> // plan allowance used, when an agent can say
@@ -64,6 +66,8 @@ class Mutex {
 }
 
 type Live = {
+  shots?: { route: string; size: string; path: string }[] // page screenshots taken for the final review
+
   ctl: AbortController
   stop: 'pause' | 'cancel' | null
   paused: boolean
@@ -389,6 +393,7 @@ export class TeamOrchestrator {
       run.pausedReason = undefined
       writeHistory(run.project, `Run ${run.id} continued with a new message: ${body.replace(/\s+/g, ' ').slice(0, 300)}`)
     }
+    run.landedFiles = undefined // the next result is a new diff: files landed from the old one are applied again (a three-way apply copes with identical changes)
     const live = this.liveOf(run)
     this.post(run, { from: 'user', to, kind: 'steer', body })
     this.messageTask(run, live, body, to)
@@ -508,37 +513,62 @@ export class TeamOrchestrator {
   }
 
   // `withoutUndo`: the user agreed to apply even though no recovery point could be taken.
-  async approveFinal(runId: string, withoutUndo = false): Promise<{ ok: boolean; message: string; checkpoint?: string }> {
+  // `only`: land just these files (paths from run.final.files); the final approval stays open until every file has landed.
+  async approveFinal(runId: string, withoutUndo = false, only?: string[]): Promise<{ ok: boolean; message: string; checkpoint?: string }> {
     const run = this.runOf(runId)
     if (!run || run.status !== 'awaiting_approval') return { ok: false, message: 'This run is not waiting for approval.' }
+    const all = (run.final?.files ?? []).map((f) => f.path)
+    const landed = new Set(run.landedFiles ?? [])
+    let pick: string[] | undefined // undefined = the whole diff, as before any partial landing existed
+    if (only) {
+      const bad = only.find((p) => typeof p !== 'string' || !all.includes(p))
+      if (!only.length || bad !== undefined) return { ok: false, message: `${bad === undefined ? 'No files were chosen.' : `${String(bad).slice(0, 120)} is not one of this run's changed files.`} Nothing was applied.` }
+      pick = [...new Set(only)].filter((p) => !landed.has(p))
+      if (!pick.length) return { ok: false, message: 'Those files have already landed.' }
+    } else if (landed.size) pick = all.filter((p) => !landed.has(p)) // the files already landed are in the project: diffing them again would conflict
+    const partial = !!pick && pick.length < all.filter((p) => !landed.has(p)).length
     let checkpoint: Awaited<ReturnType<typeof createCheckpoint>> | undefined
-    try {
-      checkpoint = await createCheckpoint(run.project) // so the normal Undo can take the whole result back out
-    } catch (e) {
-      if (!withoutUndo) {
-        const message = `Nothing was applied, because a way back could not be saved first: ${(e as Error).message.slice(0, 200)}. Fix that, or apply without Undo.`
-        this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: message })
-        return { ok: false, message }
+    let message = 'Everything had already landed.'
+    if (!pick || pick.length) {
+      try {
+        checkpoint = await createCheckpoint(run.project) // so the normal Undo can take the whole result back out
+      } catch (e) {
+        if (!withoutUndo) {
+          const message = `Nothing was applied, because a way back could not be saved first: ${(e as Error).message.slice(0, 200)}. Fix that, or apply without Undo.`
+          this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: message })
+          return { ok: false, message }
+        }
       }
+      // a three-way apply can stop halfway, with conflict markers in the files and an unmerged index
+      const index = await git(run.project, ['write-tree']).then((t) => t.trim(), () => null)
+      const r = await applyResult(run.project, run.baseCommit, run.integrationBranch, checkpoint?.id, pick)
+      if (!r.ok) {
+        if (checkpoint) await undoTo(run.project, checkpoint).catch(() => [])
+        if (index) await git(run.project, ['read-tree', index]).catch(() => '')
+        this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: `Not applied, your folder is as it was: ${r.message}` })
+        return { ok: false, message: r.message } // the approval stays open, so the user can fix the conflict and apply again
+      }
+      message = r.message
+      const files = pick ?? all
+      ;(run.landings ??= []).push({ at: Date.now(), files, checkpoint: checkpoint?.id })
+      run.landedFiles = [...landed, ...files]
     }
-    // a three-way apply can stop halfway, with conflict markers in the files and an unmerged index
-    const index = await git(run.project, ['write-tree']).then((t) => t.trim(), () => null)
-    const r = await applyResult(run.project, run.baseCommit, run.integrationBranch, checkpoint?.id)
-    if (!r.ok) {
-      if (checkpoint) await undoTo(run.project, checkpoint).catch(() => [])
-      if (index) await git(run.project, ['read-tree', index]).catch(() => '')
-      this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: `Not applied, your folder is as it was: ${r.message}` })
-      return { ok: false, message: r.message } // the approval stays open, so the user can fix the conflict and apply again
+    if (partial) {
+      const n = pick!.length
+      writeHistory(run.project, `Run ${run.id}: ${n} of its files were landed (${all.length - run.landedFiles!.length} still to land).`)
+      this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: `Landed ${n} file${n === 1 ? '' : 's'}. ${all.length - run.landedFiles!.length} still waiting for your approval.` })
+      this.save(run)
+      return { ok: true, message: `Landed ${n} file${n === 1 ? '' : 's'}.`, checkpoint: checkpoint?.id }
     }
     const a = run.approvals.find((x) => x.kind === 'final' && x.status === 'pending')
-    if (a) this.markApproval(run, a.id, 'allowed', r.message)
+    if (a) this.markApproval(run, a.id, 'allowed', message)
     run.applied = true
     run.appliedCheckpoint = checkpoint?.id
     run.undone = undefined
-    writeHistory(run.project, `Run ${run.id} was applied to the project: ${r.message.replace(/\s+/g, ' ').slice(0, 300)}`)
+    writeHistory(run.project, `Run ${run.id} was applied to the project: ${message.replace(/\s+/g, ' ').slice(0, 300)}`)
     this.setStatus(run, 'done')
     await this.cleanup(run, true)
-    return { ok: true, message: r.message, checkpoint: checkpoint?.id }
+    return { ok: true, message, checkpoint: checkpoint?.id }
   }
 
   // Takes an applied result back out of the project: every file the apply changed goes back to how it was just before.
@@ -547,10 +577,21 @@ export class TeamOrchestrator {
     const run = this.runOf(runId)
     if (!run?.applied || !run.appliedCheckpoint) return { ok: false, paths: [], message: 'Nothing to undo for this run.' }
     if (run.undone) return { ok: false, paths: [], message: 'Already undone.' }
+    return this.undoLanding(runId, run.appliedCheckpoint)
+  }
+
+  // Takes one landing (a partial one, or the last) back out: only the files it wrote go back, so other landings stay.
+  async undoLanding(runId: string, checkpoint: string): Promise<{ ok: boolean; paths: string[]; message: string }> {
+    const run = this.runOf(runId)
+    const l = run?.landings?.find((x) => x.checkpoint === checkpoint)
+    const isFull = !!run && run.appliedCheckpoint === checkpoint
+    if (!run || (!l && !isFull)) return { ok: false, paths: [], message: 'Nothing to undo for this landing.' }
+    if (l?.undone || (isFull && run.undone)) return { ok: false, paths: [], message: 'Already undone.' }
     try {
-      const tree = (await git(run.project, ['rev-parse', `refs/forge/${run.appliedCheckpoint}^{tree}`])).trim()
-      const paths = await undoTo(run.project, { id: run.appliedCheckpoint, tree })
-      run.undone = true
+      const tree = (await git(run.project, ['rev-parse', `refs/forge/${checkpoint}^{tree}`])).trim()
+      const paths = await undoTo(run.project, { id: checkpoint, tree })
+      if (l) (l.undone = true), (run.landedFiles = (run.landedFiles ?? []).filter((p) => !l.files.includes(p)))
+      if (isFull) run.undone = true
       writeHistory(run.project, `Run ${run.id} was undone: ${paths.length} file${paths.length === 1 ? '' : 's'} put back.`)
       this.save(run)
       this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: `Undone: ${paths.length} file${paths.length === 1 ? '' : 's'} put back.` })
@@ -558,6 +599,24 @@ export class TeamOrchestrator {
     } catch (e) {
       return { ok: false, paths: [], message: `Could not undo: ${(e as Error).message.slice(0, 200)}` }
     }
+  }
+
+  // The result's files with whether each has landed, grouped by the task that wrote them, for the "land part of a run" card.
+  landings(runId: string): TeamLandings | null {
+    const run = this.runOf(runId)
+    if (!run?.final) return null
+    const landed = new Set(run.landedFiles ?? [])
+    const files = run.final.files.map((f) => ({ ...f, state: landed.has(f.path) ? ('landed' as const) : ('pending' as const) }))
+    const known = new Set(files.map((f) => f.path))
+    const seen = new Set<string>()
+    const tasks = run.tasks.filter((t) => t.status === 'done' && t.kind !== 'research').flatMap((t) => {
+      const fs = (t.changed ?? []).map((c) => c.path).filter((p) => known.has(p))
+      fs.forEach((p) => seen.add(p))
+      return fs.length ? [{ id: t.id, title: t.title, files: fs }] : []
+    })
+    const rest = files.map((f) => f.path).filter((p) => !seen.has(p))
+    if (rest.length) tasks.push({ id: '', title: 'Other changes', files: rest })
+    return { files, tasks, landings: (run.landings ?? []).map((l) => ({ ...l })), pending: run.status === 'awaiting_approval' }
   }
 
   async rejectFinal(runId: string) {
@@ -828,8 +887,8 @@ export class TeamOrchestrator {
       model: agent === 'codex' ? run.config.codexModel : agent === 'local' ? run.config.localModel : run.config.claudeModel,
       effort: effortFor({ agent, phase, kind: task.kind, changedFiles: changedFiles ?? (phase === 'review' ? task.changed.length : undefined), config: run.config }),
       codexMode: run.config.codexMode,
-      addDirs: [...(skills?.dirs ?? []), ...(past ? [join(run.project, HISTORY_DIR)] : []), ...(att?.length ? [join(this.d.teamDir, 'attachments')] : [])],
-      images: imagePaths(att),
+      addDirs: [...(skills?.dirs ?? []), ...(past ? [join(run.project, HISTORY_DIR)] : []), ...(att?.length ? [join(this.d.teamDir, 'attachments')] : []), ...(phase === 'final-review' && live.shots?.length ? [join(this.d.teamDir, 'visual', run.id)] : [])],
+      images: [...imagePaths(att), ...(phase === 'final-review' && agent !== 'local' ? (live.shots ?? []).map((x) => x.path) : [])],
       web: run.config.webResearch !== false,
       onEvent: (ev) => {
         if (ev.type === 'limits') {
@@ -1325,7 +1384,9 @@ export class TeamOrchestrator {
       if (((run.config.finalReview && (run.config.finalReview === true || parts >= 3) && run.config.review === 'cross') || localWork) && total.length) {
         if (this.stopForBudget(run, null)) return
         const t = this.virtualTask(run, 'final', 'Final review', strongest(this.pool(live)))
-        const { reviewer, rr } = await this.look(run, live, t, 'the final review', finalReviewPrompt(run, await diffText(wt, run.baseCommit)), wt, total.length)
+        await this.takeShots(run, live, total.map((f) => f.path))
+        const images = reviewImagesBlock(live.shots ?? [], (run.config.attachments ?? []).filter((a) => a.kind === 'image').map((a) => a.path))
+        const { reviewer, rr } = await this.look(run, live, t, 'the final review', finalReviewPrompt(run, await diffText(wt, run.baseCommit)) + (images ? `\n\n${images}` : ''), wt, total.length)
         if (live.ctl.signal.aborted) return
         if (!rr.ok) {
           const kind: ErrorKind = rr.error?.kind ?? 'other'
@@ -1377,6 +1438,22 @@ export class TeamOrchestrator {
   }
 
   // A read-only look at the whole result. If the reviewer's plan runs out, the next agent does it instead of the run stopping.
+  // Page screenshots for the final review: only when the owner turned the check on, and (in auto) only when UI files changed. A failed capture never blocks the review.
+  private async takeShots(run: Run, live: Live, files: string[]) {
+    const mode = run.config.visualCheck ?? 'off'
+    live.shots = undefined
+    if (mode === 'off' || !this.d.visualShots) return
+    if (mode === 'auto' && !files.some((f) => /\.(tsx|jsx|vue|svelte|css|scss|sass|less|html?)$/i.test(f))) return
+    try {
+      let timer: NodeJS.Timeout
+      const limit = new Promise<never>((_, no) => { timer = setTimeout(() => no(new Error('it took more than two minutes')), 120_000) })
+      live.shots = await Promise.race([this.d.visualShots(run), limit]).finally(() => clearTimeout(timer!))
+      if (live.shots.length) this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: `Page check: ${live.shots.length} screenshots taken for the final review.` })
+    } catch (e) {
+      this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: `Page check skipped: ${(e as Error).message.slice(0, 200)}` })
+    }
+  }
+
   private async look(run: Run, live: Live, t: Task, what: string, prompt: string, wt: string, files: number): Promise<{ reviewer: AgentName; rr: RunResult }> {
     let reviewer = t.agent
     for (;;) {

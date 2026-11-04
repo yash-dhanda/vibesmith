@@ -204,4 +204,18 @@ describe('team git', () => {
     expect((await applyResult(root, base, branch)).ok).toBe(true)
     expect(existsSync(join(root, 'big.bin'))).toBe(true)
   }, 60_000)
+
+  it('applies only the files it is given, literally', async () => {
+    const { root, base, integ, branch } = await setup('o1')
+    writeFileSync(join(integ, 'a.txt'), 'changed\n')
+    writeFileSync(join(integ, 'new.txt'), 'new\n')
+    writeFileSync(join(integ, '*.txt'), 'star\n') // a name that is a glob must not match the others
+    await commitAll(integ, 'work')
+    expect((await applyResult(root, base, branch, undefined, ['*.txt'])).ok).toBe(true)
+    expect(readFileSync(join(root, '*.txt'), 'utf8')).toBe('star\n')
+    expect(existsSync(join(root, 'new.txt'))).toBe(false)
+    expect(readFileSync(join(root, 'a.txt'), 'utf8')).toBe('one\n')
+    expect((await applyResult(root, base, branch, undefined, ['new.txt', 'a.txt'])).ok).toBe(true)
+    expect(readFileSync(join(root, 'a.txt'), 'utf8')).toBe('changed\n')
+  })
 })

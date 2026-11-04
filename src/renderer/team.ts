@@ -12,6 +12,8 @@ import { buildStage, pushCode, type StageCode } from './teamStage'
 import { renderCrewPreview, visualCheckButton } from './crewPreview'
 import { renderGitPanel } from './gitPanel'
 import { openDiffReview } from './diffReview'
+import { renderLandPanel } from './landPanel'
+import { openQueue } from './queuePanel'
 import { attachVoice } from './voice'
 import { renderCrewStats } from './crewStats'
 import { openRules } from './rulesPanel'
@@ -262,7 +264,8 @@ async function showEntry() {
   start.disabled = !ready.length
   const diagnostics = h('button', 'icon-btn') as HTMLButtonElement; diagnostics.type = 'button'; diagnostics.append(icon('info')); diagnostics.setAttribute('aria-label', 'Copy diagnostics'); diagnostics.title = 'Copy diagnostics: versions, agent status and recent runs for a bug report. No secrets or file contents.'
   diagnostics.onclick = () => void call(async () => { const text = replay ? 'Forge replay diagnostics' : await window.forge.teamDiagnostics(); await writeClipboard(text); toast('Diagnostics copied') })
-  const actions = h('div', 'team-start-actions'); actions.append(project, att.button, att.input, attachVoice(goal, form), diagnostics, historyButton(), h('span', 'grow'), start)
+  const actions = h('div', 'team-start-actions'); const queueBtn = h('button', 'pill') as HTMLButtonElement; queueBtn.type = 'button'; queueBtn.append(icon('list', 'sm'), document.createTextNode('Queue')); queueBtn.title = 'Line up several goals and run them one after another, for example overnight'; queueBtn.onclick = () => void openQueue(); queueBtn.hidden = isRemote() || replay
+  actions.append(project, att.button, att.input, attachVoice(goal, form), diagnostics, historyButton(), queueBtn, h('span', 'grow'), start)
   // The agents as one row of chips ("Claude · Default · High"); a chip opens its model and effort selects in a popover.
   // The popover closes on Escape (focus goes back to its chip) or a click outside.
   const agentsBox = h('div', 'crew-agents'); agentsBox.setAttribute('role', 'group'); agentsBox.setAttribute('aria-label', 'Models and effort')
@@ -876,6 +879,9 @@ async function openDiff(taskId?: string, path?: string, live = false) {
   catch (e) { host.replaceChildren(h('div', 'errcard', cleanErr(e))) }
 }
 
+// Land part of the result: built once per state of the run (it asks for the file groups when drawn).
+let landPanel: { key: string; el: HTMLElement } | null = null
+function landPanelFor() { const key = `${run!.id}:${(run!.landedFiles ?? []).length}:${run!.final!.files.length}`; if (!landPanel || landPanel.key !== key) landPanel = { key, el: renderLandPanel(run!, () => void refreshRun()) }; return landPanel.el }
 function renderFinal() {
   const section = h('section', 'team-final')
   const done = h('div', 'eyebrow', 'Crew finished'); done.prepend(emo(STEP_GLYPH.done))
@@ -890,6 +896,7 @@ function renderFinal() {
   const verify = h('div', `final-verify ${run!.final!.verifyOk ? 'ok' : run!.final!.verifyOk === false ? 'bad' : ''}`); verify.append(emo(run!.final!.verifyOk ? STEP_GLYPH.ok : run!.final!.verifyOk === false ? STEP_GLYPH.bad : STEP_GLYPH.none), h('span', '', run!.final!.verifyOk ? 'Project check passed' : run!.final!.verifyOk === false ? 'Project check failed' : 'No project check configured')); section.append(verify)
   if (run!.final!.reviewNotes.length) { const notes = h('details', 'final-review-notes'); notes.append(h('summary', '', `Final review notes · ${run!.final!.reviewNotes.length}`), ...run!.final!.reviewNotes.map(item => h('p', '', item))); section.append(notes) }
   if (undoResult) section.append(h('div', 'errcard final-action-result', undoResult))
+  if (!replay && !isRemote() && typeof window.forge.teamLandings === 'function' && run!.final!.files.length > 1) section.append(landPanelFor())
   const note = h('p', 'team-final-note', 'Nothing has changed in your project yet. If you don’t land this result, Forge keeps a saved crew copy that you can reopen later.'); section.append(note)
   const actions = h('div', 'team-final-actions')
   const apply = actionButton(N.land, async () => { if (replay) { if (replayScenario === 'applyfail') { undoResult = 'Could not land: your project changed while the crew was working. Review the project and try again.'; renderRun(); return } run!.status = 'done'; run!.applied = true; run!.appliedCheckpoint = 'replay-checkpoint'; toast('Landed · Undo is ready'); renderRun(); return } await call(async () => { let result = await window.forge.teamApply(run!.id); if (!result.ok && /apply without Undo/.test(result.message) && window.confirm(`${result.message}\n\nApply anyway, without Undo?`)) result = await window.forge.teamApply(run!.id, true); if (!result.ok) { undoResult = result.message; renderRun(); return } toast(result.checkpoint ? `${result.message} · Undo is ready` : result.message, 5000); await refreshRun() }) }, 'primary')

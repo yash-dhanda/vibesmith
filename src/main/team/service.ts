@@ -6,6 +6,9 @@ import { cleanAttachments, PartUploads, saveAttachments, sweepAttachments, type 
 import { checkTeamTools, codexLimits, codexModels, localModels, type Health, type LimitInfo } from './health'
 import { TeamOrchestrator } from './orchestrator'
 import { AppRunners } from './runapp'
+import { captureRoutes, type Capture } from './visual'
+import { getAutoAttach, referenceAttachments, referencesBlock } from '../references'
+import { RunQueue } from './queue'
 import { realRunner } from './runner'
 import { TeamSettingsStore } from './settings'
 import { TeamStore } from './store'
@@ -47,6 +50,8 @@ export function sanitizeConfig(raw: unknown): Partial<TeamConfig> {
   if (r.effortMode === 'fixed' || r.effortMode === 'auto' || r.effortMode === 'cheap') out.effortMode = r.effortMode
   if (typeof r.testTask === 'boolean') out.testTask = r.testTask
   if (r.securityReview === 'off' || r.securityReview === 'auto' || r.securityReview === 'always') out.securityReview = r.securityReview
+  if (r.visualCheck === 'off' || r.visualCheck === 'auto' || r.visualCheck === 'always') out.visualCheck = r.visualCheck
+  if (Array.isArray(r.visualRoutes)) out.visualRoutes = r.visualRoutes.filter((x): x is string => typeof x === 'string' && x.length < 200 && /^\//.test(x)).slice(0, 8)
   const cap = num(r.maxLimitPercent, 0, 100)
   if (cap !== undefined) out.maxLimitPercent = cap
   if (typeof r.verify === 'string') out.verify = r.verify.slice(0, 300) || null
@@ -81,7 +86,7 @@ export async function ensureRepo(project: string) {
 
 const ACTIVE = ['planning', 'running', 'paused', 'verifying', 'awaiting_approval', 'interrupted']
 
-export function createTeamService(o: { userData: string; mcpScript: string; emit: (ev: RunEvent) => void; projectNotes: (project: string) => { brief: string; rules: string }; recordUsage?: (agent: AgentName, u: { input: number; output: number }) => void; skills?: () => { block: string; dirs: string[] } }) {
+export function createTeamService(o: { userData: string; mcpScript: string; emit: (ev: RunEvent) => void; projectNotes: (project: string) => { brief: string; rules: string }; recordUsage?: (agent: AgentName, u: { input: number; output: number }) => void; visualCapture?: Capture; skills?: () => { block: string; dirs: string[] }; notify?: (kind: 'finished' | 'attention') => void }) {
   const teamDir = join(o.userData, 'team')
   let healthAt = 0
   let healthCache: Health[] = []
@@ -93,9 +98,16 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
     return healthCache
   }
   const apps = new AppRunners()
+  const runListeners: ((ev: RunEvent) => void)[] = [] // the overnight queue follows the runs it started
   // The code to run: the project once it was applied, otherwise the crew's own copy of it.
   const appDir = (run: Run) => (!run.applied && existsSync(join(run.integrationWorktree, '.git')) ? run.integrationWorktree : run.project)
   const orch = new TeamOrchestrator({
+    visualShots: o.visualCapture ? async (run) => {
+      const r = await apps.run(run.id, appDir(run), run.project)
+      if (!r.url) throw new Error(r.message)
+      try { return (await captureRoutes({ baseUrl: r.url, routes: run.config.visualRoutes, outDir: join(teamDir, 'visual', run.id), capture: o.visualCapture! })).shots }
+      finally { if (!/already running/.test(r.message)) apps.stop(run.id) } // a site the owner started with Run website is left running
+    } : undefined,
     runApp: (run) => apps.run(run.id, appDir(run), run.project),
     stopApp: (run) => apps.stop(run.id),
     store: new TeamStore(join(teamDir, 'runs')),
@@ -108,7 +120,7 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
       const codex = await codexLimits()
       return codex ? { codex } : {}
     },
-    emit: o.emit,
+    emit: (ev) => (o.emit(ev), runListeners.forEach((l) => l(ev))),
     projectNotes: o.projectNotes,
     recordUsage: o.recordUsage,
     skills: o.skills,
@@ -120,7 +132,7 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
   const settings = new TeamSettingsStore(teamDir)
   const parts = new PartUploads(join(teamDir, 'attachments'))
 
-  return {
+  const svc = {
     orch,
     runApp: async (id: string) => { const run = orch.get(id); if (!run) throw new Error('This run no longer exists.'); return apps.run(id, appDir(run), run.project) },
     stopApp: (id: string) => apps.stop(id),
@@ -132,7 +144,13 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
       if (!goal.trim()) throw new Error('Describe what the team should build.')
       if (orch.list().some((r) => r.project === project && ACTIVE.includes(r.status))) throw new Error('This project already has a team run in progress. Finish, apply or cancel it first.')
       await ensureRepo(project)
-      const files = cleanAttachments(join(teamDir, 'attachments'), attachments)
+      const given = cleanAttachments(join(teamDir, 'attachments'), attachments)
+      // reference screenshots and documents of the project, when the owner asked for them to go with every run; their links and notes join the goal
+      let refs: ReturnType<typeof referenceAttachments> = []
+      let notes = ''
+      try { if (getAutoAttach(project)) { refs = referenceAttachments(project, { root: join(teamDir, 'attachments'), kinds: ['image', 'file'], limit: Math.max(0, 12 - given.length) }); notes = referencesBlock(project) } } catch { /* references are optional */ }
+      const files = [...given, ...refs].slice(0, 12)
+      goal = notes ? `${goal.trim()}\n\n${notes}` : goal
       return summarize(await orch.start(project, goal, { ...settings.get(project), ...config, ...(files.length ? { attachments: files } : {}), budget: { maxTasks: settings.get(project).budget?.maxTasks, ...config?.budget } }))
     },
     // Another message for a run: the run is one never-ending chat, so this always goes to the same run (see TeamOrchestrator.followUp).
@@ -163,5 +181,14 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
     },
     settings: { get: (project: string) => settings.get(project), set: (project: string, cfg: unknown) => settings.set(project, sanitizeConfig(cfg)) },
   }
+  const queue = new RunQueue({
+    file: join(teamDir, 'queue.json'),
+    start: (project, goal, config, attachments) => svc.start(project, goal, config, attachments),
+    getRun: (id) => orch.get(id),
+    onRunEvent: (cb) => void runListeners.push(cb),
+    land: async (id) => { const r = await orch.approveFinal(id); return { ok: r.ok, message: r.message } },
+    notify: o.notify,
+  })
+  return { ...svc, queue }
 }
 export type TeamService = ReturnType<typeof createTeamService>

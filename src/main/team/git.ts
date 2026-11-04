@@ -145,13 +145,16 @@ async function applyThreeWay(root: string, patch: string): Promise<void> {
 
 // Puts the team's result into the user's folder as ordinary uncommitted changes (nothing is committed or staged for them).
 // With the id of the checkpoint taken just before, Undo of that checkpoint is limited to the files written here.
-export async function applyResult(root: string, baseCommit: string, branch: string, checkpointId?: string): Promise<{ ok: boolean; message: string }> {
+// `only` (project-relative paths) limits the apply to those files; ponytail: paths go on the command line, which is fine for hundreds of files.
+export async function applyResult(root: string, baseCommit: string, branch: string, checkpointId?: string, only?: string[]): Promise<{ ok: boolean; message: string }> {
   const dir = mkdtempSync(join(tmpdir(), 'forge-patch-'))
   const f = join(dir, 'result.patch')
+  const lit = only ? ['--literal-pathspecs'] : []
+  const spec = only ? ['--', ...only] : []
   try {
-    await git(root, ['diff', '--binary', '--no-renames', `--output=${f}`, baseCommit, branch]) // to a file: a big binary does not fit in git()'s buffer
+    await git(root, [...lit, 'diff', '--binary', '--no-renames', `--output=${f}`, baseCommit, branch, ...spec]) // to a file: a big binary does not fit in git()'s buffer
     if (!statSync(f).size) return { ok: true, message: 'The team made no changes.' }
-    const paths = (await git(root, ['diff', '--name-only', '-z', '--no-renames', '--relative', baseCommit, branch])).split('\0').filter(Boolean)
+    const paths = (await git(root, [...lit, 'diff', '--name-only', '-z', '--no-renames', '--relative', baseCommit, branch, ...spec])).split('\0').filter(Boolean)
     let message = 'Applied.'
     try {
       await git(root, ['apply', '--whitespace=nowarn', f])

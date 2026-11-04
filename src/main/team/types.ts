@@ -93,6 +93,8 @@ export type TeamConfig = {
   autoSwitch?: boolean // when an agent's plan runs out, hand its work to another ready agent and carry on instead of pausing (default on)
   effortMode?: 'fixed' | 'auto' | 'cheap' // fixed: the configured efforts everywhere; auto: lower effort for research and small reviews; cheap: lowest sensible effort, and build work goes to Codex/local when ready (default auto)
   testTask?: boolean // after the build tasks, one task writes or extends tests for the changed code, when the project has a test command (default on)
+  visualCheck?: 'off' | 'auto' | 'always' // before the final review: start the site, screenshot the pages at desktop and phone sizes and show them to the reviewer (auto = only when UI files changed; default off, it starts a dev server)
+  visualRoutes?: string[] // the pages to screenshot (default just "/")
   securityReview?: 'off' | 'auto' | 'always' // a read-only security look before the final review: auto = only when the diff touches auth, payments, secrets, routes or dependencies (default auto)
 }
 
@@ -126,7 +128,13 @@ export type Run = {
   applied?: boolean
   appliedCheckpoint?: string // the recovery point taken just before the result was applied; teamUndo puts the folder back
   undone?: boolean
+  landings?: Landing[] // every landing of this run, partial ones included; the final approval stays open until the last file has landed
+  landedFiles?: string[] // files of run.final.files already in the project (and not undone), so the UI can grey them out
 }
+
+// What the "land part of a run" card shows: each changed file with whether it has landed, the files by the task that wrote them, and every landing.
+export type TeamLandings = { files: (Task['changed'][number] & { state: 'landed' | 'pending' })[]; tasks: { id: string; title: string; files: string[] }[]; landings: Landing[]; pending: boolean }
+export type Landing = { at: number; files: string[]; checkpoint?: string; undone?: boolean }
 
 // What the UI and the log follow. `agent` carries the raw normalised agent events (text, tools, usage) with the task they belong to.
 export type RunEvent =
