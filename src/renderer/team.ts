@@ -877,7 +877,7 @@ export function initTeam(options: { project: () => string | null }) {
   currentProject = options.project() ?? ''
   const enabled = apiReady(); $('mode-team').hidden = !enabled; $('team-nav').hidden = !enabled
   $('mode-team').onclick = () => showTeam(); $('team-nav').onclick = () => showTeam(); $('team-back').onclick = showChat; $('mode-chat').onclick = showChat
-  $('team-hist-toggle').onclick = () => { if (phone.matches) toggleDrawer(); else $('app').classList.toggle('no-hist') }
+  $('team-hist-toggle').onclick = () => { if (phone.matches) toggleDrawer(); else $('hist-toggle').click() } // one toggle: same rail, labels and saved state as Solo
   if (typeof window.forge.onTeamEvent === 'function') window.forge.onTeamEvent(reduceEvent)
   if (localStorage.getItem('forge.teamReplay')) (window as unknown as { __forgeTeamEmit?: typeof reduceEvent }).__forgeTeamEmit = reduceEvent // lets the replay harness stream fake agent events
   if (typeof window.forge.onTeamFocus === 'function') window.forge.onTeamFocus(id => { showTeam(false); void openRun(id).catch(e => toast(cleanErr(e), 5000)) })

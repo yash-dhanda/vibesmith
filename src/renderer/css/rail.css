@@ -1,0 +1,14 @@
+/* ---- collapsed sidebar: a 56px icon rail (desktop windows only; phones keep the drawer) ---- */
+@media (min-width: 801px) {
+  #app.no-hist, #app.team-mode.no-hist, #app.team-mode.no-hist.ws-open { grid-template-columns: 56px minmax(0, 1fr); }
+  #app.no-hist.ws-open { grid-template-columns: 56px minmax(0, 1fr) minmax(360px, 42%); }
+  #app.no-hist #history, #app.team-mode.no-hist #history, #app.no-hist.ws-open #history { display: flex; position: static; width: auto; inset: auto; box-shadow: none; align-items: center; padding: 10px 0 8px; gap: 4px; animation: rail-in var(--t2) var(--ease); }
+  #app.no-hist #chat { margin-left: 0; }
+  #app.no-hist .brand { flex-direction: column; gap: 10px; padding: 2px 0 8px; }
+  #app.no-hist :is(.brand strong, .brand .grow, .side-btn > span, .side-btn kbd, .side-label, #chat-search, #chat-list, .usage-badge .u-main, .usage-badge .u-sub) { display: none; }
+  #app.no-hist .side-nav { align-items: center; gap: 4px; }
+  #app.no-hist .side-btn { width: 38px; height: 38px; padding: 0; justify-content: center; border-radius: var(--r-md); }
+  #app.no-hist .side-foot { flex-direction: column; margin-top: auto; border-top: 0; gap: 4px; padding-top: 0; }
+  #app.no-hist .usage-badge { margin: 0; padding: 4px; }
+}
+@keyframes rail-in { from { opacity: 0; transform: translateX(-6px); } }

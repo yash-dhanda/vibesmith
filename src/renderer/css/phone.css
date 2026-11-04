@@ -1,0 +1,187 @@
+/* ---- phones, tablets and touch. The same renderer is served to a paired phone (viewport-fit=cover). ---- */
+html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; }
+button, a, summary, select, label { touch-action: manipulation; }
+#thread-scroll, #chat-list, #team-root, .set-main, .set-nav, .lib-body, #command-results, .history-body, #build-brief { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.phone-only { display: none !important; }
+#scrim { position: fixed; inset: 0; z-index: 29; background: var(--scrim); animation: fade var(--t2) ease-out; }
+/* touch screens have no hover: everything a pointer would reveal is shown, and controls are a finger wide */
+@media (hover: none) {
+  .chat-item .x, .msg-actions, .run-acts .icon-btn { opacity: 1; }
+  .chat-item { padding-right: 44px; }
+  .chat-item .x { top: 50%; translate: 0 -50%; width: 44px; height: 44px; right: 0; }
+  .side-btn kbd, .set-search kbd, #commands kbd, .palette-search kbd, .palette-foot, .composer-note > span:last-child, .q-opt kbd { display: none; }
+  .task-card[data-task]:hover, .suggest button:hover, #send:hover:not(:disabled) { transform: none; }
+  .icon-btn, .head-btn, .icon-btn.sm, .view-toggle .icon-btn, .copy, .msg-actions button, .att-x, .toast-x { min-width: 44px; min-height: 44px; }
+  .btn, .link-btn, .pill, .bar select, .seg button, .side-btn, .set-nav button, .chat-open, .composer-mode, .att-act, .lane-details, .steps-head, .tool-head, .file-row, .undo, .approve button, .q-opt, .menu button, .command { min-height: 44px; }
+  #send { width: 44px; height: 44px; }
+  #chat-title, .suggest button, .usage-badge, .skill-chip, .team-agent-field select, .team-ask select, .team-field input, .team-field select, .team-folder-chip, .team-folder-row-item, .team-steer input, .team-steer select, .team-approval-card > input, .plan-edit-row input[type='text'], .plan-edit-row select, #chat-search, .q-other, .team-folder-panel input, summary { min-height: 44px; }
+  .icon-btn.xs { width: 36px; height: 36px; }
+}
+@media (max-width: 800px) {
+  .phone-only { display: revert !important; }
+  .ic.phone-only { display: block !important; }
+  .no-phone { display: none !important; }
+  input, textarea, select, #prompt, #command-search { font-size: 16px !important; } /* below 16px iOS zooms the page on focus */
+  html, body { overflow-x: hidden; }
+  /* the sidebar is a drawer: the header button opens it, the scrim, a swipe left, Escape or going somewhere closes it */
+  #app, #app.no-hist, #app.ws-open, #app.no-hist.ws-open, #app.team-mode, #app.team-mode.ws-open, #app.team-mode.no-hist { grid-template-columns: minmax(0, 1fr); }
+  #app #history, #app.no-hist #history, #app:not(.no-hist) #history, #app.team-mode #history, #app.ws-open #history { display: flex; position: fixed; inset: 0 auto 0 0; width: min(300px, 86vw); z-index: 30; box-shadow: 18px 0 50px -24px rgba(0, 0, 0, .55); padding: calc(10px + env(safe-area-inset-top)) 8px calc(8px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left)); transform: translateX(-105%); visibility: hidden; animation: none; transition: transform var(--t2) var(--ease), visibility 0s linear var(--t2); }
+  #app.drawer #history { transform: none; visibility: visible; transition: transform var(--t2) var(--ease), visibility 0s; }
+  #app:not(.no-hist) #chat, #app.ws-open #chat { margin-left: 0; }
+  /* headers sit under the status bar; side insets keep landscape notches clear */
+  #chat { grid-template-columns: minmax(0, 1fr); grid-template-rows: calc(52px + env(safe-area-inset-top)) minmax(0, 1fr) auto; }
+  #app.ws-open #chat, #app.brief-open #chat { display: grid; grid-template-columns: minmax(0, 1fr); }
+  #chat-head { padding: env(safe-area-inset-top) calc(8px + env(safe-area-inset-right)) 0 calc(6px + env(safe-area-inset-left)); gap: 2px; }
+  #chat-title { font-size: 15px; }
+  #thread { padding: 20px calc(14px + env(safe-area-inset-right)) 28px calc(14px + env(safe-area-inset-left)); gap: 16px; }
+  .user { max-width: 88%; }
+  .empty h2 { font-size: 22px; }
+  .suggest { margin-top: 18px; }
+  #composer-wrap { padding: 6px calc(8px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left)); }
+  :root.kb #composer-wrap { padding-bottom: 6px; }
+  #composer { padding: 8px 8px 6px 10px; }
+  .composer-note > span:last-child { display: none; }
+  .bar { gap: 0; }
+  .bar select { max-width: 42vw; }
+  .pill { max-width: 40vw; }
+  .att-text { max-width: 52vw; }
+  /* desktop-only: the code workspace and the side brief */
+  #workspace, #app.ws-open #workspace, #ws-toggle, #brief-toggle, #app.brief-open #build-brief { display: none !important; }
+  #rate, #ctx { display: none; }
+  /* toasts: full width, above the home indicator */
+  #toasts { left: calc(10px + env(safe-area-inset-left)); right: calc(10px + env(safe-area-inset-right)); bottom: calc(10px + env(safe-area-inset-bottom)); align-items: stretch; }
+  .toast { width: 100%; }
+  .menu { max-width: calc(100vw - 16px); }
+  .menu button { padding: 10px 12px; }
+  /* dialogs are bottom sheets */
+  dialog:not(#settings), #palette, #library, #project-history { width: 100%; max-width: 100%; margin: auto 0 0; max-height: calc(var(--vvh, 100dvh) - env(safe-area-inset-top) - 24px); border-radius: 16px 16px 0 0; border-width: 1px 0 0; padding-bottom: env(safe-area-inset-bottom); translate: 0 0; scale: 1; }
+  dialog:not(#settings)[open] { translate: 0 0; }
+  @starting-style { dialog:not(#settings)[open] { translate: 0 24px; opacity: 0; } }
+  #library, #project-history { height: calc(var(--vvh, 100dvh) - env(safe-area-inset-top) - 24px); }
+  #palette { margin-top: auto; }
+  .modal-foot, .lib-head { flex-wrap: wrap; }
+  /* settings: the page list first, then one page with a Back arrow */
+  .set { grid-template-columns: minmax(0, 1fr); }
+  .set-nav { padding: calc(10px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left)); gap: 0; }
+  .set-nav button { height: 48px; font-size: 15px; }
+  .set-nav .set-search { height: 44px; margin: 8px 0 4px; }
+  .set-group-label { font-size: 13px; padding: 18px 8px 6px; }
+  .set.show-page .set-nav, .set:not(.show-page) .set-main { display: none; }
+  .set:not(.show-page) .set-nav button.on { background: none; }
+  .set-inner { padding: calc(12px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(40px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left)); }
+  .set-head h3 { font-size: 18px; margin: 0; }
+  .set-card { flex-direction: column; align-items: flex-start; }
+  .srow { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .srow .ctl { justify-content: flex-start; }
+  .srow input[type='text'], .srow input[type='password'], .srow input[type='number'], .srow input:not([type]), .sselect { width: 100%; height: 44px; }
+  .scards { justify-content: flex-start; }
+  .scard { width: calc(50% - 4px); }
+  .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pair-card img { width: min(280px, 100%); }
+  /* Crew */
+  #team-screen { grid-template-rows: calc(56px + env(safe-area-inset-top)) minmax(0, 1fr); }
+  .team-head { padding: env(safe-area-inset-top) calc(10px + env(safe-area-inset-right)) 0 calc(6px + env(safe-area-inset-left)); }
+  .team-head .page-title { font-size: 18px; }
+  #team-root { padding-bottom: env(safe-area-inset-bottom); }
+  .team-entry { width: calc(100% - 20px - env(safe-area-inset-left) - env(safe-area-inset-right)); padding-top: 18px; }
+  .team-intro h1 { font-size: 21px; }
+  .team-lede { font-size: 13px; }
+  .team-start-card { margin-top: 16px; padding: 10px; }
+  .team-folder-row { flex-wrap: wrap; }
+  .team-folder-hint { flex-basis: 100%; white-space: normal; overflow-wrap: anywhere; }
+  .team-folder-chip { max-width: 100%; }
+  .team-agents { grid-template-columns: minmax(0, 1fr); }
+  .team-ask small { flex-basis: 100%; }
+  .team-health { flex-direction: column; }
+  .team-start-actions { flex-wrap: wrap; row-gap: 6px; }
+  .team-start { flex: 1 0 100%; justify-content: center; min-height: 44px; }
+  .team-config-grid { grid-template-columns: minmax(0, 1fr); }
+  .team-runs { margin-top: 36px; }
+  .team-runs .view-toggle { display: none; }
+  .head-search input { width: 40vw; }
+  .run-row .run-acts .icon-btn { opacity: 1; }
+  .team-run { width: calc(100% - 16px - env(safe-area-inset-left) - env(safe-area-inset-right)); padding-top: 12px; }
+  .team-run-header { box-shadow: none; }
+  .team-run-identity h1 { font-size: 15.5px; }
+  .team-board { grid-template-columns: minmax(0, 1fr); }
+  .team-story, .team-side-story, .team-lanes { grid-template-columns: minmax(0, 1fr); }
+  .stage-editor { height: 62vh; height: 62dvh; min-height: 320px; }
+  .stage-doc { padding-right: 16px; }
+  .stage-scroll, .live-code-body, .lane-body, .assistant pre, .tool-body { -webkit-overflow-scrolling: touch; }
+  .team-approval-card { grid-template-columns: minmax(0, 1fr); }
+  .question-card { padding: 14px 14px 0; }
+  .q-foot { margin-inline: -14px; padding-inline: 14px; flex-wrap: wrap; }
+  .team-steer > div { flex-wrap: wrap; }
+  .team-steer input { flex-basis: 100%; }
+  .team-diff-host.open { height: 60vh; }
+  .plan-edit-row { grid-template-columns: auto minmax(0, 1fr); }
+  .plan-edit-row select, .plan-edit-row .plan-skip { grid-column: 2; justify-self: start; }
+}
+
+/* ---- code colours without Monaco (the phone link), and its plain diff ---- */
+.tk-k { color: #569cd6; } .tk-s { color: #ce9178; } .tk-c { color: #6a9955; } .tk-n { color: #b5cea8; } .tk-t { color: #9cdcfe; }
+:root[data-theme='light'] .tk-k { color: #0000ff; } :root[data-theme='light'] .tk-s { color: #a31515; } :root[data-theme='light'] .tk-c { color: #008000; } :root[data-theme='light'] .tk-n { color: #098658; } :root[data-theme='light'] .tk-t { color: #e50000; }
+.lite-diff { margin: 0; height: 100%; overflow: auto; padding: 10px 12px; font: 12px/1.6 var(--mono); white-space: pre; -webkit-user-select: text; user-select: text; }
+.lite-diff .diff-add { color: var(--add-ink); background: var(--add); } .lite-diff .diff-remove { color: var(--del-ink); background: var(--del); } .lite-diff .diff-hunk { color: var(--faint); }
+.stage-more { display: block; width: 100%; height: 44px; margin: 0 0 8px; border: 1px dashed var(--ed-line); border-radius: var(--r-sm); background: none; color: var(--ed-dim); font: 12px var(--sans); }
+.load-earlier { align-self: center; }
+.chat-skel { height: 44px; margin: 6px 4px; border-radius: var(--r-md); }
+
+/* ---- the phone link (html.remote): cheaper to draw, and it behaves like an app ---- */
+:root.remote { --t1: 100ms; --t2: 150ms; --t3: 180ms; --float: 0 0 0 1px var(--border); }
+html.remote, html.remote body { overscroll-behavior: none; touch-action: manipulation; }
+html.remote body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+html.remote :is(.assistant, .user, pre, code, .stage-code, .feed-body, .errcard, .task-error, .note, .q-detail, .team-final-report, .memory-item, input, textarea, [contenteditable]) { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+/* flat layers: hairlines instead of large blurred shadows, no repainting canvas behind a run */
+html.remote .question-card, :root.remote .toast, :root.remote dialog { box-shadow: none; }
+html.remote #app #history { box-shadow: none; border-right: 1px solid var(--hair); }
+html.remote #team-root:has(> .team-run) { background-image: none; }
+/* only the working indicators keep moving; every other loop plays once */
+html.remote *, html.remote *::before, html.remote *::after { animation-iteration-count: 1 !important; }
+html.remote .thinking i, html.remote .lane-live.on::before, html.remote .stage-cursor, html.remote .netbar-spin { animation-iteration-count: infinite !important; }
+html.remote #thread > * { animation: none; }
+html.remote .fresh { animation-duration: .6s; }
+html.remote .stage-block.arriving { animation-duration: .25s; }
+/* off-screen rows are not laid out or painted; panels that change often do not relayout the page */
+html.remote #chat-list .chat-item { content-visibility: auto; contain-intrinsic-size: auto 50px; }
+html.remote .run-row { content-visibility: auto; contain-intrinsic-size: auto 120px; }
+html.remote :is(.task-card, .plan-edit-row) { content-visibility: auto; contain-intrinsic-size: auto 130px; }
+html.remote :is(.activity-row, .feed-item, .skill-rec) { content-visibility: auto; contain-intrinsic-size: auto 48px; }
+html.remote .stage-editor { contain: strict; }
+/* the live editor on a phone: no gutter, and files off screen are skipped (each block is as wide as its longest line, so nothing is clipped) */
+html.remote .stage-gutter { display: none; }
+html.remote .stage-doc { padding-left: 6px; }
+html.remote .stage-block { content-visibility: auto; contain-intrinsic-size: auto 600px; width: max-content; min-width: 100%; padding-left: 10px; }
+html.remote .stage-bhead::before { left: 0; }
+html.remote .stage-code code { display: block; }
+html.remote :is(.agent-lane, .team-feed, .team-verify, .team-live-files, .team-memory, .team-diff-panel) { contain: layout paint; }
+/* "Reconnecting…": a slim pill under the status bar while the link is down */
+.netbar { position: fixed; z-index: 50; top: calc(8px + env(safe-area-inset-top)); left: 50%; translate: -50% 0; display: flex; align-items: center; gap: 8px; padding: 6px 14px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel); color: var(--muted); font-size: 13px; animation: fade var(--t2) ease-out; }
+.netbar-spin { width: 12px; height: 12px; border: 1.5px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+#tabbar { display: none; }
+@media (max-width: 800px) {
+  /* the bottom bar: Solo, Crew, Settings; the header's menu button keeps the chat list */
+  #app, #app.no-hist, #app.ws-open, #app.team-mode { grid-template-rows: minmax(0, 1fr) auto; }
+  #tabbar { display: flex; border-top: 1px solid var(--hair); background: var(--bg); padding: 2px calc(8px + env(safe-area-inset-right)) env(safe-area-inset-bottom) calc(8px + env(safe-area-inset-left)); }
+  :root.kb #tabbar { display: none; }
+  .tab-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 50px; border: 0; background: none; color: var(--faint); font-size: 11px; }
+  .tab-btn[aria-current='true'] { color: var(--text); }
+  .tab-btn .ic { width: 20px; height: 20px; }
+  .composer-modes, #team-back { display: none; }
+  #composer-wrap { padding-bottom: 8px; }
+  :root.kb #composer-wrap { padding-bottom: 6px; }
+  #team-root { padding-bottom: 0; }
+  #toasts { bottom: calc(66px + env(safe-area-inset-bottom)); }
+  :root.kb #toasts { bottom: 10px; }
+  /* reading on a phone: bigger type in chat */
+  .assistant, .user { font-size: 17px; }
+  .assistant { line-height: 1.6; }
+  .assistant code, .assistant pre { font-size: 14px; }
+  .assistant h3 { font-size: 19px; } .assistant h4 { font-size: 17px; }
+  .user.sending { opacity: .6; }
+  .user.sending::after { content: 'Sending…'; display: block; margin-top: 2px; font-size: 12px; color: var(--muted); text-align: right; }
+  .user.failed { box-shadow: inset 0 0 0 1px var(--errborder); }
+  /* headers that stay while their list scrolls */
+  .group-label { position: sticky; top: 0; z-index: 1; background: var(--side); }
+  .set-head { position: sticky; top: 0; z-index: 2; background: var(--bg); margin-top: calc(-12px - env(safe-area-inset-top)); padding: calc(12px + env(safe-area-inset-top)) 0 6px; }
+}

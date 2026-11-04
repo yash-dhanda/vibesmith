@@ -829,9 +829,11 @@ export async function initChat(opts: {
     { label: 'Model library', icon: 'cube', detail: 'Download models and check hardware fit', run: () => openLibrary() },
     { label: 'Settings', icon: 'gear', detail: 'Appearance, models, agent and shortcuts', run: () => openSettings() },
     { label: 'Usage and speed', icon: 'chart', run: () => openSettings('usage') },
-    ...(isRemote() ? [] : [{ label: 'Toggle workspace', icon: 'code' as const, detail: 'Files, editor and terminal · Ctrl J', run: () => $('ws-toggle').click() }, { label: 'Toggle build brief', icon: 'list' as const, run: () => $('brief-toggle').click() }]),
+    ...(isRemote() ? [] : [{ label: 'Toggle workspace', icon: 'code' as const, detail: 'Files, editor and terminal · Ctrl J', run: () => $('ws-toggle').click() }, { label: 'Toggle build brief', icon: 'list' as const, detail: 'Ctrl .', run: () => $('brief-toggle').click() }]),
     { label: 'Focus message', icon: 'keyboard', detail: 'Ctrl L', run: () => prompt.focus() },
-    { label: 'Toggle chat history', icon: 'sidebar', detail: 'Ctrl B', run: () => $('hist-toggle').click() },
+    { label: 'Collapse or expand the sidebar', icon: 'sidebar', detail: 'Ctrl B', run: () => $('hist-toggle').click() },
+    { label: 'Go to Solo', icon: 'edit', detail: 'Ctrl 1', run: () => $('mode-chat').click() },
+    ...($('mode-team').hidden ? [] : [{ label: 'Go to Crew', icon: 'users' as const, detail: 'Ctrl 2', run: () => $('mode-team').click() }]),
     ...(['ask-all', 'auto-edit', 'full-auto'] as const).map((mode, i) => ({ label: `Autonomy: ${['Ask before edits', 'Auto-edit', 'Full auto'][i]}`, icon: 'sliders' as const, run: () => { modeSel.value = mode; localStorage.setItem('forge.mode', mode) } })),
     ...(project && !isRemote() ? [{ label: 'Open project folder', icon: 'folder' as const, run: () => { window.forge.openFolder(activeId).catch(e => toast(cleanErr(e), 4000)) } }] : []),
     ...chats.map(c => ({ label: c.title, icon: 'edit' as const, detail: `Chat · ${folderName(c.project)}`, run: () => openChat(c.id) })),
@@ -885,15 +887,20 @@ export async function initChat(opts: {
   compactWindow.addEventListener('change', ({ matches }) => {
     if (matches && !$('app').classList.contains('no-hist')) { $('app').classList.add('no-hist'); autoHidden = true }
     else if (!matches && autoHidden) { $('app').classList.remove('no-hist'); autoHidden = false }
+    railLabels()
   })
+  // Desktop: collapsing leaves the icon rail (rail.css), so every place stays one click away. Phones: the drawer.
+  const railLabels = () => { const off = $('app').classList.contains('no-hist'); for (const id of ['side-collapse', 'hist-toggle', 'team-hist-toggle']) { const b = $(id); b.title = `${off ? 'Expand' : 'Collapse'} sidebar (Ctrl B)`; b.setAttribute('aria-label', `${off ? 'Expand' : 'Collapse'} sidebar`); b.setAttribute('aria-expanded', String(!off)) } }
   $('hist-toggle').onclick = () => {
     if (phone.matches) return toggleDrawer()
     autoHidden = false
     const off = $('app').classList.toggle('no-hist')
+    railLabels()
     try {
       localStorage.setItem('forge.hist', off ? '0' : '1')
     } catch {}
   }
+  railLabels()
 
   // Delegated clicks inside replies: copy buttons on code blocks, and links open in the real browser.
   thread.addEventListener('click', (e) => {
@@ -920,6 +927,9 @@ export async function initChat(opts: {
       else if (k === 'b') run(() => $('hist-toggle').click())
       else if (k === 'j') run(() => $('ws-toggle').click())
       else if (k === ',') run(() => openSettings())
+      else if (k === '1') run(() => $('mode-chat').click()) // Solo
+      else if (k === '2' && !$('mode-team').hidden) run(() => $('mode-team').click()) // Crew
+      else if (k === '.') run(() => $('brief-toggle').click())
     }
   })
 

@@ -754,10 +754,11 @@ app.whenReady().then(() => {
   icon: join(here, '../../build/icon.png'),
     width: 1280,
     height: 820,
-    backgroundColor: '#18181b',
+    backgroundColor: '#141414',
     webPreferences: {
       preload: join(here, '../preload/index.mjs'),
       contextIsolation: true,
+      zoomFactor: 1.07, // comfortable density for all-day use (UI 13px reads as 14px); Ctrl 0 / Ctrl - / Ctrl + still change it
       // ponytail: sandbox off because the ESM preload needs it; renderer only loads local files
       sandbox: false,
     },
