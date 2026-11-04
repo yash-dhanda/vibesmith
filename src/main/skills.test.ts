@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { findSkills, parseRepoUrl, SkillStore } from './skills'
+import { findSkills, friendlyGitError, parseRepoUrl, SkillStore } from './skills'
 
 describe('skill libraries', () => {
   it('accepts only plain https GitHub links', () => {
@@ -10,6 +10,11 @@ describe('skill libraries', () => {
     expect(parseRepoUrl('https://github.com/a/b.git')?.url).toBe('https://github.com/a/b')
     expect(parseRepoUrl('https://github.com/a/b/tree/main')?.branch).toBe('main')
     for (const bad of ['http://github.com/a/b', 'git@github.com:a/b.git', 'https://evil.com/a/b', 'https://user:pw@github.com/a/b', 'file:///etc', '/home/me/repo', 'https://github.com/../b', 'https://github.com/a/b; rm -rf /']) expect(parseRepoUrl(bad)).toBeNull()
+  })
+
+  it('explains a network that changes the secure connection', () => {
+    expect(friendlyGitError("fatal: unable to access 'x': SSL certificate OpenSSL verify result: self-signed certificate in certificate chain (19)")).toMatch(/firewall/)
+    expect(friendlyGitError('repository not found')).toBe('repository not found')
   })
 
   it('finds skills by their SKILL.md and reads name and description', () => {

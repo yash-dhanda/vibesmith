@@ -62,6 +62,20 @@ export function findSkills(dir: string, repoName: string): Skill[] {
   return found
 }
 
+// Hostel and office networks sometimes break a secure connection now and then (a firewall that inspects traffic, a dropped link). The same call
+// usually works a moment later, so network errors are retried; the certificate check itself is never turned off.
+const TRANSIENT = /SSL|certificate|timed out|Could not resolve|early EOF|RPC failed|Connection (reset|refused)|unable to access/i
+export const friendlyGitError = (message: string) =>
+  /certificate/i.test(message) ? 'Your network is changing the secure connection to GitHub (a firewall that inspects traffic). It often works on a retry or on another network, such as a phone hotspot.' : message
+async function withRetry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
+  for (let i = 1; ; i++) {
+    try { return await fn() } catch (e) {
+      if (i >= tries || !TRANSIENT.test((e as Error).message)) throw e
+      await new Promise((r) => setTimeout(r, 800 * i))
+    }
+  }
+}
+
 const git = (args: string[], cwd?: string) =>
   new Promise<string>((res, rej) =>
     execFile('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'protocol.file.allow=never', ...args], { cwd, timeout: CLONE_TIMEOUT_MS, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: 'echo' }, maxBuffer: 4_000_000 }, (e, out, err) =>
@@ -94,10 +108,10 @@ export class SkillStore {
     const dir = this.dirOf(ref.id)
     rmSync(dir, { recursive: true, force: true })
     try {
-      await git(['clone', '--depth', '1', '--no-tags', '--single-branch', ...(ref.branch ? ['--branch', ref.branch] : []), '--', ref.url + '.git', dir])
+      await withRetry(() => git(['clone', '--depth', '1', '--no-tags', '--single-branch', ...(ref.branch ? ['--branch', ref.branch] : []), '--', ref.url + '.git', dir]))
     } catch (e) {
       rmSync(dir, { recursive: true, force: true })
-      throw new Error(`Could not clone it: ${(e as Error).message}. Is the repository public?`)
+      throw new Error(`Could not clone it: ${friendlyGitError((e as Error).message)}${/certificate|timed out|resolve/i.test((e as Error).message) ? '' : ' Is the repository public?'}`)
     }
     const repo: SkillRepo = { id: ref.id, url: ref.url, name: `${ref.owner}/${ref.repo}`, enabled: true, addedAt: Date.now(), updatedAt: Date.now(), skills: findSkills(dir, ref.repo) }
     this.save([...list, repo])
@@ -110,10 +124,10 @@ export class SkillStore {
     if (!repo) throw new Error('Unknown repository.')
     const dir = this.dirOf(id)
     try {
-      await git(['fetch', '--depth', '1', 'origin'], dir)
+      await withRetry(() => git(['fetch', '--depth', '1', 'origin'], dir))
       await git(['reset', '--hard', 'FETCH_HEAD'], dir)
       repo.error = undefined
-    } catch (e) { repo.error = `Could not update: ${(e as Error).message}` }
+    } catch (e) { repo.error = `Could not update: ${friendlyGitError((e as Error).message)}` }
     repo.skills = findSkills(dir, repo.name.split('/')[1] ?? repo.name)
     repo.updatedAt = Date.now()
     this.save(list)
