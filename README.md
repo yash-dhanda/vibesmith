@@ -28,6 +28,16 @@ Describe a goal. A planner splits it into tasks, the tasks run in their own git 
 - **Folder finder.** Describe the job and Forge scans your computer for the folder it belongs in.
 - **Models and effort visible.** The model and reasoning effort of Claude and Codex are shown and set per run. No budget or allowance limit unless you set one.
 - **Background.** Crew notes and check results stay tucked in a collapsed Background row.
+- **Keeps going at a limit.** When Claude or Codex reaches its plan limit, another ready agent takes over its tasks and the run continues. Effort is chosen per job (automatic, fixed, or cheap).
+- **Tests and a security look.** After the build tasks an agent writes or extends tests; before landing a read-only security review checks risky changes (auth, payments, secrets, routes, dependencies).
+- **Land part of a run.** Pick single files or whole tasks to land; undo each landing on its own.
+- **Page check and live preview.** Run the website from the run screen and see it beside the work; optionally screenshot the pages at desktop and phone sizes for the reviewer.
+- **Git and pull requests.** Branch, commit, push and open a pull request for a landed run with buttons (never on main, never forced).
+- **Review with comments.** Comment on diff lines; the comments go to the crew as one message.
+- **Overnight queue.** Line up several goals; they run one after another (optional automatic landing when checks pass) with a morning report.
+- **Project rules and a reference library.** One rules file every agent follows, and a per-project library of design screenshots, documents and links.
+- **Search everything** (Ctrl Shift F), a **projects dashboard**, a **restore points browser**, **per-task cost and time**, and **voice prompts** with a local speech-to-text program.
+- **Phone.** Optional HTTPS through Tailscale certificates, and generic push notifications through the free ntfy app (nothing about your code is sent).
 
 ![A Crew run in progress](docs/screenshots/forge-crew-run-dark.png)
 

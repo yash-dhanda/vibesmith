@@ -26,3 +26,8 @@ Owner said "add all" after asking for the 20 most valuable additions. Built in w
 | 20 | Auto effort and model choice, cheap mode | 1 | |
 
 Shared rules for every agent: edit only owned files; new UI in new files; IPC in new `register*` modules wired into `src/main/index.ts` and `src/preload/index.ts` with targeted one-line Edits; no git writes; no Electron launch except on the agent's own port/profile; never run real Claude/Codex jobs; tests next to code; typecheck + tests must pass; no AI attribution.
+
+
+## Status (end of the build)
+
+Built: 1-7, 9-20. Not built: 8 (extra agent) until the owner picks and buys a subscription. Notes: 7 needs "HTTPS Certificates" enabled in the Tailscale admin console and `sudo tailscale set --operator=$USER` once; 6 uses ntfy (generic messages only); 19 needs a local speech-to-text program (whisper.cpp or whisper) installed.
