@@ -1,4 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import { createServer as createSecureServer, type Server as SecureServer } from 'node:https'
+import type { TLSSocket } from 'node:tls'
 import { brotliCompress, gzip } from 'node:zlib'
 import { promisify } from 'node:util'
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
@@ -6,6 +8,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'no
 import { readFile } from 'node:fs/promises'
 import { networkInterfaces } from 'node:os'
 import { dirname, extname, join, resolve, sep } from 'node:path'
+import { obtainTls, RENEW_BEFORE, type TlsCert } from './tlsCert'
 
 // Remote access: the Forge window, served to a phone's browser. The page is the same renderer; a small script stands in for the Electron
 // preload and sends each call to this server, which runs the same handler the desktop window would. Nothing is reachable until the user
@@ -13,8 +16,8 @@ import { dirname, extname, join, resolve, sep } from 'node:path'
 
 export type Handler = (e: unknown, ...args: unknown[]) => unknown
 export type Device = { id: string; name: string; hash: string; createdAt: number; lastSeen: number }
-export type RemoteState = { enabled: boolean; lan: boolean; port: number; devices: Device[]; pairing: string[] } // pairing: hashes of links not used yet
-export type RemoteStatus = { enabled: boolean; lan: boolean; listening: boolean; host: string; port: number; url: string; tailscale: boolean; devices: Omit<Device, 'hash'>[]; error?: string }
+export type RemoteState = { enabled: boolean; lan: boolean; https: boolean; port: number; devices: Device[]; pairing: string[] } // pairing: hashes of links not used yet
+export type RemoteStatus = { enabled: boolean; lan: boolean; https: boolean; httpsActive: boolean; httpsError?: string; listening: boolean; host: string; port: number; url: string; tailscale: boolean; devices: Omit<Device, 'hash'>[]; error?: string }
 export type RemoteDeps = {
   dir: string // where remote.json lives (the user data folder)
   rendererDir: string
@@ -23,10 +26,11 @@ export type RemoteDeps = {
   listeners: Map<string, Handler[]>
   bind?: string // tests: where to listen
   maxBody?: number // tests: smaller request limit
+  tls?: () => Promise<TlsCert> // tests: a certificate from somewhere else than `tailscale cert`
 }
 
 // Computer-only: they open dialogs, windows, a shell or the workspace on the computer, which a phone can neither see nor use.
-export const BLOCKED = (c: string) => /^(remote|term|fs|open):/.test(c) || /^preview:(attach|bounds|visible|reload|detach)$/.test(c) || c === 'save:text' || c === 'project:pick' || c === 'app:open-data' || c === 'team:history-open' || c === 'team:export-report'
+export const BLOCKED = (c: string) => /^(remote|term|fs|open|push):/.test(c) || /^preview:(attach|bounds|visible|reload|detach)$/.test(c) || c === 'save:text' || c === 'project:pick' || c === 'app:open-data' || c === 'team:history-open' || c === 'team:export-report'
 const MIME: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf', '.map': 'application/json', '.webmanifest': 'application/manifest+json' }
 const MANIFEST = JSON.stringify({ name: 'Forge', short_name: 'Forge', start_url: '/', display: 'standalone', background_color: '#141414', theme_color: '#141414', icons: [{ src: '/icon.png', sizes: '512x512', type: 'image/png' }] })
 const brotli = promisify(brotliCompress)
@@ -41,7 +45,9 @@ const MAX_BODY = 90_000_000 // photos and short videos are uploaded through the 
 const MAX_CALLS = 40 // calls in one /batch; the phone script splits bigger queues
 const MAX_BACKLOG = 4_000_000 // bytes a phone's event stream may fall behind before it is dropped (the page reconnects)
 const DAY = 24 * 3600_000
-const sessionCookie = (v: string) => `forge_session=${v}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${SESSION_SECONDS}`
+const sessionCookie = (v: string, secure: boolean) => `forge_session=${v}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${SESSION_SECONDS}${secure ? '; Secure' : ''}`
+const isTls = (req: IncomingMessage) => !!(req.socket as TLSSocket).encrypted
+const CERT_CHECK = 12 * 3600_000
 
 // The address Tailscale gave this computer, if it is on a tailnet.
 export function tailscaleAddress(): string | null {
@@ -129,6 +135,9 @@ export class RemoteServer {
   private renewed = new Map<string, number>()
   private fails = new Map<string, { n: number; at: number }>()
   private error = ''
+  private tls: TlsCert | null = null // set while the Tailscale address is served over https
+  private httpsError = ''
+  private renew: ReturnType<typeof setInterval> | null = null
   private shim = ''
   private file: string
 
@@ -136,7 +145,7 @@ export class RemoteServer {
     this.file = join(d.dir, 'remote.json')
     let s: Partial<RemoteState> = {}
     try { s = JSON.parse(readFileSync(this.file, 'utf8')) } catch {}
-    this.state = { enabled: !!s.enabled, lan: !!s.lan, port: Number(s.port) || 8787, devices: Array.isArray(s.devices) ? s.devices : [], pairing: Array.isArray(s.pairing) ? s.pairing.slice(-20) : [] }
+    this.state = { enabled: !!s.enabled, lan: !!s.lan, https: !!s.https, port: Number(s.port) || 8787, devices: Array.isArray(s.devices) ? s.devices : [], pairing: Array.isArray(s.pairing) ? s.pairing.slice(-20) : [] }
   }
 
   private save() {
@@ -167,7 +176,8 @@ export class RemoteServer {
   status(): RemoteStatus {
     const ts = tailscaleAddress()
     const shown = this.servers.length ? this.hosts[0] : this.wanted()[0] // the address really listening, not the one Tailscale has now
-    return { enabled: this.state.enabled, lan: this.state.lan, listening: this.servers.some((s) => s.listening), host: shown, port: this.port(), url: `http://${shown}:${this.port()}`, tailscale: !!ts, devices: this.state.devices.map(({ hash: _h, ...d }) => d), error: this.error || undefined }
+    const url = this.tls ? `https://${this.tls.name}:${this.port()}` : `http://${shown}:${this.port()}`
+    return { enabled: this.state.enabled, lan: this.state.lan, https: this.state.https, httpsActive: !!this.tls, httpsError: this.state.https && this.httpsError || undefined, listening: this.servers.some((s) => s.listening), host: shown, port: this.port(), url, tailscale: !!ts, devices: this.state.devices.map(({ hash: _h, ...d }) => d), error: this.error || undefined }
   }
   private port() { return (this.servers[0]?.address() as { port?: number } | null)?.port ?? this.state.port }
   // Only the addresses that were asked for: 'also allow this Wi-Fi' adds the Wi-Fi address, it does not open every interface.
@@ -178,8 +188,9 @@ export class RemoteServer {
     return list.length ? list : ['127.0.0.1']
   }
 
-  async configure(o: { enabled?: boolean; lan?: boolean }): Promise<RemoteStatus> {
+  async configure(o: { enabled?: boolean; lan?: boolean; https?: boolean }): Promise<RemoteStatus> {
     if (o.lan !== undefined) this.state.lan = o.lan
+    if (o.https !== undefined) this.state.https = o.https
     if (o.enabled !== undefined) this.state.enabled = o.enabled
     this.save()
     await this.stop()
@@ -192,9 +203,14 @@ export class RemoteServer {
     this.error = ''
     const hosts = this.wanted()
     this.asked = hosts.join()
+    const cert = await this.getCert()
+    const secureHost = this.d.bind ?? tailscaleAddress() // only this address is served over https: the certificate is for the Tailscale name
+    if (cert && !hosts.includes('127.0.0.1')) hosts.push('127.0.0.1') // this computer keeps a plain http listener
     const bound: string[] = []
     for (const host of hosts) {
-      const srv = createServer((req, res) => { void this.handle(req, res).catch(() => { if (!res.headersSent) res.writeHead(500); res.end() }) })
+      const listener = (req: IncomingMessage, res: ServerResponse) => { void this.handle(req, res).catch(() => { if (!res.headersSent) res.writeHead(500); res.end() }) }
+      const secure = !!cert && host === secureHost
+      const srv: Server = secure ? createSecureServer({ cert: cert.cert, key: cert.key }, listener) : createServer(listener)
       srv.keepAliveTimeout = 65_000 // phones reuse one connection instead of opening a new one for every call
       srv.on('connection', (sock) => sock.setNoDelay(true))
       const ok = await new Promise<boolean>((done) => {
@@ -204,12 +220,34 @@ export class RemoteServer {
       if (!ok) continue
       this.servers.push(srv)
       bound.push(host)
+      if (secure) this.tls = cert
       port = (srv.address() as { port: number }).port // the next address shares the port
     }
     this.hosts = bound.length ? bound : hosts
+    if (cert && !this.tls && !this.httpsError) this.httpsError = 'Tailscale has no address on this computer yet, so the link is plain http for now.'
+    if (this.renew) clearInterval(this.renew)
+    this.renew = this.state.https ? setInterval(() => void this.renewCert(), CERT_CHECK).unref() : null
     // Armed even when nothing bound (the new address may not be usable yet), or a failed rebind would leave the server dead.
     if (this.watch) clearInterval(this.watch)
     if (!this.d.bind) this.watch = setInterval(() => { if (!this.servers.length || this.wanted().join() !== this.asked) void this.rebind() }, 10_000).unref()
+  }
+
+  // The certificate for https, or null (with the reason in httpsError) when it is off or cannot be had: the link then stays on plain http, and says so.
+  private async getCert(): Promise<TlsCert | null> {
+    this.httpsError = ''
+    if (!this.state.https) return null
+    try { return await (this.d.tls ?? (() => obtainTls(join(this.d.dir, 'tls'))))() } catch (e) { this.httpsError = (e as Error).message; return null }
+  }
+
+  // Tailscale certificates last 90 days: renewed here when under 14 days are left (the open listeners take the new one without a restart).
+  private async renewCert() {
+    if (!this.state.https || !this.servers.length) return
+    if (this.tls && this.tls.notAfter - Date.now() > RENEW_BEFORE) return
+    const fresh = await this.getCert()
+    if (!fresh) return // keep serving the old one; httpsError says why it could not be renewed
+    if (!this.tls) return void (await this.rebind()) // https could not start earlier; it can now
+    this.tls = fresh
+    for (const s of this.servers) (s as Partial<SecureServer>).setSecureContext?.({ cert: fresh.cert, key: fresh.key })
   }
 
   // Remote access can start at login before Tailscale has an address; follow it once it appears.
@@ -222,6 +260,9 @@ export class RemoteServer {
   async stop() {
     if (this.watch) clearInterval(this.watch)
     this.watch = null
+    if (this.renew) clearInterval(this.renew)
+    this.renew = null
+    this.tls = null
     if (this.flushTimer) clearTimeout(this.flushTimer)
     this.flushTimer = null
     this.outbox = ''
@@ -336,7 +377,7 @@ export class RemoteServer {
       this.state.devices.push({ id, name, hash: sha(secret), createdAt: Date.now(), lastSeen: Date.now() })
       this.save()
       // Not a redirect: a link opened from another site would keep that site as the initiator and the SameSite=Strict cookie would not be sent. A navigation started by this page is same-site.
-      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'set-cookie': sessionCookie(`${id}.${secret}`), 'cache-control': 'no-store' })
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'set-cookie': sessionCookie(`${id}.${secret}`, isTls(req)), 'cache-control': 'no-store' })
       return void res.end('<meta http-equiv="refresh" content="0;url=/"><script>location.replace("/")</script>')
     }
 
@@ -350,7 +391,7 @@ export class RemoteServer {
       return void this.json(res, 401, { error: 'not paired' })
     }
     if (Date.now() - dev.lastSeen > 60_000) { dev.lastSeen = Date.now(); this.save() }
-    if (Date.now() - (this.renewed.get(dev.id) ?? 0) > DAY) { this.renewed.set(dev.id, Date.now()); res.setHeader('set-cookie', sessionCookie(this.cookie(req, 'forge_session'))) } // browsers cap a cookie's life (Chromium at 400 days), so a phone in use gets a fresh one
+    if (Date.now() - (this.renewed.get(dev.id) ?? 0) > DAY) { this.renewed.set(dev.id, Date.now()); res.setHeader('set-cookie', sessionCookie(this.cookie(req, 'forge_session'), isTls(req))) } // browsers cap a cookie's life (Chromium at 400 days), so a phone in use gets a fresh one
 
     if (req.method === 'POST' && ['/batch', '/rpc', '/send'].includes(url.pathname) && !this.fromOurPage(req)) return void this.json(res, 403, { ok: false, error: 'Calls must come from the Forge page.' })
 

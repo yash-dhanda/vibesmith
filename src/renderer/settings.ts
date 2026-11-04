@@ -452,7 +452,7 @@ async function about(into: HTMLElement) {
 async function remote(into: HTMLElement) {
   if (isRemote() || typeof window.forge.remoteStatus !== 'function') return
   const st = await window.forge.remoteStatus()
-  const set = async (o: { enabled?: boolean; lan?: boolean }) => { try { await window.forge.remoteSet(o) } catch (e) { toast(cleanErr(e), 4000) } void rerender() }
+  const set = async (o: { enabled?: boolean; lan?: boolean; https?: boolean }) => { try { await window.forge.remoteSet(o) } catch (e) { toast(cleanErr(e), 4000) } void rerender() }
   const g = group('Phone')
   const state = h('div', `remote-state ${st.error ? 'bad' : st.listening ? 'ok' : ''}`)
   state.setAttribute('role', 'status')
@@ -462,6 +462,13 @@ async function remote(into: HTMLElement) {
   info.append(state)
   if (!st.tailscale) info.append(h('div', 'remote-hint', 'Tailscale isn’t running on this computer, so the phone link only works on this computer. Install Tailscale on both devices (free) and turn it on.'))
   g.box.append(info)
+  const tls = row('Use HTTPS (recommended)', 'Serves the link with a certificate from Tailscale: no browser warning, and the phone can install Forge as an app. Needs “HTTPS Certificates” switched on in the Tailscale admin console, on the DNS page.', onOff(st.https, (v) => void set({ https: v })))
+  if (st.enabled && st.https) {
+    const live = h('div', `remote-state ${st.httpsError ? 'bad' : st.httpsActive ? 'ok' : ''}`, st.httpsError ? `HTTPS is not active: ${st.httpsError}` : st.httpsActive ? 'HTTPS is active.' : 'Starting…')
+    live.setAttribute('role', 'status')
+    tls.querySelector('.srl')?.append(live)
+  }
+  g.box.append(tls)
   const lan = row('Also allow this Wi-Fi', 'Over plain http, anyone who can see or intercept this Wi-Fi can take over a paired phone’s session. It then listens only on the Wi-Fi and Tailscale addresses, not on every network interface. Prefer Tailscale.', onOff(st.lan, (v) => void set({ lan: v })))
   g.box.append(lan)
   into.append(g.g)
@@ -503,6 +510,44 @@ async function remote(into: HTMLElement) {
     d.box.append(row(dev.name, `Paired ${new Date(dev.createdAt).toLocaleDateString()} · last seen ${timeAgo(dev.lastSeen)}`, revoke))
   }
   into.append(d.g)
+  await notifications(into)
+}
+
+// Phone notifications through ntfy: short generic messages, nothing about the code.
+async function notifications(into: HTMLElement) {
+  if (typeof window.forge.pushGet !== 'function') return
+  const s = await window.forge.pushGet()
+  const set = async (o: { enabled?: boolean; server?: string; includeProject?: boolean }) => { try { await window.forge.pushSet(o) } catch (e) { toast(cleanErr(e), 4000) } void rerender() }
+  const g = group('Notifications', 'Install the free ntfy app on your phone and subscribe to the topic below. Forge sends short generic messages only; nothing about your code leaves your computer.')
+  const server = field('text', s.server, 'https://ntfy.sh')
+  server.onchange = () => void set({ server: server.value })
+  const topic = h('div', 'pair-link')
+  topic.append(h('code', 'k', s.topic), action('Copy', 'copy', () => void copy(s.topic, 'Topic copied')))
+  const test = action('Send a test', 'bell', async () => {
+    test.disabled = true
+    result.textContent = 'Sending…'
+    result.className = 'remote-state'
+    try {
+      const r = await window.forge.pushTest()
+      result.textContent = r.ok ? 'Sent. It should appear on your phone.' : r.error ?? 'It did not go out.'
+      result.className = `remote-state ${r.ok ? 'ok' : 'bad'}`
+    } catch (e) { result.textContent = cleanErr(e); result.className = 'remote-state bad' }
+    finally { test.disabled = false }
+  })
+  const result = h('div', 'remote-state')
+  result.setAttribute('role', 'status')
+  const testRow = row('Send a test', 'Sends one message to the topic now, even while notifications are off.', test)
+  testRow.querySelector('.srl')?.append(result)
+  const fresh = action('New topic', null, async () => { try { await window.forge.pushNewTopic(); toast('New topic. Subscribe to it in the ntfy app.') } catch (e) { toast(cleanErr(e), 4000) } void rerender() })
+  g.box.append(
+    row('Notify my phone', 'When Crew needs an answer, a run is ready or failed, or a limit stopped it, and this window is not in front.', onOff(s.enabled, (v) => void set({ enabled: v }))),
+    row('Server', 'The ntfy server that delivers the message. https only.', server),
+    row('Topic', 'Anyone who knows it can read these messages, so keep it to yourself.', topic),
+    testRow,
+    row('Include the project folder name', 'Adds the folder’s name to the message. The path, goals, messages and file names are never sent.', onOff(s.includeProject, (v) => void set({ includeProject: v }))),
+    row('Change the topic', 'Use this if the topic was shared. Subscribe to the new one in the ntfy app.', fresh),
+  )
+  into.append(g.g)
 }
 
 async function usage(into: HTMLElement) {

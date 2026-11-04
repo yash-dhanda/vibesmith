@@ -1,3 +1,5 @@
+import { execFileSync } from 'node:child_process'
+import { request as httpsRequest } from 'node:https'
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,8 +15,9 @@ vi.mock('node:os', async (orig) => {
 let srv: RemoteServer | null = null
 afterEach(async () => { await srv?.stop(); srv = null })
 
-async function boot(extra: Record<string, unknown> = {}) {
+async function boot(extra: Record<string, unknown> = {}, state?: object) {
   const dir = mkdtempSync(join(tmpdir(), 'remote-'))
+  if (state) writeFileSync(join(dir, 'remote.json'), JSON.stringify(state))
   const rendererDir = join(dir, 'renderer')
   mkdirSync(rendererDir)
   writeFileSync(join(rendererDir, 'index.html'), '<html><head><meta name="viewport" content="width=device-width, initial-scale=1" /></head><body>forge</body></html>')
@@ -179,7 +182,7 @@ describe('remote access', () => {
     const text = readFileSync(join(__dirname, 'index.ts'), 'utf8')
     const channels = [...text.matchAll(/ipcMain\.(?:handle|on)\(\s*'([^']+)'/g)].map((m) => m[1])
     expect(channels.length).toBeGreaterThan(90)
-    const desktopOnly = ['app:open-data', 'fs:list', 'fs:read', 'fs:write', 'open:external', 'open:folder', 'open:path', 'preview:attach', 'preview:bounds', 'preview:detach', 'preview:reload', 'preview:visible', 'project:pick', 'remote:pair', 'remote:revoke', 'remote:set', 'remote:status', 'save:text', 'team:export-report', 'team:history-open', 'term:resize', 'term:spawn', 'term:write']
+    const desktopOnly = ['app:open-data', 'fs:list', 'fs:read', 'fs:write', 'open:external', 'open:folder', 'open:path', 'preview:attach', 'preview:bounds', 'preview:detach', 'preview:reload', 'preview:visible', 'project:pick', 'push:get', 'push:new-topic', 'push:set', 'push:test', 'remote:pair', 'remote:revoke', 'remote:set', 'remote:status', 'save:text', 'team:export-report', 'team:history-open', 'term:resize', 'term:spawn', 'term:write']
     expect([...new Set(channels.filter(BLOCKED))].sort()).toEqual(desktopOnly)
     expect(BLOCKED('term:anything')).toBe(true) // a channel added later in a blocked family is blocked at once
     expect(BLOCKED('agent:send') || BLOCKED('preview:start') || BLOCKED('run:start')).toBe(false)
@@ -350,5 +353,163 @@ describe('remote access', () => {
       await vi.waitFor(() => expect(srv!.status()).toMatchObject({ listening: true, host: '127.0.0.1', port: free }))
       expect(srv.status().error).toBeUndefined()
     } finally { vi.useRealTimers(); nics.list = null }
+  })
+})
+
+// ---- https (a certificate from `tailscale cert`; here a throwaway self-signed one from the openssl command and an injected provider) ----
+const hasOpenssl = (() => { try { execFileSync('openssl', ['version']); return true } catch { return false } })()
+if (!hasOpenssl) console.warn('openssl is not installed: the https tests in remote.test.ts are skipped')
+const NAME = 'forge.tail1234.ts.net'
+function selfSigned(days = 30) {
+  const d = mkdtempSync(join(tmpdir(), 'cert-'))
+  execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', join(d, 'k'), '-out', join(d, 'c'), '-days', '365', '-subj', `/CN=${NAME}`, '-addext', `subjectAltName=DNS:${NAME}`], { stdio: 'ignore' })
+  return { name: NAME, cert: readFileSync(join(d, 'c'), 'utf8'), key: readFileSync(join(d, 'k'), 'utf8'), notAfter: Date.now() + days * 86400_000 }
+}
+// Talks to 127.0.0.1 but presents the Tailscale name, as a phone resolving MagicDNS would.
+const sget = (url: string, ca: string, o: { method?: string; headers?: Record<string, string>; body?: string; at?: string } = {}) => new Promise<{ status: number; headers: Record<string, unknown>; text: string; fingerprint: string }>((resolve, reject) => {
+  const u = new URL(url)
+  const req = httpsRequest({ host: o.at ?? '127.0.0.1', port: u.port, path: u.pathname + u.search, method: o.method ?? 'GET', servername: NAME, ca, headers: { host: u.host, ...o.headers } }, (res) => {
+    let text = ''
+    const fingerprint = (res.socket as import('node:tls').TLSSocket).getPeerCertificate().fingerprint256 // read now: the socket is gone at 'end'
+    res.on('data', (c) => (text += c))
+    res.on('end', () => resolve({ status: res.statusCode!, headers: res.headers, text, fingerprint }))
+  })
+  req.on('error', reject)
+  req.end(o.body)
+})
+
+describe('remote access over https', () => {
+  const secure = hasOpenssl ? it : it.skip
+
+  secure('serves the page over https with a Secure cookie, and puts the https name in the pairing link', async () => {
+    const c = selfSigned()
+    const tls = vi.fn(async () => c)
+    const t = await boot({ tls }, { https: true })
+    const st = t.srv.status()
+    expect(st).toMatchObject({ https: true, httpsActive: true, listening: true })
+    expect(st.httpsError).toBeUndefined()
+    expect(st.url).toBe(`https://${NAME}:${st.port}`)
+    const link = await t.srv.pairLink()
+    expect(link.url).toMatch(new RegExp(`^https://${NAME}:${st.port}/__pair\\?t=`))
+    const first = await sget(link.url, c.cert)
+    expect(first.status).toBe(200)
+    expect(String(first.headers['set-cookie'])).toMatch(/HttpOnly; SameSite=Strict; Max-Age=\d+; Secure$/)
+    const cookie = String(first.headers['set-cookie']).split(';')[0]
+    const origin = `https://${NAME}:${st.port}`
+    expect((await sget(`${origin}/`, c.cert)).status).toBe(401)
+    const page = await sget(`${origin}/`, c.cert, { headers: { cookie } })
+    expect(page.status).toBe(200)
+    expect(page.text).toContain('/manifest.webmanifest')
+    const manifest = await sget(`${origin}/manifest.webmanifest`, c.cert)
+    expect(JSON.parse(manifest.text)).toMatchObject({ start_url: '/' })
+    const call = (headers: Record<string, string>) => sget(`${origin}/rpc`, c.cert, { method: 'POST', headers: { cookie, 'content-type': 'application/json', ...headers }, body: JSON.stringify({ c: 'hello', a: ['x'] }) })
+    expect(JSON.parse((await call({ origin })).text)).toEqual({ ok: true, result: 'hi x' })
+    expect((await call({ origin: 'https://evil.example' })).status).toBe(403) // the Origin check still applies
+    expect((await call({ 'sec-fetch-site': 'cross-site' })).status).toBe(403)
+    t.srv.revoke(t.srv.status().devices[0].id)
+    expect((await call({ origin })).status).toBe(401)
+  })
+
+  secure('keeps the plain http listener on this computer only, and https on the Tailscale address', async () => {
+    const c = selfSigned()
+    nics.list = { tailscale0: [{ address: '127.0.0.2', family: 'IPv4', internal: false }] } // another loopback address stands in for Tailscale
+    try {
+      const dir = mkdtempSync(join(tmpdir(), 'remote-'))
+      writeFileSync(join(dir, 'remote.json'), JSON.stringify({ https: true }))
+      srv = new RemoteServer({ dir, rendererDir: dir, preloadFile: join(dir, 'p'), handlers: new Map(), listeners: new Map(), tls: async () => c })
+      await srv.start(0)
+      const { port, url, httpsActive } = srv.status()
+      expect(httpsActive).toBe(true)
+      expect(url).toBe(`https://${NAME}:${port}`)
+      expect((await fetch(`http://127.0.0.1:${port}/manifest.webmanifest`)).status).toBe(200) // plain http, this computer
+      await expect(fetch(`http://127.0.0.2:${port}/manifest.webmanifest`)).rejects.toThrow() // not plain http on the Tailscale address
+      const r = await sget(`https://${NAME}:${port}/manifest.webmanifest`, c.cert, { at: '127.0.0.2' })
+      expect(r.status).toBe(200)
+    } finally { nics.list = null }
+  })
+
+  it('falls back to http and says why when no certificate can be had', async () => {
+    const tls = vi.fn(async () => { throw new Error('HTTPS certificates are not enabled for your tailnet.') })
+    const t = await boot({ tls }, { https: true })
+    const st = t.srv.status()
+    expect(st).toMatchObject({ https: true, httpsActive: false, httpsError: 'HTTPS certificates are not enabled for your tailnet.', listening: true })
+    expect(st.url).toMatch(/^http:\/\/127\.0\.0\.1:/)
+    const { r } = await pair(t)
+    expect(r.status).toBe(200)
+    expect(r.headers.get('set-cookie')).not.toMatch(/Secure/)
+  })
+
+  it('is off by default and never asks for a certificate then', async () => {
+    const tls = vi.fn(async () => selfSigned())
+    const t = await boot({ tls })
+    expect(t.srv.status()).toMatchObject({ https: false, httpsActive: false })
+    expect(t.srv.status().httpsError).toBeUndefined()
+    expect(tls).not.toHaveBeenCalled()
+    expect(t.base).toMatch(/^http:/)
+  })
+
+  it('shows a reason when https is wanted but Tailscale has no address yet', async () => {
+    nics.list = {}
+    try {
+      const dir = mkdtempSync(join(tmpdir(), 'remote-'))
+      writeFileSync(join(dir, 'remote.json'), JSON.stringify({ https: true }))
+      srv = new RemoteServer({ dir, rendererDir: dir, preloadFile: join(dir, 'p'), handlers: new Map(), listeners: new Map(), tls: async () => selfSigned() })
+      await srv.start(0)
+      expect(srv.status()).toMatchObject({ httpsActive: false, httpsError: expect.stringMatching(/no address/) })
+      expect(srv.status().url).toMatch(/^http:/)
+    } finally { nics.list = null }
+  })
+
+  it('remembers the setting and passes it through configure', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'remote-'))
+    const s = new RemoteServer({ dir, rendererDir: dir, preloadFile: join(dir, 'p'), handlers: new Map(), listeners: new Map(), bind: '127.0.0.1' })
+    expect((await s.configure({ https: true })).https).toBe(true)
+    expect(JSON.parse(readFileSync(join(dir, 'remote.json'), 'utf8')).https).toBe(true)
+    expect(new RemoteServer({ dir, rendererDir: dir, preloadFile: join(dir, 'p'), handlers: new Map(), listeners: new Map() }).status().https).toBe(true)
+  })
+
+  secure('renews a certificate with under 14 days left, every 12 hours, without a restart', async () => {
+    const old = selfSigned(5)
+    const next = selfSigned(90)
+    const tls = vi.fn(async () => (tls.mock.calls.length === 1 ? old : next))
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    try {
+      const t = await boot({ tls }, { https: true })
+      const origin = `https://${NAME}:${t.srv.status().port}`
+      expect((await sget(`${origin}/manifest.webmanifest`, old.cert)).fingerprint).toBeTruthy()
+      await vi.advanceTimersByTimeAsync(12 * 3600_000)
+      expect(tls).toHaveBeenCalledTimes(2)
+      const r = await sget(`${origin}/manifest.webmanifest`, next.cert) // the new certificate is the one presented now
+      expect(r.status).toBe(200)
+      await vi.advanceTimersByTimeAsync(12 * 3600_000)
+      expect(tls).toHaveBeenCalledTimes(2) // 90 days left: nothing to do
+    } finally { vi.useRealTimers() }
+  })
+
+  secure('keeps the old certificate and reports it when renewing fails, and goes to https once it can', async () => {
+    const c = selfSigned(5)
+    let n = 0
+    const tls = vi.fn(async () => { n++; if (n === 2) throw new Error('Tailscale is not running. Start Tailscale and sign in.'); return n === 1 ? c : selfSigned(90) })
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    try {
+      const t = await boot({ tls }, { https: true })
+      await vi.advanceTimersByTimeAsync(12 * 3600_000)
+      expect(t.srv.status()).toMatchObject({ httpsActive: true, httpsError: expect.stringMatching(/not running/) })
+      expect((await sget(`https://${NAME}:${t.srv.status().port}/manifest.webmanifest`, c.cert)).status).toBe(200)
+    } finally { vi.useRealTimers() }
+  })
+
+  secure('starts https at the next check when it could not at start', async () => {
+    const c = selfSigned()
+    let n = 0
+    const tls = vi.fn(async () => { if (n++ === 0) throw new Error('Tailscale is not running. Start Tailscale and sign in.'); return c })
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    try {
+      const t = await boot({ tls }, { https: true })
+      expect(t.srv.status()).toMatchObject({ httpsActive: false, httpsError: expect.stringMatching(/not running/) })
+      await vi.advanceTimersByTimeAsync(12 * 3600_000)
+      await vi.waitFor(() => expect(t.srv.status()).toMatchObject({ httpsActive: true }))
+      expect(t.srv.status().httpsError).toBeUndefined()
+    } finally { vi.useRealTimers() }
   })
 })
