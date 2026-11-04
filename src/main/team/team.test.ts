@@ -95,8 +95,9 @@ describe('argument builders', () => {
     expect(rw).toEqual(expect.arrayContaining(['acceptEdits', '--resume', 'abc', '--mcp-config', '/m.json', '--model', 'sonnet', '--effort', 'high', '--allowedTools']))
   })
   it('web research: allowed and live for Claude and Codex when on, and denied for Claude when off', () => {
-    expect(claudeArgs({ cwd: '/p', prompt: 'x', write: true, web: true }).join(' ')).toMatch(/--allowedTools [^ ]*WebSearch,WebFetch/)
-    expect(claudeArgs({ cwd: '/p', prompt: 'x', write: true, web: false }).join(' ')).toMatch(/--disallowedTools [^ ]*WebSearch,WebFetch/)
+    const flag = (a: string[], name: string) => a[a.indexOf(name) + 1] ?? ''
+    expect(flag(claudeArgs({ cwd: '/p', prompt: 'x', write: true, web: true }), '--allowedTools')).toContain('WebSearch,WebFetch')
+    expect(flag(claudeArgs({ cwd: '/p', prompt: 'x', write: true, web: false }), '--disallowedTools')).toContain('WebSearch,WebFetch')
     expect(codexArgs({ cwd: '/p', prompt: 'x', write: true, model: 'm', web: true })).toContain('web_search="live"')
     expect(codexArgs({ cwd: '/p', prompt: 'x', write: true, model: 'm', web: false }).join(' ')).not.toContain('web_search')
   })
