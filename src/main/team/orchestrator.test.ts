@@ -172,6 +172,25 @@ describe('team orchestrator', () => {
     expect((await x.orch.approveFinal(run.id)).ok).toBe(true)
   })
 
+  it('"start the website" starts the dev server and reports it instead of steering the agents', async () => {
+    const x = h({ plan: { tasks: [T('a')] } })
+    const calls: string[] = []
+    ;(x.orch as any).d.runApp = async (r: { id: string }) => (calls.push(r.id), { ok: true, message: 'The website is running at http://localhost:4321' })
+    ;(x.orch as any).d.stopApp = () => ({ ok: true, message: 'The website was stopped.' })
+    const run = await x.orch.start(x.proj, 'site')
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    await x.orch.followUp(run.id, 'start the website so i can check give the port')
+    await new Promise((r) => setTimeout(r, 50))
+    const r = x.orch.get(run.id)!
+    expect(calls).toEqual([run.id])
+    expect(r.status).toBe('awaiting_approval') // no new task, nothing reopened
+    expect(r.tasks).toHaveLength(1)
+    expect(r.messages.some((m) => m.kind === 'steer' && /website/.test(m.body))).toBe(false)
+    expect(r.messages.some((m) => /localhost:4321/.test(m.body))).toBe(true)
+    await x.orch.followUp(run.id, 'stop the website')
+    expect(x.orch.get(run.id)!.messages.some((m) => /was stopped/.test(m.body))).toBe(true)
+  })
+
   it('takes an applied result back out of the project with undo', async () => {
     const x = h({ plan: { tasks: [T('a'), T('b')] } })
     const run = await x.orch.start(x.proj, 'undo me')

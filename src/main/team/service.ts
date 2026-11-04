@@ -1,10 +1,11 @@
 import { join } from 'node:path'
 import { git, initRepo, isRepo } from '../checkpoint'
-import { readdirSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { isAgent, type AgentName } from './events'
 import { cleanAttachments, PartUploads, saveAttachments, sweepAttachments, type AttachPart } from './attach'
 import { checkTeamTools, codexLimits, codexModels, localModels, type Health, type LimitInfo } from './health'
 import { TeamOrchestrator } from './orchestrator'
+import { AppRunners } from './runapp'
 import { realRunner } from './runner'
 import { TeamSettingsStore } from './settings'
 import { TeamStore } from './store'
@@ -87,7 +88,12 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
     }
     return healthCache
   }
+  const apps = new AppRunners()
+  // The code to run: the project once it was applied, otherwise the crew's own copy of it.
+  const appDir = (run: Run) => (!run.applied && existsSync(join(run.integrationWorktree, '.git')) ? run.integrationWorktree : run.project)
   const orch = new TeamOrchestrator({
+    runApp: (run) => apps.run(run.id, appDir(run), run.project),
+    stopApp: (run) => apps.stop(run.id),
     store: new TeamStore(join(teamDir, 'runs')),
     teamDir,
     runner: realRunner,
@@ -112,6 +118,9 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
 
   return {
     orch,
+    runApp: async (id: string) => { const run = orch.get(id); if (!run) throw new Error('This run no longer exists.'); return apps.run(id, appDir(run), run.project) },
+    stopApp: (id: string) => apps.stop(id),
+    stopApps: () => apps.stopAll(),
     health: async () => ({ agents: await health(true), codexModels: await codexModels(), localModels: await localModels(), limits: { codex: (await codexLimits()) ?? undefined } as { codex?: LimitInfo } }),
     attach: (files: { name: string; data: string }[]) => saveAttachments(join(teamDir, 'attachments'), files),
     attachPart: async (part: AttachPart) => { const a = await parts.add(part); return a ? [a] : [] },

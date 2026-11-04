@@ -837,6 +837,8 @@ ipcMain.handle('team:pause', (_e, id: unknown, hard?: unknown) => teamSvc().orch
 ipcMain.handle('team:resume', (_e, id: unknown) => teamSvc().orch.resume(teamId(id)))
 ipcMain.handle('team:cancel', (_e, id: unknown) => teamSvc().orch.cancel(teamId(id)))
 ipcMain.handle('team:answer', (_e, id: unknown, approvalId: unknown, allow: unknown, note?: unknown) => teamSvc().orch.answerApproval(teamId(id), teamId(approvalId), allow === true, typeof note === 'string' ? note.slice(0, 500) : undefined))
+ipcMain.handle('team:run-app', (_e, id: unknown) => teamSvc().runApp(teamId(id)))
+ipcMain.handle('team:stop-app', (_e, id: unknown) => teamSvc().stopApp(teamId(id)))
 ipcMain.handle('team:follow', (_e, id: unknown, text: unknown, to?: unknown) => teamSvc().followUp(teamId(id), String(text ?? ''), to === 'claude' || to === 'codex' || to === 'local' ? to : 'all'))
 ipcMain.handle('team:steer', (_e, id: unknown, text: unknown, to?: unknown) => teamSvc().orch.steer(teamId(id), String(text ?? ''), to === 'claude' || to === 'codex' || to === 'local' ? to : 'all'))
 ipcMain.handle('team:retry-task', (_e, id: unknown, taskId: unknown) => teamSvc().orch.retryTask(teamId(id), teamId(taskId)))
@@ -930,6 +932,7 @@ app.on('before-quit', (e) => {
     return
   }
   team?.orch.shutdown()
+  team?.stopApps()
   views.detachAll()
   for (const id of [...runners.keys()]) stopRunner(id)
   for (const id of [...previews.keys()]) stopPreview(id)

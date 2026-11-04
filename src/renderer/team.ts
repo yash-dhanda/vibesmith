@@ -416,6 +416,7 @@ function renderRunHeader() {
   if (sent.length) identity.append(sentChips(sent))
   const controls = h('div', 'team-controls')
   controls.append(historyButton(run!.id))
+  if (typeof window.forge.teamRunApp === 'function' && run!.tasks.some(t => t.status === 'done')) controls.append(actionButton('Run website', () => void call(async () => { toast('Starting the website…', 2500); const r = await window.forge.teamRunApp(run!.id); toast(r.message, 12000); await refreshRun() }), '', 'globe'))
   const planPending = run!.approvals.some(a => a.kind === 'plan' && a.status === 'pending')
   if (planPending) { /* the plan card starts the team */ }
   else if (['paused', 'interrupted'].includes(run!.status)) controls.append(actionButton('Resume', () => teamAction(() => window.forge.teamResume(run!.id))))

@@ -16,6 +16,7 @@ import { historyBlock, HistoryRecorder, HISTORY_DIR, writeHistory } from './hist
 import { buildReport, conflictPrompt, contextFor, finalReviewPrompt, fixPrompt, forLocal, parsePlan, parseVerdict, planPrompt, reviewPrompt, verifyFixPrompt, workPrompt } from './prompts'
 import type { RunResult } from './process'
 import { TeamStore } from './store'
+import { isRunAppWords, isStopAppWords } from './runapp'
 import { DEFAULT_CONFIG, emptyUsage, type Approval, type ApprovalKind, type Message, type MessageKind, type Run, type RunEvent, type RunStatus, type Task, type TaskPhase, type TeamConfig } from './types'
 
 export type AgentCall = {
@@ -41,6 +42,8 @@ export type Deps = {
   emit: (ev: RunEvent) => void
   projectNotes?: (project: string) => { brief: string; rules: string }
   recordUsage?: (agent: AgentName, u: { input: number; output: number }) => void // feeds the daily token ledger
+  runApp?: (run: Run) => Promise<{ ok: boolean; message: string }> // "run website": starts the project's dev server
+  stopApp?: (run: Run) => { ok: boolean; message: string }
   limits?: () => Promise<Partial<Record<AgentName, { primaryPct: number; primaryResetsAt?: number; secondaryPct?: number; secondaryResetsAt?: number }>>> // plan allowance used, when an agent can say
   skills?: () => { block: string; dirs: string[] } // the skill libraries the user added: what agents are told, and folders Claude may read
   mcpScript?: string // path to the bundled team-mcp.js; without it agents run without the mailbox
@@ -327,6 +330,17 @@ export class TeamOrchestrator {
     const run = this.runOf(runId)
     const body = text.trim().slice(0, 2000)
     if (!run || !body) return
+    // "run website" / "stop the website" are commands for Forge, not instructions for the agents: they start or stop the dev server and report the port.
+    if (this.d.runApp && isRunAppWords(body)) {
+      this.post(run, { from: 'user', to: 'user', kind: 'note', body })
+      void this.d.runApp(run).then((r) => this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: r.message })).catch((e) => this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: `Could not run the website: ${(e as Error).message}` }))
+      return
+    }
+    if (this.d.stopApp && isStopAppWords(body)) {
+      this.post(run, { from: 'user', to: 'user', kind: 'note', body })
+      this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: this.d.stopApp(run).message })
+      return
+    }
     // "pause" / "stop" typed in the box stops the agents now; "resume" / "continue" starts them again. In any other state they do nothing.
     const word = body.toLowerCase().replace(/[\s.!]+$/, '')
     if (/^(pause|stop|wait|hold on|stop it|pause it)$/.test(word)) return ['planning', 'running', 'verifying', 'paused'].includes(run.status) ? this.pause(runId, true) : void this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: 'Nothing is running right now.' })
