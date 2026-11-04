@@ -9,6 +9,8 @@ import { historyButton } from './projectHistory'
 import { AGENT_FULL, AGENT_NAME, N } from './names'
 import { RUN_GLYPH, STEP_GLYPH, TASK_GLYPH, TOOL_GLYPH } from './glyphs'
 import { buildStage, pushCode, type StageCode } from './teamStage'
+import { attachmentStrip, kindOf, readBase64, sentChips } from './attachments'
+import type { TeamAttachment } from '../main/team/attach'
 import { normaliseTeamEventsAsync, reduceTeamView, type LoggedTeamEvent } from './teamReducer'
 
 type Logged = LoggedTeamEvent
@@ -159,6 +161,19 @@ async function showEntry() {
   intro.append(h('h1', '', 'Build with a crew: a second set of eyes.'), h('p', 'team-lede', 'Claude Code, Codex and a local model split the work, review each other and bring back one checked result. Nothing touches your project until you land it.'))
   const form = h('form', 'team-start-card')
   const goal = document.createElement('textarea'); goal.rows = 4; goal.placeholder = 'Describe what the crew should build'; goal.setAttribute('aria-label', 'Crew goal')
+  // Files go to Forge as soon as they are added, so the run only carries their stored locations.
+  const att = attachmentStrip({
+    host: form, textarea: goal, max: 12, maxBytes: 200 * 1024 * 1024, limits: 'Up to 12 files per run, 200 MB each.',
+    note: 'Agents get the file locations and look at pictures and video frames themselves.',
+    upload: async (file, progress) => {
+      if (replay) return { id: String(file.size), name: file.name, size: file.size, path: `/tmp/forge-replay/${file.name}`, kind: kindOf(file), frames: kindOf(file) === 'video' ? ['/tmp/forge-replay/f1.jpg'] : undefined }
+      const data = await readBase64(file, progress); progress(1)
+      const [a] = await window.forge.teamAttach([{ name: file.name, data }])
+      if (!a) throw new Error(`Forge did not keep ${file.name}.`)
+      return a
+    },
+    onChange: () => { start.disabled = !ready.length || att.busy(); start.title = att.busy() ? 'Waiting for the files to finish uploading' : '' },
+  })
   const project = h('button', 'pill team-project') as HTMLButtonElement; project.type = 'button'; project.append(icon('folder', 'sm'), document.createTextNode(currentProject ? folderName(currentProject) : 'Choose folder')); project.title = currentProject || 'Choose the project folder'
   project.onclick = () => $('project').click()
   const advanced = h('details', 'team-advanced') as HTMLDetailsElement
@@ -221,7 +236,7 @@ async function showEntry() {
   start.disabled = !ready.length
   const diagnostics = h('button', 'icon-btn') as HTMLButtonElement; diagnostics.type = 'button'; diagnostics.append(icon('info')); diagnostics.setAttribute('aria-label', 'Copy diagnostics'); diagnostics.title = 'Copy diagnostics: versions, agent status and recent runs for a bug report. No secrets or file contents.'
   diagnostics.onclick = () => void call(async () => { const text = replay ? 'Forge replay diagnostics' : await window.forge.teamDiagnostics(); await navigator.clipboard.writeText(text); toast('Diagnostics copied') })
-  const actions = h('div', 'team-start-actions'); actions.append(project, diagnostics, historyButton(), h('span', 'grow'), start)
+  const actions = h('div', 'team-start-actions'); actions.append(project, att.button, att.input, diagnostics, historyButton(), h('span', 'grow'), start)
   const agentsBox = h('section', 'team-agents'); agentsBox.setAttribute('aria-label', 'Models and effort')
   const agentCard = (agent: 'claude' | 'codex' | 'local', model: HTMLSelectElement, effortSel?: HTMLSelectElement) => {
     const card = h('div', `team-agent-card ${agent}`); const name = h('div', 'team-agent-name'); name.append(h('span', `agent-orb ${agent}`), h('strong', '', AGENT_FULL[agent]))
@@ -233,13 +248,14 @@ async function showEntry() {
   agentsBox.append(agentCard('claude', claudeModel, effort), agentCard('codex', codexModel, codexEffort))
   if (health.localModels.length) agentsBox.append(agentCard('local', localModel))
   agentsBox.querySelectorAll<HTMLElement>('.team-agent-card').forEach(card => { const a = (['claude', 'codex', 'local'] as const).find(x => card.classList.contains(x)); if (a && !readyAgents.has(a) && !replay) card.classList.add('off') })
-  form.append(goal, folderFinder(goal, project), agentsBox, askRow, webRow, healthBox, advanced, actions)
+  form.append(goal, att.strip, folderFinder(goal, project), agentsBox, askRow, webRow, healthBox, advanced, actions)
   form.onsubmit = async e => {
-    e.preventDefault(); const text = goal.value.trim(); if (!text || start.disabled) return
+    e.preventDefault(); const text = goal.value.trim(); if (!text || start.disabled || att.busy()) return
     const config = readConfig(); if (!config) return
+    const files = att.ready() as TeamAttachment[]
     start.disabled = true; start.replaceChildren('Sending the crew…')
     if (replay) { const fixture = replayRun('planning'); await openRun(fixture.run.id, fixture); return }
-    try { if (typeof window.forge.teamSettingsSet === 'function') await window.forge.teamSettingsSet(config); const started = await window.forge.teamStart(text, config); await openRun(started.id) }
+    try { if (typeof window.forge.teamSettingsSet === 'function') await window.forge.teamSettingsSet(config); const started = await window.forge.teamStart(text, files.length ? { ...config, attachments: files } : config); await openRun(started.id) }
     catch (err) { start.disabled = false; start.replaceChildren(startLabel); toast(cleanErr(err), 6000) }
   }
   intro.append(form); page.append(intro)
@@ -342,6 +358,8 @@ function renderRunHeader() {
   const back = h('button', 'icon-btn'); back.append(icon('arrowright')); back.classList.add('back'); back.title = `All ${N.crewRuns.toLowerCase()}`; back.onclick = () => void showEntry()
   const where = h('div', 'eyebrow', folderName(run!.project)); where.prepend(icon('folder', 'sm')); where.title = run!.project
   const identity = h('div', 'team-run-identity'); identity.append(where, h('h1', '', run!.goal))
+  const sent = run!.config?.attachments ?? []
+  if (sent.length) identity.append(sentChips(sent))
   const asking = run!.approvals.some(a => a.kind === 'question' && a.status === 'pending')
   const status = asking ? h('span', 'status-pill awaiting_approval asking') : statusTag(run!.status); if (asking) status.append(emo(RUN_GLYPH.awaiting_approval), N.waiting); status.setAttribute('role', 'status')
   const elapsed = h('span', 'team-elapsed', fmtTime(Math.floor((Date.now() - run!.createdAt) / 1000))); elapsed.id = 'team-elapsed'

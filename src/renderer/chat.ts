@@ -10,6 +10,7 @@ import { $, agentLimits, cleanErr, copy, emo, h, numCtxPref, showMenu, toast } f
 import { initUsage } from './usage'
 import { initBrief, resetBrief, projectBrief, briefGoal, briefEvent, briefUndone, withPriorities } from './brief'
 import { initPalette } from './palette'
+import { attachmentStrip, sentChips, type Kind } from './attachments'
 
 const thread = $('thread')
 const scroller = $('thread-scroll')
@@ -22,6 +23,33 @@ const rateChip = $('rate')
 const ctxChip = $('ctx')
 const toBottom = $('to-bottom')
 const searchEl = $<HTMLInputElement>('chat-search')
+
+// ---- attachments: pictures go to the model, text and code files are added to the message ----
+// Which local models can see: the library's vision tag, or a name that says so. The main process asks Ollama for sure when sending.
+// ponytail: name heuristic for models outside the catalog; an IPC for Ollama's capabilities would make it exact.
+let visionIds = new Set<string>()
+let catalogAsked = false
+const VISION_NAME = /(^|[-_.:])vl\b|vision|llava|moondream|minicpm-v|qwen3\.5|gemma[34]|llama4/i
+const canSee = (id: string) => !id.startsWith('ollama:') || visionIds.has(id.slice(7)) || VISION_NAME.test(id.slice(7))
+const att = attachmentStrip({
+  host: $('composer'), textarea: prompt, max: 8, maxBytes: 15 * 1024 * 1024,
+  limits: 'Up to 8 files: pictures up to 15 MB, text files up to 1 MB.',
+  note: 'Pictures go to the model; text and code files are added to your message.',
+  upload: async (file) => {
+    // The phone link sends calls as JSON, which cannot carry raw bytes yet: Crew takes files there.
+    if ((window as { __forgeRemote?: boolean }).__forgeRemote) throw new Error('Attach files to Solo chats on the computer, or use Crew on this phone.')
+    const [a] = await window.forge.attachmentsAdd(activeId, [{ name: file.name, data: new Uint8Array(await file.arrayBuffer()) }])
+    if (!a) throw new Error(`Forge did not keep ${file.name}.`)
+    return { id: a.id, name: a.name, size: a.size, kind: a.kind }
+  },
+  explain: (e) => (/not a picture or a text file/i.test(cleanErr(e)) ? 'Solo chat reads pictures and text files; attach videos and other files in Crew.' : cleanErr(e)),
+  warn: (item) => {
+    if (item.kind !== 'image') return ''
+    if (!catalogAsked && typeof window.forge.modelsCatalog === 'function') { catalogAsked = true; void window.forge.modelsCatalog().then((c) => { visionIds = new Set(c.filter((m) => m.tags.includes('vision')).map((m) => m.id)); att.redraw() }).catch(() => {}) }
+    return canSee(selectedModel()) ? '' : "This model can't see pictures; pick a vision model or use Crew."
+  },
+  onChange: () => { if (!running) sendBtn.disabled = att.busy() },
+})
 
 // ---- what the screen is showing ----
 let activeId: string = crypto.randomUUID() // a new chat gets its id up front, so live events can be matched to it
@@ -170,6 +198,7 @@ function setRunning(on: boolean) {
   sendBtn.replaceChildren(icon(on ? 'stop' : 'arrowup'))
   sendBtn.title = on ? 'Stop (Esc)' : 'Send'
   sendBtn.setAttribute('aria-label', on ? 'Stop building' : 'Send message')
+  sendBtn.disabled = !on && att.busy()
   if (on) startLive()
   else {
     stopLive()
@@ -378,14 +407,20 @@ function changesCard(ev: Extract<AgentEvent, { type: 'changes' }>, replace?: HTM
   else add(card)
 }
 
-function addUser(text: string) {
+function addUser(text: string, files: { id: string; name: string; kind: Kind }[] = []) {
   emptyEl?.remove()
   emptyEl = null
   hasMessages = true
   runUsage = { input: 0, output: 0, genSec: 0, calls: 0 }
   log.push({ type: 'user', text })
   briefGoal(text.split('\n\nMy build priorities, in order:')[0])
-  add(h('div', 'user', text))
+  const bubble = h('div', 'user')
+  if (files.length) {
+    const chatId = activeId
+    bubble.append(sentChips(files.map((f) => ({ name: f.name, kind: f.kind === 'image' ? 'image' : 'file', preview: f.kind === 'image' ? () => window.forge.attachmentsPreview(chatId, f.id) : undefined }))))
+  }
+  if (text) bubble.append(document.createTextNode(text))
+  add(bubble)
   setProject(project)
 }
 
@@ -525,11 +560,14 @@ async function chooseFolder() {
 async function send() {
   const draft = prompt.value.trim()
   const text = withPriorities(draft)
-  if (!draft || running || sending) return
+  if (!draft || running || sending) { if (!draft && att.items().length) { toast('Say what to do with the files.'); prompt.focus() } return }
+  if (att.busy()) { toast('Wait for the files to finish uploading.'); return }
   if (!project) await chooseFolder() // like Codex: no folder, no run
   if (!project) return
   sending = true
-  addUser(text)
+  const files = att.items().flatMap((x) => (x.state === 'ready' && x.result ? [{ id: x.result.id, name: x.file.name, kind: x.result.kind ?? x.kind }] : []))
+  addUser(text, files)
+  att.clear()
   prompt.value = ''
   grow()
   setRunning(true)
@@ -538,7 +576,7 @@ async function send() {
     localStorage.setItem('forge.mode', modeSel.value)
   } catch {}
   try {
-    await window.forge.agentSend({ chatId: activeId, text, mode: modeSel.value as Mode, model: selectedModel(), numCtx: numCtxPref(), ...agentLimits() })
+    await window.forge.agentSend({ chatId: activeId, text, attachments: files.map((f) => f.id), mode: modeSel.value as Mode, model: selectedModel(), numCtx: numCtxPref(), ...agentLimits() })
   } catch (e) {
     hideThinking()
     add(h('div', 'errcard', cleanErr(e)))
@@ -553,6 +591,7 @@ function resetView() {
   hideThinking()
   resetBrief(activeId, project)
   thread.replaceChildren()
+  att.clear()
   cards.clear()
   reply = null
   group = null
@@ -568,7 +607,7 @@ function resetView() {
 function replay(items: TranscriptItem[], liveRun: boolean) {
   setRunning(false)
   for (const it of items) {
-    if (it.type === 'user') addUser(it.text)
+    if (it.type === 'user') addUser(it.text, it.attachments ?? [])
     else handle(it)
   }
   finishGroup()
@@ -739,6 +778,10 @@ export async function initChat(opts: {
     }
   })
 
+  $('composer').insertBefore(att.strip, prompt)
+  $('composer').append(att.input)
+  $('project').before(att.button)
+  $('model').addEventListener('change', att.redraw)
   prompt.oninput = grow
   prompt.onkeydown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {

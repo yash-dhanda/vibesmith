@@ -1055,6 +1055,39 @@ table.models td { text-align: right; padding: 7px 6px; border-top: 1px solid var
 .stage-orbit i.codex { background: var(--a-codex); --r: 120deg; } .stage-orbit i.local { background: var(--a-local); --r: 240deg; }
 .stage-idle.working .stage-orbit { animation: orbit-spin 2.8s linear infinite; }
 
+/* ---- attachments: paperclip, paste, drop, and a row of chips ---- */
+.att-host { position: relative; }
+.att-drop { position: absolute; inset: 0; z-index: 3; display: none; place-items: center; border: 1.5px dashed var(--focus); border-radius: inherit; background: color-mix(in srgb, var(--panel) 94%, transparent); color: var(--text); font-size: 14px; font-weight: 550; pointer-events: none; }
+.att-host.dropping > .att-drop { display: grid; animation: fade var(--t1) ease-out; }
+.att-strip { margin: 2px 0 8px; }
+.att-chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.att-chip { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-width: 0; padding: 4px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg); font-size: 12px; animation: rise var(--t2) var(--ease) both; }
+.att-chip.error { border-color: var(--errborder); background: var(--errbg); }
+.att-thumb { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 6px; background: var(--panel-2); color: var(--muted); overflow: hidden; }
+.att-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.att-chip.uploading .att-thumb { opacity: .6; }
+.att-chip.small .att-thumb { width: 26px; height: 26px; }
+.att-text { display: flex; flex-direction: column; min-width: 0; max-width: 240px; padding-right: 2px; line-height: 1.35; }
+.att-text strong { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.att-sub { color: var(--faint); font-size: 11.5px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.att-sub.busy { color: var(--muted); }
+.att-sub.busy::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 5px; vertical-align: -1px; border: 1.5px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+.att-sub.bad, .att-note .bad { color: var(--err); }
+.att-warn { color: var(--warn); font-size: 11.5px; overflow-wrap: anywhere; }
+.att-act { flex: none; border: 0; background: none; color: var(--muted); font-size: 11.5px; padding: 4px 6px; border-radius: var(--r-xs); white-space: nowrap; }
+.att-act:hover { background: var(--panel-2); color: var(--text); }
+.att-x { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border: 0; background: none; color: var(--faint); border-radius: var(--r-xs); }
+.att-x:hover { background: var(--panel-2); color: var(--err); }
+.att-note { margin-top: 6px; color: var(--faint); font-size: 11.5px; line-height: 1.5; }
+.bar .att-btn, .team-start-actions .att-btn { color: var(--muted); }
+.user .att-chips { justify-content: flex-end; margin: 2px 0 6px; white-space: normal; }
+.user .att-chips:last-child { margin-bottom: 0; }
+.user .att-chip { background: transparent; }
+.user .att-chip.image { padding: 0; border: 0; }
+.user .att-chip.image .att-thumb { width: 132px; height: 96px; border-radius: 10px; }
+.user .att-chip.image .att-text { display: none; }
+.team-run-identity .att-chips { margin-top: 8px; }
+
 /* ---- keyframes ---- */
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
 @keyframes fade { from { opacity: 0; } }
