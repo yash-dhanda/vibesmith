@@ -870,7 +870,7 @@ function renderDiffPanel() {
   }
   const button = h('button', 'btn', 'Review all changes'); button.onclick = () => void openDiff()
   const comments = h('button', 'btn', 'Review with comments'); comments.title = 'Comment on lines; the comments go to the crew as one message'; comments.onclick = () => void openDiffReview({ runId: run!.id })
-  section.append(button, comments, h('div', 'team-diff-host')); return section
+  section.append(button, ...(run!.applied ? [] : [comments]), h('div', 'team-diff-host')); return section // after landing the crew's copy is gone, so there is no diff to comment on
 }
 async function openDiff(taskId?: string, path?: string, live = false) {
   const host = document.querySelector<HTMLElement>('.team-diff-host'); if (!host || !run) return
