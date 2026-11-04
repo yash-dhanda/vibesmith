@@ -1,4 +1,5 @@
 import type { ChatListItem } from '../preload'
+import type { RunSummary } from '../main/team/service'
 import { folderName, timeAgo, groupOf } from './format'
 import { icon } from './icons'
 import { h } from './ui'
@@ -9,28 +10,55 @@ const seen = new Set<string>() // only chats appearing for the first time animat
 
 export { folderName }
 
-type Handlers = { open: (id: string) => void; remove: (id: string) => void; rename: (id: string, title: string) => void }
+type Handlers = { open: (id: string) => void; remove: (id: string) => void; rename: (id: string, title: string) => void; openRun?: (id: string) => void }
 
-export function renderHistory(chats: ChatListItem[], activeId: string, query: string, handlers: Handlers) {
+const RUN_STATUS: Record<RunSummary['status'], string> = { planning: 'Planning', running: 'Working', paused: 'Paused', verifying: 'Checking', awaiting_approval: 'Ready for you', done: 'Finished', failed: 'Needs attention', cancelled: 'Cancelled', interrupted: 'Interrupted' }
+const clip = (t: string, n = 60) => { const x = t.replace(/\s+/g, ' ').trim(); return x.length > n ? `${x.slice(0, n - 1)}…` : x }
+
+// A Crew run sits in the same list as the chats, newest first, with the crew icon; opening it goes to the Crew screen.
+function runItem(r: RunSummary, active: boolean, handlers: Handlers, fresh: () => number) {
+  const item = h('div', 'chat-item run-item' + (active ? ' active' : ''))
+  const key = `run:${r.id}`
+  if (!seen.has(key)) { seen.add(key); item.classList.add('enter'); item.style.setProperty('--i', String(Math.min(fresh(), 12))) }
+  item.title = `${r.goal}\n${r.project}`
+  const open = h('button', 'chat-open run-open')
+  open.setAttribute('aria-label', `Open Crew run: ${clip(r.goal, 80)}`)
+  if (active) open.setAttribute('aria-current', 'page')
+  const row = h('span', 'row1')
+  const waiting = r.status === 'awaiting_approval' || r.pendingApprovals > 0
+  if (['planning', 'running', 'verifying'].includes(r.status) && !waiting) row.append(h('span', 'st running'))
+  else if (waiting) row.append(h('span', 'st waiting'))
+  const crew = icon('users', 'sm'); crew.classList.add('run-icon')
+  row.append(crew, h('span', 't', clip(r.goal)))
+  const sub = h('span', 's' + (waiting ? ' wait' : ''), `${folderName(r.project)} · ${waiting && r.status !== 'awaiting_approval' ? 'Needs your answer' : RUN_STATUS[r.status]} · ${timeAgo(r.updatedAt)}`)
+  open.append(row, sub); item.append(open)
+  open.onclick = () => handlers.openRun?.(r.id)
+  return item
+}
+
+export function renderHistory(chats: ChatListItem[], activeId: string, query: string, handlers: Handlers, runs: RunSummary[] = [], activeRun = '') {
   list.replaceChildren()
-  if (!chats.length) {
-    list.append(h('div', 'empty-list', query ? 'No chats match.' : 'Your chats will show up here.'))
+  if (!chats.length && !runs.length) {
+    list.append(h('div', 'empty-list', query ? 'No chats or runs match.' : 'Your chats and Crew runs will show up here.'))
     return
   }
+  const merged: ({ at: number; chat: ChatListItem } | { at: number; run: RunSummary })[] = [...chats.map((chat) => ({ at: chat.updatedAt, chat })), ...runs.map((run) => ({ at: run.updatedAt, run }))].sort((a, b) => b.at - a.at)
   let last = ''
   let fresh = 0
-  for (const c of chats) {
-    const g = groupOf(c.updatedAt)
+  for (const entry of merged) {
+    const g = groupOf(entry.at)
     if (g !== last) {
       list.append(h('div', 'group-label', g))
       last = g
     }
-    const item = h('div', 'chat-item' + (c.id === activeId ? ' active' : ''))
+    if ('run' in entry) { list.append(runItem(entry.run, entry.run.id === activeRun, handlers, () => fresh++)); continue }
+    const c = entry.chat
+    const item = h('div', 'chat-item' + (c.id === activeId && !activeRun ? ' active' : ''))
     if (!seen.has(c.id)) { seen.add(c.id); item.classList.add('enter'); item.style.setProperty('--i', String(Math.min(fresh++, 12))) }
     item.title = c.project ?? ''
     const open = h('button', 'chat-open')
     open.setAttribute('aria-label', `Open ${c.title}`)
-    if (c.id === activeId) open.setAttribute('aria-current', 'page')
+    if (c.id === activeId && !activeRun) open.setAttribute('aria-current', 'page')
     const row = h('span', 'row1')
     if (c.status !== 'idle') row.append(h('span', 'st ' + c.status))
     const title = h('span', 't', c.title)

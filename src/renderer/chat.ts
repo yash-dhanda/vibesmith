@@ -58,6 +58,7 @@ const att = attachmentStrip({
 // ---- what the screen is showing ----
 let activeId: string = uuid() // a new chat gets its id up front, so live events can be matched to it
 let chats: ChatListItem[] = []
+let crewRuns: import('../main/team/service').RunSummary[] = []
 let project: string | null = null
 let query = ''
 let hasMessages = false
@@ -690,11 +691,21 @@ function replay(items: TranscriptItem[], liveRun: boolean, all = !isRemote()) {
   toEnd()
 }
 
+// Crew runs are listed with the chats. They change often (every status) so the list is re-read at most every 1.5 s after a team event.
+async function loadRuns() {
+  try { crewRuns = typeof window.forge.teamList === 'function' && !localStorage.getItem('forge.teamReplay') ? await window.forge.teamList() : [] } catch { crewRuns = [] }
+}
+let runsTimer: ReturnType<typeof setTimeout> | null = null
+const refreshRunsSoon = () => { if (!runsTimer) runsTimer = setTimeout(() => { runsTimer = null; void refreshHistory() }, 1500) }
 async function refreshHistory() {
-  chats = await window.forge.chatsList()
+  const [list] = await Promise.all([window.forge.chatsList(), loadRuns()])
+  chats = list
   if (isRemote()) cacheSet('boot', { chats: chats.slice(0, 60), project })
   const shown = chats.filter((c) => matchesQuery(c, query))
-  renderHistory(shown, activeId, query, { open: openChat, remove: removeChat, rename: renameChat })
+  const needle = query.trim().toLowerCase()
+  const runsShown = crewRuns.filter((r) => !needle || r.goal.toLowerCase().includes(needle) || folderName(r.project).toLowerCase().includes(needle)).slice(0, 80)
+  const activeRun = $('app').classList.contains('team-mode') ? ($('app').dataset.crewRun ?? '') : ''
+  renderHistory(shown, activeId, query, { open: openChat, remove: removeChat, rename: renameChat, openRun: (id) => window.dispatchEvent(new CustomEvent('forge-open-run', { detail: id })) }, runsShown, activeRun)
   const me = chats.find((c) => c.id === activeId)
   titleEl.textContent = me?.title ?? 'New chat'
   document.title = me ? `${me.title} · Forge` : 'Forge'
@@ -850,6 +861,8 @@ export async function initChat(opts: {
     if (chatId === activeId) handle(ev)
   })
   window.forge.onChatsChanged(refreshHistory)
+  window.addEventListener('forge-crew-changed', () => void refreshHistory())
+  if (typeof window.forge.onTeamEvent === 'function') window.forge.onTeamEvent((ev) => { if (ev.type === 'run' || ev.type === 'task' || ev.type === 'approval' || ev.type === 'final') refreshRunsSoon() })
   window.forge.onChatsFocus((id) => openChat(id))
   window.addEventListener('forge-models', () => {
     if (emptyEl && !hasMessages) {
@@ -951,6 +964,7 @@ export async function initChat(opts: {
   chats = init.chats
   setProject(project)
   renderHistory(chats.filter((c) => matchesQuery(c, query)), activeId, query, { open: openChat, remove: removeChat, rename: renameChat })
+  void loadRuns().then(() => refreshHistory()) // the Crew runs join the list once they are read
   if (isRemote()) cacheSet('boot', { chats: chats.slice(0, 60), project })
   if (project) await onProject(project)
   // First run: nothing to talk to yet, so open the library with a welcome instead of an empty chat.

@@ -135,6 +135,7 @@ function folderFinder(goal: HTMLTextAreaElement, pill: HTMLButtonElement) {
 }
 
 async function showEntry() {
+  setActiveRun('')
   run = null; log = []; liveFiles.clear(); sharedMemory = null; undoResult = ''; stopClock()
   root.replaceChildren(h('div', 'team-entry-skeleton skel'))
   const cachedRuns = isRemote() && !localStorage.getItem('forge.teamReplay') ? cacheGet<Summary[]>('runs') : null // the phone shows the runs it saw last while it asks
@@ -364,7 +365,10 @@ function renderRunList() {
   return section
 }
 
+// The sidebar marks the run that is open (and the chat list redraws) through this.
+function setActiveRun(id: string) { if (id) app.dataset.crewRun = id; else delete app.dataset.crewRun; window.dispatchEvent(new Event('forge-crew-changed')) }
 async function openRun(id: string, fixture?: { run: Run; events: Logged[]; memory?: TeamMemory }) {
+  setActiveRun(fixture ? '' : id)
   root.replaceChildren(h('div', 'team-run-loading skel'))
   const loaded = fixture ?? await (async () => { const [saved, events] = await Promise.all([window.forge.teamGet(id), window.forge.teamEvents(id)]); if (!saved) throw new Error('This run no longer exists.'); return { run: saved, events } })()
   run = structuredClone(loaded.run); sharedMemory = fixture?.memory ?? null; undoResult = ''; goalOpen = false
@@ -966,6 +970,9 @@ export function initTeam(options: { project: () => string | null }) {
   $('team-hist-toggle').onclick = () => { if (phone.matches) toggleDrawer(); else $('hist-toggle').click() } // one toggle: same rail, labels and saved state as Solo
   if (typeof window.forge.onTeamEvent === 'function') window.forge.onTeamEvent(reduceEvent)
   if (localStorage.getItem('forge.teamReplay')) (window as unknown as { __forgeTeamEmit?: typeof reduceEvent }).__forgeTeamEmit = reduceEvent // lets the replay harness stream fake agent events
+  window.addEventListener('forge-open-run', e => { showTeam(false); void openRun((e as CustomEvent<string>).detail).catch(err => toast(cleanErr(err), 5000)) })
+  // a chat or a new chat from the sidebar leaves the Crew screen (it used to stay on it)
+  $('history').addEventListener('click', e => { if (app.classList.contains('team-mode') && (e.target as HTMLElement).closest('.chat-open:not(.run-open), #new-chat, #side-new')) { setActiveRun(''); showChat() } })
   if (typeof window.forge.onTeamFocus === 'function') window.forge.onTeamFocus(id => { showTeam(false); void openRun(id).catch(e => toast(cleanErr(e), 5000)) })
   window.addEventListener('forge-project', (e) => { currentProject = (e as CustomEvent<string | null>).detail ?? '' })
   if (localStorage.getItem('forge.teamReplay') === 'open') { localStorage.setItem('forge.teamReplay', '1'); showTeam() }

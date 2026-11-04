@@ -149,3 +149,6 @@ code.k { font: 12px var(--mono); background: var(--panel-2); border-radius: var(
 .usage-badge .u-main { display: inline-flex; align-items: center; gap: 5px; }
 .usage-badge .u-main.bump { animation: bump var(--t3) var(--ease); }
 .usage-badge .u-sub { display: none; }
+/* a Crew run among the chats: the crew icon leads its title */
+.chat-item .run-icon { color: var(--side-faint); margin-right: -2px; }
+.chat-item.active .run-icon { color: var(--text); }
