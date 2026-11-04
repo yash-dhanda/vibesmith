@@ -1,5 +1,6 @@
 import { $, h } from './ui'
 import { icon, type IconName } from './icons'
+import { openSearch } from './searchPanel'
 
 export type Command = { label: string; icon?: IconName; detail?: string; run: () => void }
 export function initPalette(commands: () => Command[]) {
@@ -10,7 +11,7 @@ export function initPalette(commands: () => Command[]) {
   let matches: Command[] = []
   const paint = () => {
     const q = input.value.trim().toLowerCase()
-    matches = commands().filter(c => `${c.label} ${c.detail ?? ''}`.toLowerCase().includes(q)).slice(0, 40)
+    matches = [{ label: 'Search everything', icon: 'search' as IconName, detail: 'Chats, Crew runs, history · Ctrl Shift F', run: openSearch }, ...commands()].filter(c => `${c.label} ${c.detail ?? ''}`.toLowerCase().includes(q)).slice(0, 40)
     active = Math.min(active, Math.max(0, matches.length - 1))
     list.replaceChildren()
     matches.forEach((c, i) => {
@@ -57,6 +58,7 @@ export function initPalette(commands: () => Command[]) {
   $('commands').onclick = open
   window.addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); open() }
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); openSearch() }
   })
   dialog.addEventListener('click', e => { if (e.target === dialog) { const r = dialog.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) dialog.close() } })
 }
