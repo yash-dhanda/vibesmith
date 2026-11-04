@@ -1,3 +1,5 @@
+import { keyCard } from './keyCard'
+import { splitKeyAnswer } from '../main/keyAnswer'
 import type { Run, RunEvent, Task, TeamConfig } from '../main/team/types'
 import type { RunSummary, TeamMemory } from '../main/team/service'
 import { md, folderName, formatTokens, timeAgo } from './format'
@@ -889,7 +891,7 @@ function renderFinal() {
   const section = h('section', 'team-final')
   const done = h('div', 'eyebrow', 'Crew finished'); done.prepend(emo(STEP_GLYPH.done))
   section.append(done, h('h2', '', N.reviewHead))
-  const report = h('div', 'team-final-report'); report.innerHTML = md(run!.final!.report); section.append(report)
+  const split = splitKeyAnswer(run!.final!.report); if (split.key.length) section.append(keyCard(split.key)); const report = h('div', 'team-final-report'); report.innerHTML = md(split.rest); section.append(report)
   const files = h('div', 'team-final-files'); for (const file of run!.final!.files) { const f = h('div', '', file.path); f.prepend(fileIcon(file.status)); f.title = `${file.status === 'added' ? 'New' : file.status === 'deleted' ? 'Removed' : 'Updated'}: ${file.path}`; files.append(f) } section.append(files)
   const localReviews = run!.tasks.filter(t => t.agent === 'local' && t.status !== 'cancelled').flatMap(t => t.reviews.slice(-1))
   if (run!.tasks.some(t => t.agent === 'local' && t.status !== 'cancelled')) {

@@ -1,6 +1,11 @@
 import { isAgent, type AgentName } from './events'
 import { rank } from './memory'
+import { keyLines, KEY_HEADING } from '../keyAnswer'
 import type { Message, Review, Run, Task } from './types'
+
+// Two rules every agent gets: do what was asked and nothing else, and put what the user must receive in short KEY lines.
+const SCOPE = `Stay on what was asked. Do exactly what the team goal and your task say, nothing more: no extra features, redesigns, refactors, renamed files, new dependencies or clean-ups the goal does not name. Where the goal gives literal details (names, colours, pages, an id or password to create), use them exactly as written. Problems you notice outside your task go into your hand-over, not into the code.`
+const KEY_RULE = `When the goal asks you to hand the user something (a login id and password you created, a URL or port, a command to run, a file path), end your summary with one line each, starting "KEY: ", short and with the exact values, for example "KEY: Admin login: id admin, password <the password>". Write no KEY line when nothing like that was asked for.`
 
 // ---------------------------------------------------------------- planning
 
@@ -22,6 +27,7 @@ ${brief ? `\nPROJECT NOTES:\n${brief}\n` : ''}
 First look at the project folder (read-only: list and read files; do not change anything). If the goal is unclear in a way that would change the plan (which stack, which feature, what to keep), call team_ask once with up to 4 short options, then plan with the answer; skip this when the goal and the project are clear enough. Then split the goal into 1 to 8 tasks.
 
 Rules for a good plan:
+- Plan only what the goal asks. No extra tasks for features, redesigns, clean-ups or dependencies the goal does not name. Put every literal request of the goal (a name, a page, "an admin id and password") into a task's "acceptance" so it is checked.
 - Each task is a unit one agent can finish alone in one sitting and that can be checked.
 - Tasks that touch different files can run in parallel. Give "deps" only when a task truly needs another one's result.
 - Make tasks touch different files where you can. Two tasks editing the same file will conflict.
@@ -142,6 +148,8 @@ ${task.goal}
 ${section('Done means', task.acceptance)}${task.files.length ? section('Files you will probably touch', task.files) : ''}${render(c)}
 ## How to work
 ${write ? '- Work only inside the current folder. Make the change, run the checks that exist (tests, build, the commands in "Done means"), and fix what fails.\n- Keep changes focused on this task; other agents are doing the rest in parallel.\n- Do not commit; the team commits for you.' : '- Read only. Do not change any file. Report what you found.'}
+- ${SCOPE}
+- ${KEY_RULE}
 - Finish by calling team_handoff with what the next task needs, then end with a short plain summary of what you did${write ? ' and what you verified' : ''}.`
 }
 
@@ -159,6 +167,7 @@ ${section('Done means', task.acceptance)}${render(c)}
 - Test behaviour that matters: the main paths, edge cases and failures of the new code. No tests that only repeat the implementation.
 - Run the tests and make them pass. Do not change production code, except to fix an obvious bug your tests found; say so in the summary.
 - Work only inside the current folder. Do not commit; the team commits for you.
+- ${SCOPE}
 - Finish by calling team_handoff with what the next task needs, then end with a short plain summary: which tests you added, whether they pass, and any bug you found.`
 }
 
@@ -224,7 +233,7 @@ export function finalReviewPrompt(run: Run, diff: string): string {
   return `The team finished this goal:
 ${run.goal}
 
-Below is the complete change they made (merged result). Part of it may come from a small local model, which is often wrong: do not trust summaries, check names, imports and APIs actually exist. Read only; do not change files. Check that the whole thing works together and meets the goal: missing pieces, integration mistakes between parts written by different agents, security problems, leftover debug code.
+Below is the complete change they made (merged result). Part of it may come from a small local model, which is often wrong: do not trust summaries, check names, imports and APIs actually exist. Read only; do not change files. Check that the whole thing works together and meets the goal: missing pieces, anything the goal did not ask for (extra features, redesigns, unrelated changes: list each as a must-fix), integration mistakes between parts written by different agents, security problems, leftover debug code.
 
 ${diff || '(no changes)'}
 
@@ -255,6 +264,8 @@ export function buildReport(run: Run, verify: { ok: boolean | null; command?: st
   const lines: string[] = [`# ${run.goal.split('\n')[0].slice(0, 120)}`, '', run.plan.summary ? `${run.plan.summary}\n` : '']
   const done = run.tasks.filter((t) => t.status === 'done')
   const bad = run.tasks.filter((t) => t.status !== 'done' && t.status !== 'cancelled')
+  const key = keyLines(done.map((t) => `${t.summary ?? ''}\n${t.handoff ?? ''}`).join('\n'))
+  if (key.length) lines.push(KEY_HEADING, ...key.map((k) => `- ${k}`), '')
   lines.push(`## What the team did`)
   for (const t of done) lines.push(`- **${t.title}** (${t.agent}${t.fixRounds ? `, ${t.fixRounds} fix round${t.fixRounds > 1 ? 's' : ''}` : ''}): ${(t.summary || t.handoff || 'done').replace(/\s+/g, ' ').slice(0, 300)}`)
   if (bad.length) {

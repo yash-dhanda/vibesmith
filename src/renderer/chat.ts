@@ -1,3 +1,5 @@
+import { keyCard } from './keyCard'
+import { keyLines, withoutKey } from '../main/keyAnswer'
 import type { AgentEvent, ChatListItem, Mode, TranscriptItem } from '../preload'
 import { exportMarkdown, folderName, formatRate, formatTokens, matchesQuery, md, toolTarget, toolVerb } from './format'
 import { fileIcon, icon, type IconName } from './icons'
@@ -85,7 +87,10 @@ function drawReply() {
   if (!reply || !replyDirty) return
   replyDirty = false; replyDrawn = performance.now()
   const stick = nearBottom()
-  reply.el.innerHTML = md(reply.text)
+  const key = keyLines(reply.text)
+  reply.el.innerHTML = md(key.length ? withoutKey(reply.text) : reply.text)
+  reply.el.querySelector(':scope > .key-card')?.remove()
+  if (key.length) reply.el.append(keyCard(key))
   if (stick) toEnd()
 }
 function scheduleReply() {
