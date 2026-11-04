@@ -7,7 +7,7 @@ import type { Run } from './team/types'
 
 // IPC for the git buttons of a landed run and for "Search everything". Everything the handlers need comes in through `deps`
 // (the stores are created after the window, so they are read lazily).
-export type GitSearchDeps = Pick<SearchDeps, 'listChats' | 'loadChat' | 'listRuns'> & { getRun(id: string): Run | null }
+export type GitSearchDeps = Pick<SearchDeps, 'listChats' | 'loadChat' | 'listRuns'> & { getRun(id: string): Run | null; neverPush(project: string): boolean }
 
 export function registerGitSearch(deps: GitSearchDeps) {
   const find = (id: unknown): Run => {
@@ -24,16 +24,18 @@ export function registerGitSearch(deps: GitSearchDeps) {
 
   ipcMain.handle('team:git-state', async (_e, id: unknown) => {
     const run = find(id)
-    return { ...(await gitState(run.project)), landed: !!run.applied }
+    return { ...(await gitState(run.project)), landed: !!run.applied, neverPush: deps.neverPush(run.project) }
   })
   ipcMain.handle('team:git-commit', (_e, id: unknown) => commitRun(find(id).project, find(id)))
   ipcMain.handle('team:git-push', async (_e, id: unknown) => {
     const run = find(id)
+    if (deps.neverPush(run.project)) return { ok: false, message: 'Pushing is turned off for this project (Settings, Never push).' }
     const b = await onBranch(run, 'Pushing')
     return typeof b === 'string' ? pushBranch(run.project, b) : b
   })
   ipcMain.handle('team:git-pr', async (_e, id: unknown) => {
     const run = find(id)
+    if (deps.neverPush(run.project)) return { ok: false, message: 'Pull requests are turned off for this project (Settings, Never push).' }
     const b = await onBranch(run, 'A pull request')
     return typeof b === 'string' ? openPr(run.project, b, commitMessageFor(run).split('\n')[0] ?? '', prBodyFor(run)) : b
   })

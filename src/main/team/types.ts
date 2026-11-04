@@ -96,6 +96,7 @@ export type TeamConfig = {
   testTask?: boolean // after the build tasks, one task writes or extends tests for the changed code, when the project has a test command (default on)
   visualCheck?: 'off' | 'auto' | 'always' // before the final review: start the site, screenshot the pages at desktop and phone sizes and show them to the reviewer (auto = only when UI files changed; default off, it starts a dev server)
   visualRoutes?: string[] // the pages to screenshot (default just "/")
+  neverPush?: boolean // this project never goes to a remote: the Crew panel hides Push and Open pull request and the main process refuses both (default off)
   securityReview?: 'off' | 'auto' | 'always' // a read-only security look before the final review: auto = only when the diff touches auth, payments, secrets, routes or dependencies (default auto)
 }
 

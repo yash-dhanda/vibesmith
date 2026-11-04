@@ -905,7 +905,7 @@ ipcMain.handle('team:export-report', async (e, id: unknown) => {
 ipcMain.handle('team:apply', (_e, id: unknown, withoutUndo?: unknown) => teamSvc().orch.approveFinal(teamId(id), withoutUndo === true))
 ipcMain.handle('team:reject', (_e, id: unknown) => teamSvc().orch.rejectFinal(teamId(id)))
 registerQueue({ team: teamSvc, rootOf })
-registerGitSearch({ getRun: (id) => teamSvc().orch.get(id) ?? null, listRuns: () => teamSvc().list(), listChats: () => store.list(), loadChat: (id) => store.load(id) })
+registerGitSearch({ neverPush: (p) => !!teamSvc().settings.get(p).neverPush, getRun: (id) => teamSvc().orch.get(id) ?? null, listRuns: () => teamSvc().list(), listChats: () => store.list(), loadChat: (id) => store.load(id) })
 registerProjectTools({ getRun: (id) => teamSvc().orch.get(id) ?? null, listRuns: () => teamSvc().list(), listChats: () => store.list(), loadChat: (id) => store.load(id), scanned: () => scanCache?.hits ?? [], busy: (p) => [...sessions.values()].some((s) => s.run && s.chat.project === p) })
 registerProjectKnowledge({ rootOf, userData: app.getPath('userData'), briefRules: (p) => briefStore().get(p).rules, getRun: (id) => teamSvc().orch.get(id) ?? null, stats: (id) => teamSvc().stats(id) })
 registerIdeas({ rootOf })

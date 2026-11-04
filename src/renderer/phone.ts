@@ -109,8 +109,11 @@ export function initPhone() {
     if (!on) { root.style.removeProperty('--vvh'); root.classList.remove('kb'); return }
     // Pinch zoom shrinks the visual viewport too, but only the keyboard should shrink the app; and never past the page, or it scrolls.
     const h = Math.min(innerHeight, Math.round(vv.height * vv.scale))
-    root.style.setProperty('--vvh', `${h}px`)
-    root.classList.toggle('kb', innerHeight - h > 120)
+    // iOS home-screen apps can report a visual viewport a few dozen px short of the screen, which left a blank band under the tab bar: only a keyboard-sized difference resizes the app, otherwise 100dvh stands.
+    const kb = innerHeight - h > 120
+    if (kb) root.style.setProperty('--vvh', `${h}px`)
+    else root.style.removeProperty('--vvh')
+    root.classList.toggle('kb', kb)
     if (vv.offsetTop > 0 && vv.scale < 1.01) scrollTo(0, 0) // not while zoomed in: that offset is the user panning
   }
   vv.addEventListener('resize', fit)

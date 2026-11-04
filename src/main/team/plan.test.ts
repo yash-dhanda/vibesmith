@@ -99,6 +99,8 @@ describe('sanitizeConfig', () => {
   it('keeps known keys, clamps numbers, and drops everything else', () => {
     expect(sanitizeConfig({ planner: 'codex', maxParallelPerAgent: 99, maxFixRounds: -3, review: 'off', evil: 1, codexModel: 'gpt-5.6-luna', budget: { maxAgentRuns: 5, maxCostUsd: 2.5, maxTokens: 'x' }, verify: '' })).toEqual({ planner: 'codex', maxParallelPerAgent: 4, maxFixRounds: 0, review: 'off', codexModel: 'gpt-5.6-luna', budget: { maxAgentRuns: 5, maxCostUsd: 2.5 }, verify: null })
     expect(sanitizeConfig({ codexModel: 'x; rm -rf /' })).toEqual({})
+    expect(sanitizeConfig({ neverPush: true })).toEqual({ neverPush: true })
+    expect(sanitizeConfig({ neverPush: 'yes' })).toEqual({})
     expect(sanitizeConfig('nope')).toEqual({})
   })
 })

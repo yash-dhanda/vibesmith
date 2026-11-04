@@ -49,6 +49,7 @@ export function sanitizeConfig(raw: unknown): Partial<TeamConfig> {
   if (typeof r.autoSwitch === 'boolean') out.autoSwitch = r.autoSwitch
   if (r.effortMode === 'fixed' || r.effortMode === 'auto' || r.effortMode === 'cheap') out.effortMode = r.effortMode
   if (typeof r.testTask === 'boolean') out.testTask = r.testTask
+  if (typeof r.neverPush === 'boolean') out.neverPush = r.neverPush
   if (r.securityReview === 'off' || r.securityReview === 'auto' || r.securityReview === 'always') out.securityReview = r.securityReview
   if (r.visualCheck === 'off' || r.visualCheck === 'auto' || r.visualCheck === 'always') out.visualCheck = r.visualCheck
   if (Array.isArray(r.visualRoutes)) out.visualRoutes = r.visualRoutes.filter((x): x is string => typeof x === 'string' && x.length < 200 && /^\//.test(x)).slice(0, 8)
