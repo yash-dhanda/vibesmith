@@ -41,11 +41,15 @@ export function tailscaleAddress(): string | null {
 const lanAddress = () => Object.values(networkInterfaces()).flat().find((a) => a && a.family === 'IPv4' && !a.internal && /^(10|192\.168|172\.(1[6-9]|2\d|3[01]))\./.test(a.address))?.address ?? null
 
 export function shimSource(preload: string): string {
-  const body = preload.replace(/^import\s*\{\s*contextBridge\s*,\s*ipcRenderer\s*\}\s*from\s*["']electron["'];?/m, 'const { contextBridge, ipcRenderer } = window.__forgeElectron;')
+  const body = preload
+    .replace(/^import\s*\{\s*contextBridge\s*,\s*ipcRenderer\s*\}\s*from\s*["']electron["'];?/m, 'const { contextBridge, ipcRenderer } = window.__forgeElectron;')
+    .replace(/^export\s*\{\s*\};?\s*$/gm, '') // the built preload ends with an empty export, which a plain script cannot contain
   return `(() => {
 const listeners = new Map()
+const b64 = (u8) => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s) }
+const encode = (k, v) => (v instanceof Uint8Array ? { __u8: b64(v) } : v instanceof ArrayBuffer ? { __u8: b64(new Uint8Array(v)) } : v)
 const post = async (url, body) => {
-  const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), credentials: 'same-origin' })
+  const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body, encode), credentials: 'same-origin' })
   if (r.status === 401) { location.href = '/__unpaired'; throw new Error('This device is not paired.') }
   return r.json()
 }
@@ -180,7 +184,8 @@ export class RemoteServer {
     const chunks: Buffer[] = []
     let n = 0
     for await (const c of req) { n += (c as Buffer).length; if (n > MAX_BODY) throw new Error('too large'); chunks.push(c as Buffer) }
-    return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+    // binary arguments (pictures) arrive as { __u8: base64 } and are turned back into bytes
+    return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}', (_k, v) => (v && typeof v === 'object' && typeof v.__u8 === 'string' && Object.keys(v).length === 1 ? new Uint8Array(Buffer.from(v.__u8, 'base64')) : v))
   }
 
   private json(res: ServerResponse, code: number, v: unknown) {

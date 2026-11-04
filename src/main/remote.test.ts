@@ -16,7 +16,7 @@ async function boot() {
   const preloadFile = join(dir, 'preload.mjs')
   writeFileSync(preloadFile, 'import { contextBridge, ipcRenderer } from "electron";\ncontextBridge.exposeInMainWorld("forge", { hello: (n) => ipcRenderer.invoke("hello", n) });')
   const sent: unknown[][] = []
-  const handlers = new Map<string, (e: any, ...a: any[]) => unknown>([['hello', (_e, n) => `hi ${n}`], ['boom', () => { throw new Error('nope') }], ['project:pick', () => 'x'], ['ping', (e) => { e.sender.send('pong', 1) }]])
+  const handlers = new Map<string, (e: any, ...a: any[]) => unknown>([['hello', (_e, n) => `hi ${n}`], ['boom', () => { throw new Error('nope') }], ['project:pick', () => 'x'], ['ping', (e) => { e.sender.send('pong', 1) }], ['bytes', (_e, files: any) => files.map((f: any) => `${f.name}:${f.data instanceof Uint8Array}:${f.data.length}`)]])
   const listeners = new Map<string, ((e: any, ...a: any[]) => void)[]>([['note', [(_e, ...a) => { sent.push(a) }]]])
   srv = new RemoteServer({ dir, rendererDir, preloadFile, handlers, listeners, bind: '127.0.0.1' })
   await srv.start(0)
@@ -62,6 +62,13 @@ describe('remote access', () => {
     expect(t.srv.status().devices).toHaveLength(1)
     t.srv.revoke(t.srv.status().devices[0].id)
     expect((await rpc(t.base, cookie, 'hello', ['x'])).status).toBe(401)
+  })
+
+  it('turns binary arguments back into bytes', async () => {
+    const t = await boot()
+    const { cookie } = await pair(t)
+    const res = await fetch(`${t.base}/rpc`, { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ c: 'bytes', a: [[{ name: 'a.png', data: { __u8: Buffer.from('hello').toString('base64') } }]] }) })
+    expect(await res.json()).toEqual({ ok: true, result: ['a.png:true:5'] })
   })
 
   it('keeps pairing links and paired phones across restarts, with no expiry', async () => {
@@ -111,5 +118,6 @@ describe('remote access', () => {
   it('builds the phone script from the preload file', () => {
     const s = shimSource('import { contextBridge, ipcRenderer } from "electron";\ncontextBridge.exposeInMainWorld("forge", {});')
     expect(s).toContain('const { contextBridge, ipcRenderer } = window.__forgeElectron;')
+    expect(shimSource('import { contextBridge, ipcRenderer } from "electron";\nexposeIt();\nexport {};\n')).not.toMatch(/export\s*\{/)
   })
 })
