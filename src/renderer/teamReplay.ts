@@ -9,6 +9,9 @@ const task = (id: string, title: string, agent: 'claude' | 'codex', status: Task
   changed: status === 'done' ? [{ path: `${id}.ts`, status: 'modified', added: 24, removed: 7 }] : [], usage: usage(status === 'done' ? 2 : 1),
 })
 
+// Long on purpose: real goals run to several sentences, and the run header must clamp them.
+export const REPLAY_GOAL = 'Build a shared planning space where two agents can work together: a task board with live lanes, approvals you can reach from the keyboard, and one final review before anything lands. Keep it calm in light and dark themes, make it work in a narrow window, and check the whole flow with npm test before handing it back.'
+
 export function replayRun(state = 'running'): { run: Run; events: { t: number; ev: RunEvent }[]; memory: TeamMemory } {
   const now = Date.now()
   const tasks = [
@@ -23,7 +26,7 @@ export function replayRun(state = 'running'): { run: Run; events: { t: number; e
   if (state === 'final' || state === 'applied') for (const item of tasks) { item.status = 'done'; item.phase = null; item.summary = 'Completed and reviewed.' }
   const status = state === 'final' || state === 'approval' ? 'awaiting_approval' : state === 'applied' ? 'done' : state === 'paused' ? 'paused' : state === 'interrupted' ? 'interrupted' : state === 'planning' ? 'planning' : 'running'
   const run: Run = {
-    id: 'replay-team-run', project: '/tmp/forge-team-replay', goal: 'Build a shared planning space where two agents can work together', status,
+    id: 'replay-team-run', project: '/tmp/forge-team-replay', goal: REPLAY_GOAL, status,
     pausedReason: status === 'paused' ? 'The ChatGPT plan reached the limit set for this run.' : status === 'interrupted' ? 'Forge restarted while the team was working.' : undefined,
     createdAt: now - 193_000, updatedAt: now, baseCommit: '', integrationBranch: 'forge/replay-team-run', integrationWorktree: '',
     plan: { summary: 'Build the foundation, create the interface, then verify the result together.', plannedBy: 'claude' }, tasks,
