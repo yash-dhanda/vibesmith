@@ -4,6 +4,7 @@ import { md, folderName, formatTokens, timeAgo } from './format'
 import { fileIcon, icon, type IconName } from './icons'
 import { $, cleanErr, emo, h, toast } from './ui'
 import { replayRun } from './teamReplay'
+import { AGENT_FULL, AGENT_NAME, N } from './names'
 import { RUN_GLYPH, STEP_GLYPH, TASK_GLYPH, TOOL_GLYPH } from './glyphs'
 import { buildStage, pushCode, type StageCode } from './teamStage'
 import { normaliseTeamEventsAsync, reduceTeamView, type LoggedTeamEvent } from './teamReducer'
@@ -33,12 +34,10 @@ let runView: 'list' | 'grid' = (() => { try { return localStorage.getItem('forge
 let steerDraft = ''
 const questionDrafts = new Map<string, { picked: number[]; other: string }>() // a live redraw must not lose a half-made answer
 let steerTarget: 'all' | 'claude' | 'codex' | 'local' = 'all'
-const AGENT_NAME = { claude: 'Claude', codex: 'Codex', local: 'Local model' } as const
 let laneDetails = (() => { try { return localStorage.getItem('forge.teamLaneDetails') === '1' } catch { return false } })()
 // The lanes show the code each agent is writing, live. Planning output, talk, commands, step results, prompts and reasoning sit behind "Details".
 const laneVisible = (ev: RunEvent & { type: 'agent' }) => { const e = ev.ev; return laneDetails || (ev.phase !== 'plan' && (e.type === 'code' || e.type === 'error' || (e.type === 'done' && !e.ok))) }
 const PHASE_LABEL: Record<string, string> = { work: 'Working', review: 'Reviewing', fix: 'Fixing', merge: 'Merging', conflict: 'Resolving a conflict', plan: 'Planning', 'final-review': 'Final review' }
-const AGENT_FULL = { claude: 'Claude Code', codex: 'OpenAI Codex', local: 'Local model' } as const
 
 const apiReady = () => typeof window.forge.teamStart === 'function'
 const fmtTime = (seconds: number) => seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`
@@ -128,7 +127,7 @@ async function showEntry() {
   root.replaceChildren(h('div', 'team-entry-skeleton skel'))
   if (!apiReady()) {
     const unavailable = h('section', 'team-entry')
-    unavailable.append(emptyState('users', 'Team Mode is coming together', 'This build does not include the team service yet. Update Forge to use Claude Code and Codex together.'))
+    unavailable.append(emptyState('users', `${N.crew} is coming together`, 'This build does not include the crew service yet. Update Forge to use Claude Code and Codex together.'))
     root.replaceChildren(unavailable); return
   }
   replay = localStorage.getItem('forge.teamReplay') === '1' || new URLSearchParams(location.search).has('team-replay')
@@ -145,21 +144,21 @@ async function showEntry() {
   ]).catch(error => { loadError = error; return null })
   if (!loaded) {
     const failure = h('section', 'team-entry team-load-error')
-    failure.append(emptyState('info', 'The team room could not open.', cleanErr(loadError), ['Try again', () => void showEntry()]))
+    failure.append(emptyState('info', `${N.crew} could not open.`, cleanErr(loadError), ['Try again', () => void showEntry()]))
     root.replaceChildren(failure); return
   }
   const [health, list, defaults] = loaded
   summaries = list
   const page = h('div', 'team-entry')
   const intro = h('section', 'team-intro')
-  intro.append(h('h1', '', 'Build with a second set of eyes.'), h('p', 'team-lede', 'Claude Code, Codex and a local model split the work, review each other and bring back one checked result. Nothing touches your project until you apply it.'))
+  intro.append(h('h1', '', 'Build with a crew: a second set of eyes.'), h('p', 'team-lede', 'Claude Code, Codex and a local model split the work, review each other and bring back one checked result. Nothing touches your project until you land it.'))
   const form = h('form', 'team-start-card')
-  const goal = document.createElement('textarea'); goal.rows = 4; goal.placeholder = 'Describe what the team should build'; goal.setAttribute('aria-label', 'Team goal')
+  const goal = document.createElement('textarea'); goal.rows = 4; goal.placeholder = 'Describe what the crew should build'; goal.setAttribute('aria-label', 'Crew goal')
   const project = h('button', 'pill team-project') as HTMLButtonElement; project.type = 'button'; project.append(icon('folder', 'sm'), document.createTextNode(currentProject ? folderName(currentProject) : 'Choose folder')); project.title = currentProject || 'Choose the project folder'
   project.onclick = () => $('project').click()
   const advanced = h('details', 'team-advanced') as HTMLDetailsElement
-  const summary = h('summary'); summary.append(icon('sliders', 'sm'), document.createTextNode('Advanced'))
-  const planner = select([['auto', 'Choose for me'], ['claude', 'Claude'], ['codex', 'Codex'], ['local', 'Local model']], defaults.planner ?? 'auto')
+  const summary = h('summary'); summary.append(icon('sliders', 'sm'), document.createTextNode(N.moreOptions))
+  const planner = select([['auto', 'Choose for me'], ['claude', 'Claude'], ['codex', 'Codex'], ['local', AGENT_NAME.local]], defaults.planner ?? 'auto')
   const parallel = input('number', String(defaults.maxParallelPerAgent ?? 2)); parallel.min = '1'; parallel.max = '4'
   const review = select([['cross', 'Cross-review every task'], ['off', 'No cross-review']], defaults.review ?? 'cross')
   const finalReview = select([['auto', 'Automatic (bigger runs only)'], ['true', 'Always check the combined result'], ['false', 'Skip the final review']], String(defaults.finalReview ?? 'auto'))
@@ -187,12 +186,12 @@ async function showEntry() {
   const validation = h('div', 'team-config-error'); validation.setAttribute('role', 'alert')
   const numeric = [parallel, fixRounds, minutes, tokens, runs, maxTasks, limit]
   const readConfig = (): Partial<TeamConfig> | null => {
-    if (numeric.some(item => !item.checkValidity() || !Number.isFinite(Number(item.value)))) { validation.textContent = 'Check the highlighted team settings.'; numeric.find(item => !item.checkValidity())?.focus(); return null }
+    if (numeric.some(item => !item.checkValidity() || !Number.isFinite(Number(item.value)))) { validation.textContent = 'Check the highlighted crew settings.'; numeric.find(item => !item.checkValidity())?.focus(); return null }
     validation.textContent = ''
     return { askQuestions: ask.value === 'ask', planner: planner.value as TeamConfig['planner'], maxParallelPerAgent: Number(parallel.value), review: review.value as TeamConfig['review'], finalReview: finalReview.value === 'auto' ? 'auto' : finalReview.value === 'true', reviewPlan: reviewPlan.value === 'true', bypassPermissions: permissions.value === 'bypass', maxFixRounds: Number(fixRounds.value), codexMode: codexMode.value as TeamConfig['codexMode'], verify: verify.value.trim() || undefined, codexModel: codexModel.value, localModel: localModel.value || undefined, claudeModel: claudeModel.value.trim() || undefined, claudeEffort: effort.value as TeamConfig['claudeEffort'], codexEffort: codexEffort.value as TeamConfig['codexEffort'], maxLimitPercent: Number(limit.value), budget: { maxMinutes: Number(minutes.value) || undefined, maxTokens: Number(tokens.value) || undefined, maxAgentRuns: Number(runs.value) || undefined, maxTasks: Number(maxTasks.value) } }
   }
   const reset = h('button', 'btn', 'Reset defaults') as HTMLButtonElement; reset.type = 'button'; reset.onclick = () => { ask.value = 'ask'; planner.value = 'auto'; parallel.value = '2'; review.value = 'cross'; finalReview.value = 'auto'; reviewPlan.value = 'false'; permissions.value = 'bypass'; fixRounds.value = '3'; verify.value = ''; codexMode.value = 'app-server'; claudeModel.value = ''; effort.value = 'high'; codexEffort.value = 'high'; minutes.value = ''; tokens.value = ''; runs.value = ''; maxTasks.value = '12'; limit.value = '0'; validation.textContent = 'Defaults restored. They will save when you start a run.' }
-  const saveDefaults = h('button', 'btn', 'Save defaults') as HTMLButtonElement; saveDefaults.type = 'button'; saveDefaults.onclick = () => void call(async () => { const config = readConfig(); if (!config || typeof window.forge.teamSettingsSet !== 'function') return; await window.forge.teamSettingsSet(config); validation.textContent = 'Team defaults saved for this project.' })
+  const saveDefaults = h('button', 'btn', 'Save defaults') as HTMLButtonElement; saveDefaults.type = 'button'; saveDefaults.onclick = () => void call(async () => { const config = readConfig(); if (!config || typeof window.forge.teamSettingsSet !== 'function') return; await window.forge.teamSettingsSet(config); validation.textContent = 'Crew defaults saved for this project.' })
   const settingActions = h('div', 'team-setting-actions'); settingActions.append(reset, saveDefaults)
   advanced.append(summary, grid, validation, settingActions)
   const healthBox = h('div', 'team-health')
@@ -210,7 +209,7 @@ async function showEntry() {
     healthBox.append(meter)
   }
   const ready = health.agents.filter(a => a.ok)
-  const startLabel = ready.length ? `Start with ${ready.length > 1 ? 'the team' : AGENT_NAME[ready[0].agent]}` : 'No agent is ready'
+  const startLabel = ready.length ? (ready.length > 1 ? N.sendCrew : `Send ${AGENT_NAME[ready[0].agent]}`) : 'No agent is ready'
   const start = h('button', 'btn primary team-start', startLabel) as HTMLButtonElement
   start.disabled = !ready.length
   const diagnostics = h('button', 'icon-btn') as HTMLButtonElement; diagnostics.type = 'button'; diagnostics.append(icon('info')); diagnostics.setAttribute('aria-label', 'Copy diagnostics'); diagnostics.title = 'Copy diagnostics: versions, agent status and recent runs for a bug report. No secrets or file contents.'
@@ -231,7 +230,7 @@ async function showEntry() {
   form.onsubmit = async e => {
     e.preventDefault(); const text = goal.value.trim(); if (!text || start.disabled) return
     const config = readConfig(); if (!config) return
-    start.disabled = true; start.replaceChildren('Preparing the team…')
+    start.disabled = true; start.replaceChildren('Sending the crew…')
     if (replay) { const fixture = replayRun('planning'); await openRun(fixture.run.id, fixture); return }
     try { if (typeof window.forge.teamSettingsSet === 'function') await window.forge.teamSettingsSet(config); const started = await window.forge.teamStart(text, config); await openRun(started.id) }
     catch (err) { start.disabled = false; start.replaceChildren(startLabel); toast(cleanErr(err), 6000) }
@@ -255,7 +254,7 @@ function emptyState(glyph: IconName, title: string, copy: string, action?: [stri
 function renderRunList() {
   const section = h('section', `team-runs ${runView}`)
   const redraw = (focusSearch = false) => { const next = renderRunList(); section.replaceWith(next); if (focusSearch) queueMicrotask(() => { const field = next.querySelector<HTMLInputElement>('input[type="search"]'); field?.focus(); field?.setSelectionRange(field.value.length, field.value.length) }) }
-  const head = h('div', 'page-head'); const title = h('h2', 'page-title', 'Previous runs'); title.append(h('span', 'page-count', String(summaries.length))); head.append(title, h('span', 'grow'))
+  const head = h('div', 'page-head'); const title = h('h2', 'page-title', N.recentRuns); title.append(h('span', 'page-count', String(summaries.length))); head.append(title, h('span', 'grow'))
   const tools = h('div', 'head-tools')
   const view = h('div', 'view-toggle'); view.setAttribute('role', 'group'); view.setAttribute('aria-label', 'Layout')
   for (const [v, glyph, label] of [['grid', 'grid', 'Grid'], ['list', 'list', 'List']] as const) {
@@ -265,23 +264,23 @@ function renderRunList() {
   const filter = select([['all', 'All runs'], ['active', 'In progress'], ['attention', 'Needs attention'], ['done', 'Finished']], runFilter); filter.onchange = () => { runFilter = filter.value; redraw() }
   const sort = select([['opened', 'Last opened'], ['created', 'Created'], ['goal', 'Goal A-Z']], runSort); sort.onchange = () => { runSort = sort.value; redraw() }
   const searchWrap = h('div', `head-search${runSearchOpen || runSearch ? ' open' : ''}`)
-  const search = input('search', runSearch); search.placeholder = 'Search goals'; search.setAttribute('aria-label', 'Search team runs')
+  const search = input('search', runSearch); search.placeholder = 'Search goals'; search.setAttribute('aria-label', 'Search crew runs')
   const searchBtn = h('button', 'icon-btn sm'); searchBtn.append(icon('search', 'sm')); searchBtn.title = 'Search runs'; searchBtn.setAttribute('aria-label', 'Search runs')
   searchBtn.onclick = () => { runSearchOpen = true; searchWrap.classList.add('open'); search.focus() }
   search.onblur = () => { if (!search.value) { runSearchOpen = false; searchWrap.classList.remove('open') } }
   search.onkeydown = e => { if (e.key === 'Escape') { e.stopPropagation(); search.value = ''; runSearch = ''; runSearchOpen = false; redraw() } }
   search.oninput = () => { runSearch = search.value; runSearchOpen = true; redraw(true) }
   searchWrap.append(searchBtn, search)
-  const add = h('button', 'btn primary'); add.append(icon('plus', 'sm'), document.createTextNode('New')); add.title = 'Start a new team run'; add.onclick = newRun
-  tools.append(view, selectButton('filter', filter, 'Filter team runs'), selectButton('sort', sort, 'Sort team runs'), searchWrap, add); head.append(tools); section.append(head)
+  const add = h('button', 'btn primary'); add.append(icon('plus', 'sm'), document.createTextNode('New')); add.title = 'Start a new crew run'; add.onclick = newRun
+  tools.append(view, selectButton('filter', filter, 'Filter crew runs'), selectButton('sort', sort, 'Sort crew runs'), searchWrap, add); head.append(tools); section.append(head)
   const active = ['planning', 'running', 'verifying', 'paused', 'interrupted', 'awaiting_approval']
   const order = (a: Summary, b: Summary) => runSort === 'goal' ? a.goal.localeCompare(b.goal) : runSort === 'created' ? b.createdAt - a.createdAt : b.updatedAt - a.updatedAt
   const visible = [...summaries].sort(order).filter(item => item.goal.toLowerCase().includes(runSearch.trim().toLowerCase()) && (runFilter === 'all' || runFilter === 'active' && active.includes(item.status) || runFilter === 'attention' && ['failed', 'paused', 'interrupted'].includes(item.status) || runFilter === 'done' && ['done', 'cancelled'].includes(item.status)))
-  const table = h('div', 'run-table'); table.setAttribute('role', 'table'); table.setAttribute('aria-label', 'Previous team runs')
+  const table = h('div', 'run-table'); table.setAttribute('role', 'table'); table.setAttribute('aria-label', N.recentRuns)
   const cols = h('div', 'run-cols run-head'); cols.setAttribute('role', 'row')
   for (const [label, cls] of [['Run', 'c-goal'], ['Status', 'c-status'], ['Project', 'c-project'], ['Tasks', 'c-tasks'], ['Last opened', 'c-when']]) { const c = h('span', cls, label); c.setAttribute('role', 'columnheader'); cols.append(c) }
   table.append(cols); section.append(table)
-  if (!summaries.length) { section.append(emptyState('users', 'No team runs yet', 'Describe a goal above and the team plans it, splits the work and brings back one checked result.', ['New run', newRun])); return section }
+  if (!summaries.length) { section.append(emptyState('users', 'No crew runs yet', 'Describe a goal above and the crew plans it, splits the work and brings back one checked result.', ['New run', newRun])); return section }
   if (!visible.length) { section.append(emptyState('search', 'No runs match', 'Try another search or filter.', ['Clear filters', () => { runSearch = ''; runFilter = 'all'; runSearchOpen = false; redraw() }])); return section }
   for (const [index, item] of visible.entries()) {
     const row = h('article', 'run-row'); row.setAttribute('role', 'row'); enter(row, `row:${item.id}`, index)
@@ -295,7 +294,7 @@ function renderRunList() {
     if (typeof window.forge.teamExportReport === 'function' && ['awaiting_approval', 'done'].includes(item.status)) { const exportButton = h('button', 'icon-btn sm'); exportButton.append(icon('download', 'sm')); exportButton.title = 'Export report'; exportButton.setAttribute('aria-label', `Export report for ${item.goal}`); exportButton.onclick = () => void call(() => window.forge.teamExportReport(item.id)); acts.append(exportButton) }
     if (typeof window.forge.teamDelete === 'function' && !['planning', 'running', 'verifying', 'paused', 'interrupted'].includes(item.status)) {
       const del = h('button', 'icon-btn sm'); del.append(icon('trash', 'sm')); del.title = 'Delete run'; del.setAttribute('aria-label', `Delete ${item.goal}`)
-      del.onclick = () => void call(async () => { if (!window.confirm(`Delete this team run?\n\n${item.goal}\n\nIts saved report and unfinished Team work will be removed.`)) return; if (await window.forge.teamDelete(item.id)) { summaries = summaries.filter(x => x.id !== item.id); redraw() } })
+      del.onclick = () => void call(async () => { if (!window.confirm(`Delete this run?\n\n${item.goal}\n\nIts saved report and unfinished crew work will be removed.`)) return; if (await window.forge.teamDelete(item.id)) { summaries = summaries.filter(x => x.id !== item.id); redraw() } })
       acts.append(del)
     }
     row.append(open, acts); table.append(row)
@@ -305,7 +304,7 @@ function renderRunList() {
 
 async function openRun(id: string, fixture?: { run: Run; events: Logged[]; memory?: TeamMemory }) {
   root.replaceChildren(h('div', 'team-run-loading skel'))
-  const loaded = fixture ?? await (async () => { const [saved, events] = await Promise.all([window.forge.teamGet(id), window.forge.teamEvents(id)]); if (!saved) throw new Error('This team run no longer exists.'); return { run: saved, events } })()
+  const loaded = fixture ?? await (async () => { const [saved, events] = await Promise.all([window.forge.teamGet(id), window.forge.teamEvents(id)]); if (!saved) throw new Error('This run no longer exists.'); return { run: saved, events } })()
   run = structuredClone(loaded.run); sharedMemory = fixture?.memory ?? null; undoResult = ''
   const normal = await normaliseTeamEventsAsync(loaded.events); log = normal.log; liveFiles = normal.liveFiles
   if (!['planning', 'running', 'paused', 'interrupted'].includes(run.status)) liveFiles.clear()
@@ -333,11 +332,11 @@ function renderRun() {
 
 function renderRunHeader() {
   const header = h('header', 'team-run-header')
-  const back = h('button', 'icon-btn'); back.append(icon('arrowright')); back.classList.add('back'); back.title = 'All team runs'; back.onclick = () => void showEntry()
+  const back = h('button', 'icon-btn'); back.append(icon('arrowright')); back.classList.add('back'); back.title = `All ${N.crewRuns.toLowerCase()}`; back.onclick = () => void showEntry()
   const where = h('div', 'eyebrow', folderName(run!.project)); where.prepend(icon('folder', 'sm')); where.title = run!.project
   const identity = h('div', 'team-run-identity'); identity.append(where, h('h1', '', run!.goal))
   const asking = run!.approvals.some(a => a.kind === 'question' && a.status === 'pending')
-  const status = asking ? h('span', 'status-pill awaiting_approval asking') : statusTag(run!.status); if (asking) status.append(emo(RUN_GLYPH.awaiting_approval), 'Waiting for you'); status.setAttribute('role', 'status')
+  const status = asking ? h('span', 'status-pill awaiting_approval asking') : statusTag(run!.status); if (asking) status.append(emo(RUN_GLYPH.awaiting_approval), N.waiting); status.setAttribute('role', 'status')
   const elapsed = h('span', 'team-elapsed', fmtTime(Math.floor((Date.now() - run!.createdAt) / 1000))); elapsed.id = 'team-elapsed'
   const controls = h('div', 'team-controls')
   const planPending = run!.approvals.some(a => a.kind === 'plan' && a.status === 'pending')
@@ -388,21 +387,21 @@ function renderPauseBanner() {
   if (run!.status === 'failed' && failed) banner.append(actionButton('Retry failed task', () => teamAction(() => window.forge.teamRetryTask(run!.id, failed.id)), 'primary'))
   else if (run!.status === 'failed') return banner
   else if (/limit|budget|allowance/i.test(run!.pausedReason ?? '')) banner.append(actionButton('Allow 50% more', () => teamAction(() => window.forge.teamExtendBudget(run!.id)), 'primary'))
-  else banner.append(actionButton('Resume team', () => teamAction(() => window.forge.teamResume(run!.id)), 'primary'))
+  else banner.append(actionButton('Resume the crew', () => teamAction(() => window.forge.teamResume(run!.id)), 'primary'))
   return banner
 }
 
 function renderApprovals(items: Run['approvals']) {
-  const tray = h('section', 'approval-tray'); tray.setAttribute('role', 'alert'); tray.setAttribute('aria-live', 'assertive'); tray.append(sectionHead('Waiting for you', `${items.length} blocking`))
+  const tray = h('section', 'approval-tray'); tray.setAttribute('role', 'alert'); tray.setAttribute('aria-live', 'assertive'); tray.append(sectionHead(N.waiting, `${items.length} blocking`))
   for (const approval of [...items].sort((a, b) => Number(b.kind === 'question') - Number(a.kind === 'question'))) {
     if (approval.kind === 'plan') { tray.append(renderPlanReview(approval)); continue }
     if (approval.kind === 'question') { tray.append(renderQuestion(approval)); continue }
     const card = h('article', 'team-approval-card'); const copy = h('div', 'approval-copy')
     const kind = h('span', 'approval-kind', approval.kind.replace('_', ' '))
     copy.append(kind, h('h3', '', approval.title), h('p', '', approval.detail))
-    const note = input('text'); note.placeholder = 'Optional note to the team'; note.setAttribute('aria-label', `Note for ${approval.title}`)
+    const note = input('text'); note.placeholder = 'Optional note to the crew'; note.setAttribute('aria-label', `Note for ${approval.title}`)
     const actions = h('div', 'approval-actions')
-    const answer = async (allow: boolean) => { if (replay) { approval.status = allow ? 'allowed' : 'denied'; renderRun(); return } const accepted = await window.forge.teamAnswer(run!.id, approval.id, allow, note.value.trim() || undefined); if (!accepted) toast('The team is no longer waiting on this approval.'); await refreshRun() }
+    const answer = async (allow: boolean) => { if (replay) { approval.status = allow ? 'allowed' : 'denied'; renderRun(); return } const accepted = await window.forge.teamAnswer(run!.id, approval.id, allow, note.value.trim() || undefined); if (!accepted) toast('The crew is no longer waiting on this approval.'); await refreshRun() }
     if (approval.kind === 'budget') actions.append(actionButton('Allow 50% more', () => void teamAction(() => window.forge.teamExtendBudget(run!.id)), 'primary'))
     else actions.append(actionButton(approval.kind === 'review_override' ? 'Merge anyway' : 'Allow', () => void answer(true), 'primary'))
     actions.append(actionButton(approval.kind === 'review_override' ? 'Keep separate' : 'Deny', () => void answer(false)))
@@ -414,7 +413,7 @@ function renderApprovals(items: Run['approvals']) {
 // A question from an agent: options as rows (radio or checkbox), always an "Other…" row with its own text, then Skip and Send.
 // Keys: up/down move between rows, 1-4 pick, Enter sends.
 function renderQuestion(approval: Run['approvals'][number]) {
-  const who = approval.agent ? AGENT_NAME[approval.agent] : 'The team'
+  const who = approval.agent ? AGENT_NAME[approval.agent] : 'The crew'
   const card = h('article', 'question-card'); card.setAttribute('aria-label', `${who} asks: ${approval.title}`)
   const top = h('div', 'q-who'); top.append(h('span', `agent-orb ${approval.agent ?? ''}`), h('strong', '', who), h('span', '', 'asks'))
   card.append(top, h('h3', 'q-title', approval.title))
@@ -450,7 +449,7 @@ function renderQuestion(approval: Run['approvals'][number]) {
     const text = answerText(); if (allow && !text) return
     send.disabled = true
     if (replay) { approval.status = allow ? 'allowed' : 'denied'; if (allow) approval.answer = text; approval.answeredAt = Date.now(); renderRun(); return }
-    await call(async () => { const accepted = await window.forge.teamAnswer(run!.id, approval.id, allow, allow ? text : undefined); if (!accepted) toast('The team is no longer waiting on this question.'); await refreshRun() })
+    await call(async () => { const accepted = await window.forge.teamAnswer(run!.id, approval.id, allow, allow ? text : undefined); if (!accepted) toast('The crew is no longer waiting on this question.'); await refreshRun() })
     send.disabled = !answerText()
   }
   other.oninput = sync
@@ -487,7 +486,7 @@ function renderPlanReview(approval: Run['approvals'][number]) {
   const rows = run!.tasks.map((task, index) => {
     const row = h('div', 'plan-edit-row'), skipped = task.status === 'cancelled'
     const title = input('text', task.title); title.setAttribute('aria-label', `Task ${index + 1} title`)
-    const agent = select([['claude', 'Claude'], ['codex', 'Codex'], ['local', 'Local model']], task.agent); agent.setAttribute('aria-label', `Task ${index + 1} agent`)
+    const agent = select([['claude', 'Claude'], ['codex', 'Codex'], ['local', AGENT_NAME.local]], task.agent); agent.setAttribute('aria-label', `Task ${index + 1} agent`)
     const skip = input('checkbox'); skip.checked = skipped; skip.setAttribute('aria-label', `Skip task ${index + 1}`)
     const skipLabel = h('label', 'plan-skip'); skipLabel.append(skip, document.createTextNode('Skip'))
     const goal = h('p', 'plan-goal', task.goal)
@@ -511,11 +510,11 @@ function renderPlanReview(approval: Run['approvals'][number]) {
     if (edits.length) { const done = await window.forge.teamUpdatePlan(run!.id, edits); if (!done.ok) { result.textContent = done.message; return } }
     if (!start) { await refreshRun(); toast('Plan updated'); return }
     const accepted = await window.forge.teamAnswer(run!.id, approval.id, true)
-    if (!accepted) toast('The team is no longer waiting on this plan.')
+    if (!accepted) toast('The crew is no longer waiting on this plan.')
     await refreshRun()
   }
   actions.append(
-    actionButton('Start the team', () => void call(() => apply(true)), 'primary'),
+    actionButton(N.sendCrew, () => void call(() => apply(true)), 'primary'),
     actionButton('Save edits', () => void call(() => apply(false))),
     actionButton('Cancel run', () => void (replay ? toast('Replay mode: action recorded') : call(async () => { await window.forge.teamAnswer(run!.id, approval.id, false); await refreshRun() }))),
   )
@@ -523,7 +522,7 @@ function renderPlanReview(approval: Run['approvals'][number]) {
 }
 
 function renderBoard() {
-  const section = h('section', 'team-board-section'); section.append(sectionHead('Plan', run!.plan.summary || `${run!.tasks.length} tasks`))
+  const section = h('section', 'team-board-section'); section.append(sectionHead(N.plan, run!.plan.summary || `${run!.tasks.length} tasks`))
   const board = h('div', 'team-board')
   if (!run!.tasks.length) for (let i = 0; i < 3; i++) board.append(h('div', 'task-card task-skeleton skel'))
   for (const [index, task] of run!.tasks.entries()) board.append(renderTask(task, index))
@@ -630,7 +629,7 @@ function renderLiveCode(event: Extract<RunEvent, { type: 'agent' }>['ev'] & { ty
 }
 
 function renderFeed() {
-  const section = h('section', 'team-feed'); section.append(sectionHead('Team feed', `${run!.messages.length}`))
+  const section = h('section', 'team-feed'); section.append(sectionHead(N.feed, `${run!.messages.length}`))
   if (!run!.messages.length) section.append(h('p', 'team-empty', 'Handoffs, reviews and decisions appear here.'))
   for (const msg of run!.messages.slice(-12)) { const item = h('article', `feed-item ${msg.kind}`); const top = h('div'); const kindTag = h('span', '', msg.kind.replace('_', ' ')); top.append(h('strong', '', msg.from === 'user' ? 'You' : msg.from === 'orchestrator' ? 'Forge' : AGENT_NAME[msg.from]), kindTag); const body = h('p', 'feed-body', msg.body); item.append(top, body); if (msg.body.length > 260) { item.classList.add('clamped'); item.title = 'Click to read all'; item.onclick = () => item.classList.toggle('clamped') } section.append(item) }
   return section
@@ -639,7 +638,7 @@ function renderFeed() {
 function renderLiveFiles() {
   const section = h('section', 'team-live-files')
   const count = [...liveFiles.values()].reduce((total, files) => total + files.length, 0)
-  section.append(sectionHead('Writing now', count ? `${count} live` : 'Quiet'))
+  section.append(sectionHead(N.changing, count ? `${count} live` : 'Quiet'))
   if (!count) { section.append(h('p', 'team-empty', 'Files appear here while an agent is writing them.')); return section }
   for (const [taskId, files] of liveFiles) {
     const group = h('div', 'live-file-group'); const task = run!.tasks.find(item => item.id === taskId)
@@ -656,7 +655,7 @@ function renderLiveFiles() {
 
 function renderMemory() {
   const section = h('section', 'team-memory')
-  section.append(sectionHead('Shared memory', memoryLoading ? 'Refreshing…' : sharedMemory ? 'Current' : 'Waiting'))
+  section.append(sectionHead(N.notes, memoryLoading ? 'Refreshing…' : sharedMemory ? 'Current' : 'Waiting'))
   if (!sharedMemory) { section.append(h('p', 'team-empty', 'Decisions, handoffs, problems and useful project history appear here.')); return section }
   const addGroup = (title: string, items: HTMLElement[], open = false) => {
     if (!items.length) return
@@ -692,15 +691,15 @@ function scheduleMemoryRefresh() {
 }
 function renderVerify() {
   const events = log.filter(x => x.ev.type === 'verify')
-  const section = h('section', 'team-verify'); section.append(sectionHead('Checks', events.length ? `${events.length}` : 'Waiting'))
+  const section = h('section', 'team-verify'); section.append(sectionHead(N.checks, events.length ? `${events.length}` : 'Waiting'))
   for (const item of events.slice(-3)) if (item.ev.type === 'verify') { const details = h('details', `verify-card ${item.ev.ok ? 'ok' : 'bad'}`) as HTMLDetailsElement; details.open = !item.ev.ok; details.append(h('summary', '', `${item.ev.ok ? `${STEP_GLYPH.ok} Passed` : `${STEP_GLYPH.bad} Failed`} · ${item.ev.command}`), h('pre', '', item.ev.output.slice(-8000))); section.append(details) }
   return section
 }
 function renderSteer() {
-  const form = h('form', 'team-steer'); const label = h('label', '', 'Tell the team'); const row = h('div')
-  const text = input('text', steerDraft); text.placeholder = 'Add context or change direction…'; text.setAttribute('aria-label', 'Tell the team'); text.oninput = () => { steerDraft = text.value }
-  const to = select([['all', 'Everyone'], ['claude', 'Claude'], ['codex', 'Codex'], ['local', 'Local model']], steerTarget); to.setAttribute('aria-label', 'Send to'); to.onchange = () => { steerTarget = to.value as typeof steerTarget }
-  const send = h('button', 'icon-btn'); send.append(icon('arrowup')); send.setAttribute('aria-label', 'Send to team'); send.title = 'Send'
+  const form = h('form', 'team-steer'); const label = h('label', '', 'Tell the crew'); const row = h('div')
+  const text = input('text', steerDraft); text.placeholder = 'Add context or change direction…'; text.setAttribute('aria-label', 'Tell the crew'); text.oninput = () => { steerDraft = text.value }
+  const to = select([['all', 'Everyone'], ['claude', 'Claude'], ['codex', 'Codex'], ['local', AGENT_NAME.local]], steerTarget); to.setAttribute('aria-label', 'Send to'); to.onchange = () => { steerTarget = to.value as typeof steerTarget }
+  const send = h('button', 'icon-btn'); send.append(icon('arrowup')); send.setAttribute('aria-label', 'Send to the crew'); send.title = 'Send'
   row.append(text, to, send); form.append(label, row)
   form.onsubmit = e => { e.preventDefault(); const value = text.value.trim(); if (!value) return; if (replay) { run!.messages.push({ id: crypto.randomUUID(), from: 'user', to: steerTarget, kind: 'steer', body: value, at: Date.now(), readBy: [] }); steerDraft = ''; renderRun() } else void call(async () => { await window.forge.teamSteer(run!.id, value, steerTarget); steerDraft = ''; await refreshRun() }) }
   return form
@@ -730,34 +729,34 @@ async function openDiff(taskId?: string, path?: string, live = false) {
 
 function renderFinal() {
   const section = h('section', 'team-final')
-  const done = h('div', 'eyebrow', 'Team finished'); done.prepend(emo(STEP_GLYPH.done))
-  section.append(done, h('h2', '', 'Review the result before it reaches your project.'))
+  const done = h('div', 'eyebrow', 'Crew finished'); done.prepend(emo(STEP_GLYPH.done))
+  section.append(done, h('h2', '', N.reviewHead))
   const report = h('div', 'team-final-report'); report.innerHTML = md(run!.final!.report); section.append(report)
   const files = h('div', 'team-final-files'); for (const file of run!.final!.files) { const f = h('div', '', file.path); f.prepend(fileIcon(file.status)); f.title = `${file.status === 'added' ? 'New' : file.status === 'deleted' ? 'Removed' : 'Updated'}: ${file.path}`; files.append(f) } section.append(files)
   const verify = h('div', `final-verify ${run!.final!.verifyOk ? 'ok' : run!.final!.verifyOk === false ? 'bad' : ''}`); verify.append(emo(run!.final!.verifyOk ? STEP_GLYPH.ok : run!.final!.verifyOk === false ? STEP_GLYPH.bad : STEP_GLYPH.none), h('span', '', run!.final!.verifyOk ? 'Project check passed' : run!.final!.verifyOk === false ? 'Project check failed' : 'No project check configured')); section.append(verify)
   if (run!.final!.reviewNotes.length) { const notes = h('details', 'final-review-notes'); notes.append(h('summary', '', `Final review notes · ${run!.final!.reviewNotes.length}`), ...run!.final!.reviewNotes.map(item => h('p', '', item))); section.append(notes) }
   if (undoResult) section.append(h('div', 'errcard final-action-result', undoResult))
-  const note = h('p', 'team-final-note', 'Nothing has changed in your project yet. If you don’t apply this result, Forge keeps a saved Team copy that you can reopen later.'); section.append(note)
+  const note = h('p', 'team-final-note', 'Nothing has changed in your project yet. If you don’t land this result, Forge keeps a saved crew copy that you can reopen later.'); section.append(note)
   const actions = h('div', 'team-final-actions')
-  const apply = actionButton('Apply to my project', async () => { if (replay) { if (replayScenario === 'applyfail') { undoResult = 'Could not apply: your project changed while the team was working. Review the project and try again.'; renderRun(); return } run!.status = 'done'; run!.applied = true; run!.appliedCheckpoint = 'replay-checkpoint'; toast('Applied · Undo is ready'); renderRun(); return } await call(async () => { const result = await window.forge.teamApply(run!.id); if (!result.ok) { undoResult = result.message; renderRun(); return } toast(result.checkpoint ? `${result.message} · Undo is ready` : result.message, 5000); await refreshRun() }) }, 'primary')
-  const reject = actionButton("Don't apply", () => { if (replay) { run!.status = 'done'; run!.applied = false; toast('Not applied · Forge kept a saved Team copy'); renderRun(); return } void teamAction(() => window.forge.teamReject(run!.id)) })
+  const apply = actionButton(N.land, async () => { if (replay) { if (replayScenario === 'applyfail') { undoResult = 'Could not land: your project changed while the crew was working. Review the project and try again.'; renderRun(); return } run!.status = 'done'; run!.applied = true; run!.appliedCheckpoint = 'replay-checkpoint'; toast('Landed · Undo is ready'); renderRun(); return } await call(async () => { const result = await window.forge.teamApply(run!.id); if (!result.ok) { undoResult = result.message; renderRun(); return } toast(result.checkpoint ? `${result.message} · Undo is ready` : result.message, 5000); await refreshRun() }) }, 'primary')
+  const reject = actionButton("Don't land", () => { if (replay) { run!.status = 'done'; run!.applied = false; toast('Not landed · Forge kept a saved crew copy'); renderRun(); return } void teamAction(() => window.forge.teamReject(run!.id)) })
   actions.append(apply, reject); section.append(actions); return section
 }
 
 function renderApplied() {
   const section = h('section', `team-applied ${run!.undone ? 'undone' : ''}`)
-  const tag = h('div', 'eyebrow', run!.undone ? 'Changes undone' : 'Applied to your project'); tag.prepend(emo(run!.undone ? STEP_GLYPH.undone : STEP_GLYPH.done))
-  section.append(tag, h('h2', '', run!.undone ? 'Your project is back where it was.' : 'The team’s work is now in your project.'))
-  const copy = run!.undone ? 'The applied files were restored to their pre-Team versions.' : 'You can keep working, or undo the entire apply. Undo also removes hand edits made after the apply.'
+  const tag = h('div', 'eyebrow', run!.undone ? 'Changes undone' : 'Landed in your project'); tag.prepend(emo(run!.undone ? STEP_GLYPH.undone : STEP_GLYPH.done))
+  section.append(tag, h('h2', '', run!.undone ? 'Your project is back where it was.' : 'The crew’s work is now in your project.'))
+  const copy = run!.undone ? 'The landed files were restored to how they were before the crew.' : 'You can keep working, or undo the whole landing. Undo also removes hand edits made after it.'
   section.append(h('p', '', copy))
   if (undoResult) section.append(h('div', 'team-undo-result', undoResult))
-  if (!run!.undone && run!.appliedCheckpoint && typeof window.forge.teamUndo === 'function') section.append(actionButton('Undo applied changes', () => void undoApplied()))
+  if (!run!.undone && run!.appliedCheckpoint && typeof window.forge.teamUndo === 'function') section.append(actionButton('Undo the landing', () => void undoApplied()))
   return section
 }
 
 async function undoApplied() {
   if (!run) return
-  const confirmed = window.confirm('Undo this Team apply? Every file the apply changed will go back to how it was before. Hand edits made to those files after the apply will also be undone.')
+  const confirmed = window.confirm('Undo this landing? Every file it changed will go back to how it was before. Hand edits made to those files afterwards will also be undone.')
   if (!confirmed) return
   if (replay) { run.undone = true; undoResult = 'Restored 2 files. Later hand edits in those files were also removed.'; renderRun(); return }
   await call(async () => {

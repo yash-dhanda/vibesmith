@@ -2,6 +2,7 @@ import type { ForgeApi } from '../preload'
 import { initChat } from './chat'
 import { applyTheme, $, cleanErr, toast } from './ui'
 import { hydrateIcons } from './icons'
+import { applyNames } from './names'
 import { initTeam, setTeamProject } from './team'
 import '@fontsource-variable/geist/index.css'
 import '@fontsource-variable/geist-mono/index.css'
@@ -29,6 +30,7 @@ async function openWorkspace() {
   finally { button.removeAttribute('aria-busy') }
 }
 hydrateIcons()
+applyNames()
 applyTheme()
 initChat({
   onFileChanged: path => { if (workspace) workspace.agentChangedFile(path).catch(e => toast(cleanErr(e), 4000)) },

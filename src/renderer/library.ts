@@ -1,5 +1,6 @@
 import type { CatalogItem, InstalledModel, PullEvent } from '../preload'
 import { icon } from './icons'
+import { N } from './names'
 import { loadModels } from './models'
 import { $, cleanErr, h, toast } from './ui'
 
@@ -348,7 +349,7 @@ export async function openLibrary(opts: { welcome?: boolean; tab?: Tab } = {}) {
   const wrap = h('div', 'lib')
   const head = h('div', 'lib-head')
   const titles = h('div')
-  const heading = h('h3', '', welcome ? 'Welcome to Forge' : 'Models')
+  const heading = h('h3', '', welcome ? 'Welcome to Forge' : N.library)
   heading.prepend(icon('cube'))
   titles.append(heading, h('div', 'muted', welcome ? 'Pick a model to download. It runs on your computer, so once it is here Forge works offline.' : 'Download models and run them on this computer.'))
   const close = h('button', 'icon-btn')

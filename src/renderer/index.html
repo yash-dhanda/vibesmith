@@ -13,15 +13,15 @@
       <div class="brand"><span class="brand-mark" aria-hidden="true">f</span><strong>forge</strong><span class="grow"></span><button class="icon-btn sm" id="side-collapse" title="Hide sidebar (Ctrl B)" aria-label="Hide sidebar"><i data-icon="sidebar" class="sm"></i></button></div>
       <nav class="side-nav" aria-label="Main">
         <button class="side-btn command-trigger" id="commands" title="Find anything (Ctrl K)"><i data-icon="search"></i><span>Find anything</span><kbd>Ctrl K</kbd></button>
-        <button class="side-btn new-chat" id="new-chat" title="New chat (Ctrl N)"><i data-icon="edit"></i><span>New chat</span><kbd>Ctrl N</kbd></button>
-        <button class="side-btn team-nav" id="team-nav" hidden title="Team runs"><i data-icon="users"></i><span>Team runs</span></button>
+        <button class="side-btn new-chat" id="new-chat" title="New Solo chat (Ctrl N)"><i data-icon="edit"></i><span data-name="newChat">New Solo chat</span><kbd>Ctrl N</kbd></button>
+        <button class="side-btn team-nav" id="team-nav" hidden title="Crew runs"><i data-icon="users"></i><span data-name="crewRuns">Crew runs</span></button>
       </nav>
-      <div class="side-label"><span>Chats</span><button class="icon-btn xs" id="side-new" title="New chat" aria-label="New chat"><i data-icon="plus" class="sm"></i></button></div>
+      <div class="side-label"><span data-name="chats">Chats</span><button class="icon-btn xs" id="side-new" title="New Solo chat" aria-label="New Solo chat"><i data-icon="plus" class="sm"></i></button></div>
       <input id="chat-search" type="search" aria-label="Filter chats" placeholder="Filter chats" autocomplete="off" />
       <div id="chat-list"></div>
       <div class="side-foot">
         <button class="usage-badge" id="usage-badge" title="Token usage" aria-label="Token usage"><span class="avatar" aria-hidden="true"><i data-icon="coin" class="sm"></i></span><span class="u-main">0</span><span class="u-sub"></span></button>
-        <button class="icon-btn" id="models-btn" title="Models" aria-label="Models"><i data-icon="cube"></i></button>
+        <button class="icon-btn" id="models-btn" title="Model library" aria-label="Model library"><i data-icon="cube"></i></button>
         <button class="icon-btn" id="gear" title="Settings (Ctrl ,)" aria-label="Settings"><i data-icon="gear"></i></button>
       </div>
     </aside>
@@ -40,7 +40,7 @@
       <div id="thread-wrap"><div id="thread-scroll"><div id="thread"></div></div><button id="to-bottom" hidden title="Jump to the latest message" aria-label="Jump to the latest message"><i data-icon="arrowdown"></i></button></div>
       <div id="composer-wrap">
         <div id="composer">
-          <div class="composer-modes" role="group" aria-label="Build mode"><button id="mode-chat" class="composer-mode active" type="button" title="Chat with one agent"><span class="emo" aria-hidden="true">💬</span>Chat</button><button id="mode-team" class="composer-mode" type="button" hidden title="Team Mode: several agents together"><span class="emo" aria-hidden="true">🤝</span>Team</button></div>
+          <div class="composer-modes" role="group" aria-label="Build mode"><button id="mode-chat" class="composer-mode active" type="button" title="Solo: one agent"><span class="emo" aria-hidden="true">💬</span><span data-name="solo">Solo</span></button><button id="mode-team" class="composer-mode" type="button" hidden title="Crew: several agents together"><span class="emo" aria-hidden="true">🤝</span><span data-name="crew">Crew</span></button></div>
           <textarea id="prompt" rows="1" aria-label="Describe what to build" placeholder="Describe what you want to build"></textarea>
           <div class="bar">
             <button class="pill" id="project" title="The folder the agent works in">Choose folder</button>
@@ -67,12 +67,12 @@
       </aside>
     </main>
 
-    <main id="team-screen" hidden aria-label="Team Mode">
+    <main id="team-screen" hidden aria-label="Crew">
       <header class="team-head">
         <button class="icon-btn" id="team-hist-toggle" aria-label="Toggle navigation" title="Show or hide the sidebar"><i data-icon="sidebar"></i></button>
-        <h1 class="page-title">Team Mode</h1>
+        <h1 class="page-title" data-name="crew">Crew</h1>
         <span class="grow"></span>
-        <button class="btn" id="team-back" title="Back to chat"><i data-icon="arrowleft" class="sm"></i>Back to chat</button>
+        <button class="btn" id="team-back" title="Back to Solo"><i data-icon="arrowleft" class="sm"></i><span data-name="backToSolo">Back to Solo</span></button>
       </header>
       <div id="team-root"></div>
     </main>

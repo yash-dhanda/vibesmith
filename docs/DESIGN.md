@@ -32,7 +32,9 @@ Layout anatomy: a 224px sidebar (wordmark and collapse, nav rows with line icons
 
 **Emoji only for meaning.** Emoji mark statuses (run, task, step), approvals and agent tool steps, plus the Chat / Team mode chips; they all come from one map in `glyphs.ts`. Headings, nav rows, buttons, menus, settings, dialogs, toasts, hints, table labels and file rows use words or the SVG set in `icons.ts`. Every icon-only control keeps its words in `title` and `aria-label`. The UI font stacks end with Noto Color Emoji, Apple Color Emoji and Segoe UI Emoji.
 
-**Team questions.** An agent's `team_ask` question is the loudest card in the Waiting-for-you tray: who asks, the question, option rows (radio or checkbox) with an "Other…" row and its own text field, keys 1-4, arrows and Enter, then Skip and a white "Send answer". The run header shows "Waiting for you" while one is pending, and answered questions stay as one-line "You answered: …" rows. A half-made answer survives live redraws.
+**Names.** Visible words come from one map in `src/renderer/names.ts` (static markup uses `data-name`): one-agent chats are **Solo**, several agents together are a **Crew** ("Crew runs", "Recent runs", "Send the crew", "Back to Solo", "Crew feed", "Crew notes", "Changing now", "Review before it lands", "Land it"), the on-device agent is **Local**, and the library is the **Model library**. Code identifiers, CSS classes, storage keys and IPC names keep their old words (team, chat). Real product names stay as they are (Claude Code, OpenAI Codex), and an unnamed chat is still titled "New chat".
+
+**Crew questions.** An agent's `team_ask` question is the loudest card in the Waiting-for-you tray: who asks, the question, option rows (radio or checkbox) with an "Other…" row and its own text field, keys 1-4, arrows and Enter, then Skip and a white "Send answer". The run header shows "Waiting for you" while one is pending, and answered questions stay as one-line "You answered: …" rows. A half-made answer survives live redraws.
 
 ## Components and behavior
 

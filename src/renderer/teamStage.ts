@@ -1,6 +1,8 @@
 // The live coding view: ONE shared document for the whole team. Every file an agent writes is a block in it, in the order the agents
 // started; each running agent has its own caret with a name tag, typing left to right at the same time as the others. Incoming text is
 // queued and revealed a few characters per frame, so even a whole file that arrives at once is typed out instead of popping in.
+import { N } from './names'
+
 export type StageAgent = 'claude' | 'codex' | 'local'
 export type StageCode = { id: string; agent: StageAgent; path: string; text: string; kind: 'content' | 'diff'; done: boolean }
 export type StageAgentInfo = { agent: StageAgent; name: string; running: boolean }
@@ -146,7 +148,7 @@ export function buildStage(files: StageCode[], opts: { agents: StageAgentInfo[];
   const title = el('header', 'stage-title')
   const dots = el('span', 'stage-dots'); dots.append(el('i'), el('i'), el('i'))
   const chips = el('div', 'stage-chips')
-  const name = el('strong', 'stage-name', 'Live coding')
+  const name = el('strong', 'stage-name', N.live)
   title.append(dots, name, chips, el('span', `lane-live${opts.running ? ' on' : ''}`, opts.live), opts.details)
   const view = el('div', 'stage-view')
   const scroll = el('div', 'stage-scroll'); scroll.hidden = true

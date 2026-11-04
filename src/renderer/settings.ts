@@ -4,12 +4,13 @@ import { $, MINUTE_CHOICES, STEP_CHOICES, agentLimits, cleanErr, h, numCtxPref, 
 import { icon, type IconName } from './icons'
 import { openLibrary } from './library'
 import { renderUsage } from './usage'
+import { AGENT_NAME, N } from './names'
 
 // Settings is a full page: grouped pages in a nav column on the left, one column of sections on the right.
 export type Page = 'general' | 'appearance' | 'shortcuts' | 'models' | 'agent' | 'team' | 'usage' | 'privacy' | 'about'
 const NAV: [string, [Page, IconName, string][]][] = [
   ['Personal', [['general', 'sliders', 'General'], ['appearance', 'contrast', 'Appearance'], ['shortcuts', 'keyboard', 'Keyboard']]],
-  ['Forge', [['models', 'cube', 'Models & engine'], ['agent', 'bot', 'Agent'], ['team', 'users', 'Team mode'], ['usage', 'chart', 'Usage & spend'], ['privacy', 'shield', 'Privacy'], ['about', 'help', 'Help & about']]],
+  ['Forge', [['models', 'cube', 'Models & engine'], ['agent', 'bot', 'Agent'], ['team', 'users', N.crew], ['usage', 'chart', 'Usage & spend'], ['privacy', 'shield', 'Privacy'], ['about', 'help', 'Help & about']]],
 ]
 const PAGES = NAV.flatMap(([, items]) => items)
 const TITLE = Object.fromEntries(PAGES.map(([id, , label]) => [id, label])) as Record<Page, string>
@@ -311,9 +312,9 @@ async function agent(into: HTMLElement) {
 
 // Team defaults for the current project, through the same calls the Team start screen uses.
 async function team(into: HTMLElement) {
-  if (typeof window.forge.teamSettingsGet !== 'function' || typeof window.forge.teamSettingsSet !== 'function') { into.append(h('p', 'note', 'This build does not include Team Mode.')); return }
+  if (typeof window.forge.teamSettingsGet !== 'function' || typeof window.forge.teamSettingsSet !== 'function') { into.append(h('p', 'note', `This build does not include ${N.crew}.`)); return }
   const [stored, project, ol] = await Promise.all([window.forge.teamSettingsGet(), window.forge.verifyGet(), window.forge.ollamaStatus().catch(() => ({ up: false, models: [] as string[], loaded: [] }))])
-  into.append(h('p', 'note', project ? 'Defaults for team runs in the folder of the chat you are looking at. The Team start screen picks them up.' : 'Open a chat in a project folder to set its Team defaults.'))
+  into.append(h('p', 'note', project ? `Defaults for ${N.crewRuns.toLowerCase()} in the folder of the chat you are looking at. The ${N.crew} start screen picks them up.` : `Open a chat in a project folder to set its ${N.crew} defaults.`))
   if (!project) return
   const cfg: Partial<TeamConfig> = { ...stored }
   const status = h('div', 'hint')
@@ -337,7 +338,7 @@ async function team(into: HTMLElement) {
 
   const p = group('Planning')
   p.box.append(
-    row('Planner', 'Chooses who splits the goal into tasks.', choose([['auto', 'Choose for me'], ['claude', 'Claude'], ['codex', 'Codex'], ['local', 'Local model']], cfg.planner ?? 'auto', (v) => put('planner', v as TeamConfig['planner']))),
+    row('Planner', 'Chooses who splits the goal into tasks.', choose([['auto', 'Choose for me'], ['claude', 'Claude'], ['codex', 'Codex'], ['local', AGENT_NAME.local]], cfg.planner ?? 'auto', (v) => put('planner', v as TeamConfig['planner']))),
     row('Plan approval', 'Stop after planning so you can edit, reassign or skip tasks before any agent works.', onOff(!!cfg.reviewPlan, (v) => put('reviewPlan', v))),
     row('Task review', 'Each agent checks the other’s work before it is merged.', onOff((cfg.review ?? 'cross') === 'cross', (v) => put('review', v ? 'cross' : 'off'))),
     row('Final review', 'Automatic checks the whole result only for runs of 3 or more tasks, which saves plan usage.', choose([['auto', 'Automatic'], ['true', 'Always'], ['false', 'Skip']], String(cfg.finalReview ?? 'auto'), (v) => put('finalReview', v === 'auto' ? 'auto' : v === 'true'))),
@@ -356,7 +357,7 @@ async function team(into: HTMLElement) {
     row('Codex model', 'The model name Codex should use. Leave empty for its default.', codexModel),
     row('Codex effort', 'How hard Codex reasons before it answers.', choose(efforts, cfg.codexEffort ?? 'high', (v) => put('codexEffort', v as TeamConfig['codexEffort']))),
     row('Codex connection', 'Live sessions support streaming and immediate steering.', choose([['app-server', 'Live session'], ['exec', 'Simple run']], cfg.codexMode ?? 'app-server', (v) => put('codexMode', v as TeamConfig['codexMode']))),
-    row('Local model', ol.models.length ? 'The Ollama model the local agent uses.' : 'No Ollama models are installed.', choose([['', 'Best installed'], ...ol.models.map((n) => [n, n] as [string, string])], cfg.localModel ?? '', (v) => put('localModel', v || undefined))),
+    row(`${AGENT_NAME.local} model`, ol.models.length ? `The Ollama model ${AGENT_NAME.local} uses.` : 'No Ollama models are installed.', choose([['', 'Best installed'], ...ol.models.map((n) => [n, n] as [string, string])], cfg.localModel ?? '', (v) => put('localModel', v || undefined))),
   )
   into.append(m.g)
 
@@ -386,7 +387,7 @@ async function team(into: HTMLElement) {
 function shortcuts(into: HTMLElement) {
   const g = group('Shortcuts')
   for (const [k, v] of [
-    ['Ctrl N', 'New chat'],
+    ['Ctrl N', N.newChat],
     ['Ctrl K', 'Find actions, chats and models'],
     ['Ctrl L', 'Focus the message box'],
     ['Ctrl B', 'Show or hide chat history'],
