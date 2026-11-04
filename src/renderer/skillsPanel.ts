@@ -28,10 +28,12 @@ export function renderSkillsPanel(): HTMLElement {
   add.append(form, err)
 
   const list = h('section', 'sgroup skill-list')
-  root.append(add, list)
+  const recs = h('section', 'sgroup skill-recs')
+  root.append(add, recs, list)
 
   let repos: SkillRepo[] = []
   const draw = () => {
+    drawRecs()
     list.replaceChildren(h('h4', 'gt', repos.length ? `Added · ${plural(repos.filter((r) => r.enabled).length, 'repo', 'repos')} on` : 'Added'))
     if (!repos.length) {
       const empty = h('div', 'empty-state')
@@ -127,6 +129,127 @@ export function renderSkillsPanel(): HTMLElement {
       }
     })
   }
+
+  // ---- Recommended: starter packs and a checked catalog. One clone runs at a time; a pack keeps going past a failure. ----
+  type Catalog = Awaited<ReturnType<typeof window.forge.skillsCatalog>>
+  let catalog: Catalog | null = null
+  const state = new Map<string, 'queued' | 'adding' | { error: string }>()
+  const packNote = new Map<string, HTMLElement>()
+  const urlOf = (repo: string) => `https://github.com/${repo}`
+  const slug = (url: string) => url.match(/github\.com\/([\w.-]+\/[\w.-]+?)(?:\.git)?(?:\/|$)/i)?.[1].toLowerCase() ?? ''
+  const added = (repo: string) => repos.some((r) => slug(r.url) === repo.toLowerCase())
+  let chain: Promise<unknown> = Promise.resolve()
+  const addRepo = (repo: string): Promise<boolean> => {
+    if (added(repo)) return Promise.resolve(true)
+    state.set(repo, 'queued'); drawRecs()
+    const job = chain.then(async () => {
+      state.set(repo, 'adding'); drawRecs()
+      try { const r = await window.forge.skillsAdd(urlOf(repo)); repos = [...repos.filter((x) => x.id !== r.id), r]; state.delete(repo); return true }
+      catch (e) { state.set(repo, { error: cleanErr(e) }); return false }
+      finally { draw() }
+    })
+    chain = job
+    return job
+  }
+  const OPEN_KEY = 'forge.skillGroupsOpen'
+  const openGroups = (() => { try { const v = JSON.parse(localStorage.getItem(OPEN_KEY) ?? 'null'); return Array.isArray(v) ? new Set<string>(v) : null } catch { return null } })() ?? new Set<string>()
+  let firstVisit = !localStorage.getItem(OPEN_KEY)
+  const filter = document.createElement('input')
+  filter.type = 'search'
+  filter.placeholder = 'Filter recommended skills'
+  filter.setAttribute('aria-label', 'Filter recommended skills')
+  filter.className = 'skill-filter'
+  filter.oninput = () => drawRecs()
+  const packsBox = h('div', 'skill-packs')
+  const groupsBox = h('div', 'skill-groups')
+  recs.append(h('h4', 'gt', 'Recommended'), h('div', 'gd', 'Public repos checked by hand. Adding one clones it like a pasted link; big collections take longer.'), packsBox, filter, groupsBox)
+
+  const addButton = (repo: string) => {
+    const st = state.get(repo)
+    const b = h('button', 'btn sact skill-add-btn') as HTMLButtonElement
+    b.type = 'button'
+    if (added(repo)) { b.append(icon('check', 'sm'), document.createTextNode('Added')); b.disabled = true; b.setAttribute('aria-label', `${repo} is added`) }
+    else if (st === 'adding' || st === 'queued') { b.append(h('span', 'st running'), document.createTextNode(st === 'adding' ? 'Adding…' : 'Queued')); b.disabled = true }
+    else { b.append(icon(st ? 'undo' : 'plus', 'sm'), document.createTextNode(st ? 'Retry' : 'Add')); b.setAttribute('aria-label', `${st ? 'Retry adding' : 'Add'} ${repo}`); b.onclick = () => void addRepo(repo) }
+    return b
+  }
+
+  async function addPack(pack: Catalog['packs'][number], only?: string[]) {
+    const note = packNote.get(pack.id)!
+    const todo = (only ?? pack.repos).filter((r) => !added(r))
+    const already = (only ?? pack.repos).length - todo.length
+    const failed: string[] = []
+    let done = 0
+    for (const [i, repo] of todo.entries()) {
+      const name = catalog?.entries.find((x) => x.repo === repo)?.name ?? repo
+      note.replaceChildren(h('span', 'st running'), document.createTextNode(` Adding ${i + 1} of ${todo.length}: ${name}`))
+      if (await addRepo(repo)) done++
+      else failed.push(repo)
+    }
+    note.replaceChildren(document.createTextNode([`Added ${done}`, already ? `${already} already there` : '', failed.length ? `${failed.length} failed` : ''].filter(Boolean).join(', ') + (failed.length ? ' ' : '.')))
+    if (failed.length) { const retry = h('button', 'link-btn', 'Retry') as HTMLButtonElement; retry.type = 'button'; retry.onclick = () => void addPack(pack, failed); note.append(retry) }
+  }
+
+  function drawPacks() {
+    if (!catalog) return
+    packsBox.replaceChildren(...catalog.packs.map((pack) => {
+      const card = h('div', 'skill-pack')
+      const names = pack.repos.map((r) => catalog!.entries.find((x) => x.repo === r)?.name ?? r)
+      const have = pack.repos.filter(added).length
+      const btn = h('button', 'btn sact', have === pack.repos.length ? 'All added' : 'Add all') as HTMLButtonElement
+      btn.type = 'button'
+      btn.prepend(icon(have === pack.repos.length ? 'check' : 'plus', 'sm'))
+      btn.disabled = have === pack.repos.length
+      btn.setAttribute('aria-label', `Add all of ${pack.name}`)
+      const note = packNote.get(pack.id) ?? h('div', 'skill-pack-note')
+      note.setAttribute('role', 'status')
+      packNote.set(pack.id, note)
+      btn.onclick = () => { btn.disabled = true; void addPack(pack).finally(() => drawPacks()) }
+      card.append(h('div', 'st-t', pack.name), h('div', 'st-d', pack.blurb), h('div', 'skill-pack-repos', `${names.join(', ')} · ${have} of ${pack.repos.length} added`), btn, note)
+      return card
+    }))
+  }
+
+  function drawRecs() {
+    if (!catalog) return
+    drawPacks()
+    const q = filter.value.trim().toLowerCase()
+    const cats = Object.keys(catalog.categories)
+    if (firstVisit && cats[0]) { openGroups.add(cats[0]); firstVisit = false }
+    const groups: HTMLElement[] = []
+    for (const cat of cats) {
+      const label = catalog.categories[cat]
+      const items = catalog.entries.filter((x) => x.category === cat && (!q || `${x.name} ${x.blurb} ${x.repo} ${label}`.toLowerCase().includes(q)))
+      if (!items.length) continue
+      const d = h('details', 'skill-group') as HTMLDetailsElement
+      d.open = q ? true : openGroups.has(cat)
+      const sum = h('summary', '', label)
+      sum.append(h('span', 'page-count', String(items.length)))
+      d.append(sum)
+      d.ontoggle = () => { if (q) return; if (d.open) openGroups.add(cat); else openGroups.delete(cat); try { localStorage.setItem(OPEN_KEY, JSON.stringify([...openGroups])) } catch {} }
+      for (const x of items) {
+        const r = h('div', 'srow skill-rec')
+        const left = h('div', 'srl')
+        const title = h('div', 'st-t', x.name)
+        title.append(h('span', 'skill-repo-id', x.repo))
+        left.append(title, h('div', 'st-d', x.blurb))
+        const meta = h('div', 'skill-meta', plural(x.skills, 'skill', 'skills'))
+        if (x.skills >= 400) meta.append(h('span', 'badge tag', 'Large download'))
+        left.append(meta)
+        const st = state.get(x.repo)
+        if (st && typeof st === 'object') left.append(h('div', 'errtext', st.error))
+        const ctl = h('div', 'ctl')
+        ctl.append(addButton(x.repo))
+        r.append(left, ctl)
+        d.append(r)
+      }
+      groups.push(d)
+    }
+    groupsBox.replaceChildren(...(groups.length ? groups : [h('p', 'note', `No recommended skills match “${filter.value.trim()}”.`)]))
+  }
+
+  if (typeof window.forge.skillsCatalog === 'function') void window.forge.skillsCatalog().then((c) => { catalog = c; drawRecs() }).catch(() => recs.remove())
+  else recs.remove()
 
   list.append(h('div', 'skel skel-row'))
   window.forge.skillsList().then((r) => { repos = r; draw() }, (e) => { err.textContent = cleanErr(e); repos = []; draw() })

@@ -96,8 +96,10 @@ function folderFinder(goal: HTMLTextAreaElement, pill: HTMLButtonElement) {
   const scan = h('button', 'link-btn team-folder-scan') as HTMLButtonElement; scan.type = 'button'; scan.append(icon('search', 'sm'), document.createTextNode('Find folder')); scan.title = 'Scan this computer for project folders'
   const skills = h('button', 'skill-chip team-skills') as HTMLButtonElement; skills.type = 'button'; skills.title = 'Skills the crew can read: open Settings → Skills'; skills.hidden = true
   skills.onclick = () => void import('./settings').then(m => m.openSettings('skills'))
-  void enabledSkillCount().then(n => { if (n === null) return; skills.hidden = false; skills.replaceChildren(icon('spark', 'sm'), document.createTextNode(`Skills · ${n} on`)) })
-  row.append(hint, skills, scan); box.append(row, chips)
+  const browse = h('button', 'link-btn team-skills-browse', 'Browse recommended') as HTMLButtonElement; browse.type = 'button'; browse.title = 'Recommended skill repos: open Settings → Skills'; browse.hidden = true
+  browse.onclick = () => void import('./settings').then(async m => { await m.openSettings('skills'); for (let i = 0; i < 20 && !document.querySelector('.skill-recs .skill-pack'); i++) await new Promise(r => setTimeout(r, 100)); document.querySelector('.skill-recs')?.scrollIntoView({ block: 'start' }) })
+  void enabledSkillCount().then(n => { if (n === null) return; skills.hidden = false; browse.hidden = typeof window.forge.skillsCatalog !== 'function'; skills.replaceChildren(icon('spark', 'sm'), document.createTextNode(`Skills · ${n} on`)) })
+  row.append(hint, skills, browse, scan); box.append(row, chips)
   const panel = h('div', 'team-folder-panel'); panel.hidden = true
   const filter = input('search'); filter.placeholder = 'Filter folders'; filter.setAttribute('aria-label', 'Filter folders')
   const list = h('div', 'team-folder-list'); panel.append(filter, list); box.append(panel)

@@ -530,6 +530,25 @@ dialog[open]::backdrop { background: var(--scrim); }
 .skill-chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--muted); font: 12px var(--mono); white-space: nowrap; }
 .skill-chip:hover { background: var(--panel-2); color: var(--text); }
 .team-skills { font-family: var(--sans); flex: none; }
+.skill-recs .gd { margin-bottom: 10px !important; }
+.skill-packs { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; margin: 6px 0 14px; }
+.skill-pack { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px 14px; border: 1px solid var(--hair); border-radius: var(--r-md); background: var(--panel); animation: rise var(--t2) var(--ease) both; }
+.skill-pack .st-t { font-weight: 550; }
+.skill-pack .st-d { color: var(--muted); font-size: 12.5px; }
+.skill-pack-repos { color: var(--faint); font-size: 12px; line-height: 1.5; margin-bottom: 6px; }
+.skill-pack-note { min-height: 18px; color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.skill-pack-note .st.running, .skill-add-btn .st.running { border-color: currentColor; border-top-color: transparent; }
+.skill-filter { width: 100%; height: 36px; margin: 0 0 6px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: transparent; outline: 0; }
+.skill-filter:focus { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
+.skill-group { border-top: 1px solid var(--hair); }
+.skill-group > summary { display: flex; align-items: center; gap: 8px; padding: 10px 2px; cursor: pointer; font-weight: 550; list-style: none; }
+.skill-group > summary::-webkit-details-marker { display: none; }
+.skill-group > summary::before { content: ''; width: 6px; height: 6px; border-right: 1.5px solid var(--faint); border-bottom: 1.5px solid var(--faint); rotate: -45deg; transition: rotate var(--t1) var(--ease); }
+.skill-group[open] > summary::before { rotate: 45deg; }
+.skill-group[open] > .skill-rec { animation: rise var(--t2) var(--ease) both; }
+.skill-repo-id { margin-left: 8px; color: var(--faint); font: 12px var(--mono); overflow-wrap: anywhere; }
+.skill-meta { display: flex; align-items: center; gap: 10px; margin-top: 3px; color: var(--faint); font-size: 12px; }
+.skill-add-btn:disabled { opacity: .75; }
 /* theme preview cards */
 .scards { display: flex; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
 .scard { display: flex; flex-direction: column; gap: 6px; width: 164px; padding: 6px; border: 1px solid var(--hair); border-radius: 10px; background: transparent; color: var(--muted); font-size: 12px; text-align: center; }
