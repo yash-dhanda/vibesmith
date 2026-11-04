@@ -348,7 +348,9 @@ export async function openLibrary(opts: { welcome?: boolean; tab?: Tab } = {}) {
   const wrap = h('div', 'lib')
   const head = h('div', 'lib-head')
   const titles = h('div')
-  titles.append(h('h3', '', welcome ? 'Welcome to Forge' : 'Models'), h('div', 'muted', welcome ? 'Pick a model to download. It runs on your computer, so once it is here Forge works offline.' : 'Download models and run them on this computer.'))
+  const heading = h('h3', '', welcome ? 'Welcome to Forge' : 'Models')
+  heading.prepend(icon('cube'))
+  titles.append(heading, h('div', 'muted', welcome ? 'Pick a model to download. It runs on your computer, so once it is here Forge works offline.' : 'Download models and run them on this computer.'))
   const close = h('button', 'icon-btn')
   close.append(icon('x'))
   close.title = 'Close (Esc)'
@@ -367,17 +369,24 @@ export async function openLibrary(opts: { welcome?: boolean; tab?: Tab } = {}) {
     tabs.append(b)
   }
   body = h('div', 'lib-body')
-  wrap.append(head, engineBox, dlBox, hwLine, tabs, body)
+  const foot = h('div', 'modal-foot')
+  const hint = h('span', 'modal-hint', 'Models run on this computer. Once downloaded they work offline.')
+  hint.prepend(icon('shield', 'sm'))
+  const done = h('button', 'btn primary', 'Done')
+  done.onclick = () => dlg.close()
+  foot.append(hint, h('span', 'grow'))
   if (welcome) {
-    const skip = h('button', 'link-btn', 'I will use an API key instead')
+    const skip = h('button', 'btn', 'I will use an API key instead')
     skip.onclick = () => {
       try {
         localStorage.setItem('forge.onboarded', '1')
       } catch {}
       dlg.close()
     }
-    wrap.append(skip)
+    foot.append(skip)
   }
+  foot.append(done)
+  wrap.append(head, engineBox, dlBox, hwLine, tabs, body, foot)
   dlg.replaceChildren(wrap)
   if (!dlg.open) dlg.showModal()
   close.focus()

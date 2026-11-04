@@ -1,4 +1,5 @@
 // Small DOM helpers shared by every renderer module.
+import { icon } from './icons'
 export const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 
 export const h = (tag: string, cls = '', text = '') => {
@@ -17,22 +18,39 @@ export const emo = (glyph: string) => {
 
 export const cleanErr =(e: unknown) => String((e as Error).message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
 
+// A toast is a small card: icon tile, a bold first sentence, the rest muted, an optional white action and a close button.
 export function toast(msg: string, ms = 1800, action?: { label: string; run: () => void }) {
-  const t = h('div', 'toast' + (action ? ' act' : ''), msg)
+  const m = msg.match(/^(.+?[.!?])\s+(.+)$/s) ?? msg.match(/^(.+?) · (.+)$/s)
+  const t = h('div', 'toast')
+  t.setAttribute('role', 'status')
+  const tile = h('span', 'toast-icon')
+  tile.append(icon(action ? 'info' : 'bell', 'sm'))
+  const copy = h('div', 'toast-copy')
+  copy.append(h('strong', '', m ? m[1] : msg))
+  if (m) copy.append(h('p', '', m[2]))
+  let timer: ReturnType<typeof setTimeout>
+  const close = () => {
+    clearTimeout(timer)
+    t.classList.add('out')
+    t.addEventListener('animationend', () => t.remove(), { once: true })
+    setTimeout(() => t.remove(), 400) // reduced motion: no animationend fires
+  }
   if (action) {
-    const b = h('button', 'tbtn', action.label)
+    const b = h('button', 'btn primary tbtn', action.label)
     b.onclick = () => {
       t.remove()
       action.run()
     }
-    t.append(b)
+    copy.append(b)
   }
+  const x = h('button', 'icon-btn sm toast-x')
+  x.append(icon('x', 'sm'))
+  x.title = 'Dismiss'
+  x.setAttribute('aria-label', 'Dismiss')
+  x.onclick = close
+  t.append(tile, copy, x)
   $('toasts').append(t)
-  setTimeout(() => {
-    t.classList.add('out')
-    t.addEventListener('animationend', () => t.remove(), { once: true })
-    setTimeout(() => t.remove(), 400) // reduced motion: no animationend fires
-  }, action ? Math.max(ms, 6000) : ms)
+  timer = setTimeout(close, action ? Math.max(ms, 6000) : Math.max(ms, 2400))
 }
 
 export async function copy(text: string, what = 'Copied') {
