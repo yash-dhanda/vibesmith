@@ -13,7 +13,10 @@ import { errorSignature, ProjectMemoryStore, rank, routeAgent } from './memory'
 import { decideCommand, decideTool } from './policy'
 import { attachmentsBlock, imagePaths, removeAttachmentDirs } from './attach'
 import { historyBlock, HistoryRecorder, HISTORY_DIR, writeHistory } from './history'
-import { buildReport, conflictPrompt, contextFor, finalReviewPrompt, fixPrompt, forLocal, parsePlan, parseVerdict, planPrompt, reviewPrompt, verifyFixPrompt, workPrompt } from './prompts'
+import { buildReport, conflictPrompt, contextFor, finalReviewPrompt, fixPrompt, forLocal, parsePlan, parseVerdict, planPrompt, reviewPrompt, securityReviewPrompt, verifyFixPrompt, workPrompt } from './prompts'
+import { effortFor } from './effort'
+import { forecast, mainAuthor, taskStats } from './forecast'
+import { onlyDocsOrConfig, touchesSecurity } from './security'
 import type { RunResult } from './process'
 import { TeamStore } from './store'
 import { isRunAppWords, isStopAppWords } from './runapp'
@@ -74,6 +77,7 @@ type Live = {
   handles: Map<string, { agent: AgentName; h: ServerHandle }> // running agents that can be steered mid-turn
   planning: boolean // a planner is running: a second one must not start beside it
   late: { body: string; to: AgentName | 'all' }[] // messages sent while the last checks ran, which no task would read
+  limited: Map<AgentName, number> // agents whose plan ran out in this run, with the time it comes back (0 = unknown: out for the rest of the run)
   bg: Set<Promise<unknown>> // the planner and the last steps: turns that are not tasks, but must have stopped before a resume replaces the controller
 }
 
@@ -82,6 +86,7 @@ const PREFER: AgentName[] = ['claude', 'codex', 'local']
 const strongest = (avail: AgentName[], not?: AgentName): AgentName => PREFER.find((a) => a !== not && avail.includes(a)) ?? PREFER.find((a) => avail.includes(a)) ?? avail[0]
 // A cap of 100 is the highest the user can allow: reaching it must not stop the run for good, and an agent that is really out answers with a limit error.
 const over = (pct: number, cap: number) => (cap >= 100 ? pct > cap : pct >= cap)
+const label = (a: AgentName) => (a === 'claude' ? 'Claude' : a === 'codex' ? 'Codex' : 'The local model')
 const id = (p: string) => `${p}${randomUUID().slice(0, 8)}`
 const MAX_PROPOSALS = 6
 const MAX_MESSAGES = 1500 // the oldest fall off; decisions and handoffs are kept on the run and the project memory
@@ -221,6 +226,7 @@ export class TeamOrchestrator {
       this.live.set(runId, live)
     }
     live.available = available
+    live.limited.clear() // the user is back: whatever was out of allowance gets another try
     // a stop that is still unwinding: let the stopped turns mark their tasks interrupted before a fresh controller replaces the aborted one
     if (live.stop && (live.running.size || live.bg.size)) await Promise.allSettled([...live.running.values(), ...live.bg])
     if (live.stop) (live.ctl = new AbortController()), (live.stop = null)
@@ -392,7 +398,7 @@ export class TeamOrchestrator {
   }
 
   private messageTask(run: Run, live: Live, body: string, to: AgentName | 'all') {
-    const agent = to !== 'all' && live.available.includes(to) ? to : strongest(live.available)
+    const agent = to !== 'all' && live.available.includes(to) ? to : strongest(this.pool(live))
     return this.addTask(run, { title: body.replace(/\s+/g, ' ').slice(0, 70), goal: body, agent, kind: 'build', proposedBy: 'user' })
   }
 
@@ -581,10 +587,41 @@ export class TeamOrchestrator {
     return { agents, skipped }
   }
 
+  // Per-task time, tokens and cost plus what is left of the plan, for the screen.
+  stats(runId: string) {
+    const run = this.runOf(runId)
+    return run ? { tasks: taskStats(run), forecast: forecast(run) } : null
+  }
+
   // ------------------------------------------------------------------ plumbing
 
+  // Agents that are signed in and whose plan has not run out in this run (or has come back since). Empty when every one is out.
+  private ready(live: Live): AgentName[] {
+    for (const [a, back] of live.limited) if (back && back <= Date.now()) live.limited.delete(a)
+    return live.available.filter((a) => !live.limited.has(a))
+  }
+  // Who may be given a job now: the ready agents, or all of them when every plan is out (the job then runs, hits the limit and the run pauses as before).
+  private pool(live: Live): AgentName[] {
+    const r = this.ready(live)
+    return r.length ? r : live.available
+  }
+  // An agent's plan ran out. It is left out of new work, reviews and fixes from now on, and this says who takes over `what` (a task id, "the final review"...).
+  // Null when switching is off or nobody else can: the caller then stops and waits for the user, as it always did. The local model never takes over:
+  // its work must be reviewed by Claude or Codex, and it never reviews theirs.
+  private switchAgent(run: Run, live: Live, from: AgentName, message: string, what: string, not?: AgentName): AgentName | null {
+    if (run.config.autoSwitch === false) return null
+    const ts = Number(/\|(\d{9,11})\b/.exec(message)?.[1]) // Claude's limit message ends with "|<unix seconds the plan comes back>"
+    const lim = run.limits?.[from]
+    const back = ts ? ts * 1000 : lim && lim.primaryPct >= 100 && lim.primaryResetsAt ? lim.primaryResetsAt * 1000 : 0
+    if (message || !live.limited.has(from)) live.limited.set(from, back)
+    const to = strongest(this.ready(live).filter((a) => a !== from && a !== 'local'), not)
+    if (!to || to === from) return null
+    this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: `${label(from)} hit its limit: ${label(to)} took over ${what}` })
+    return to
+  }
+
   private newLive(available: AgentName[]): Live {
-    return { ctl: new AbortController(), stop: null, paused: false, running: new Map(), pending: new Map(), budgetAsk: false, git: new Mutex(), merge: new Mutex(), available, finishing: false, handles: new Map(), planning: false, late: [], bg: new Set() }
+    return { ctl: new AbortController(), stop: null, paused: false, running: new Map(), pending: new Map(), budgetAsk: false, git: new Mutex(), merge: new Mutex(), available, finishing: false, handles: new Map(), planning: false, late: [], limited: new Map(), bg: new Set() }
   }
   private liveOf(run: Run): Live {
     let l = this.live.get(run.id)
@@ -775,7 +812,7 @@ export class TeamOrchestrator {
   }
 
   // The one place an agent is run: wires events, usage, session handles and the budget.
-  private async agentRun(run: Run, task: Task, agent: AgentName, phase: TaskPhase | 'plan' | 'final-review', prompt: string, write: boolean, cwd: string, resume?: string): Promise<RunResult> {
+  private async agentRun(run: Run, task: Task, agent: AgentName, phase: TaskPhase | 'plan' | 'final-review', prompt: string, write: boolean, cwd: string, resume?: string, changedFiles?: number): Promise<RunResult> {
     const live = this.liveOf(run)
     const skills = ['work', 'fix', 'plan'].includes(phase) && agent !== 'local' ? this.d.skills?.() : undefined // the local model cannot read outside its task folder
     const att = agent !== 'local' && ['work', 'fix', 'plan', 'review', 'final-review'].includes(phase) ? run.config.attachments : undefined
@@ -789,7 +826,7 @@ export class TeamOrchestrator {
     const call = async (resumeId: string | undefined) => this.d.runner(agent, {
       cwd, prompt, write, resume: resumeId, signal: live.ctl.signal, taskId: task.id, link: await this.linkFor(run, task, agent),
       model: agent === 'codex' ? run.config.codexModel : agent === 'local' ? run.config.localModel : run.config.claudeModel,
-      effort: agent === 'claude' ? run.config.claudeEffort : agent === 'codex' ? run.config.codexEffort : undefined,
+      effort: effortFor({ agent, phase, kind: task.kind, changedFiles: changedFiles ?? (phase === 'review' ? task.changed.length : undefined), config: run.config }),
       codexMode: run.config.codexMode,
       addDirs: [...(skills?.dirs ?? []), ...(past ? [join(run.project, HISTORY_DIR)] : []), ...(att?.length ? [join(this.d.teamDir, 'attachments')] : [])],
       images: imagePaths(att),
@@ -883,6 +920,11 @@ export class TeamOrchestrator {
           lastErr = res.error?.message ?? 'the planner failed'
           const kind = res.error?.kind ?? ''
           if (['limit', 'auth', 'missing'].includes(kind)) blocked.push(`${agent}: ${lastErr}`)
+          if (kind === 'limit' && run.config.autoSwitch !== false) {
+            live.limited.set(agent, 0)
+            const next = planners.slice(planners.indexOf(agent) + 1).find((a) => !live.limited.has(a))
+            if (next) this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: `${label(agent)} hit its limit: ${label(next)} took over planning` })
+          }
           if (['auth', 'missing', 'model', 'limit'].includes(kind)) break // try the other agent
           continue
         }
@@ -890,7 +932,8 @@ export class TeamOrchestrator {
           const plan = parsePlan(res.text, live.available, run.config.budget.maxTasks ?? 12)
           const mem = this.memory(run).load()
           run.plan = { summary: plan.summary, plannedBy: agent }
-          run.tasks = plan.tasks.map((p) => ({ id: p.id, title: p.title, goal: p.goal, acceptance: p.acceptance, deps: p.deps, agent: p.agent ?? routeAgent(p.kind, live.available, mem.stats), kind: p.kind, files: p.files, status: 'queued', phase: null, attempts: 0, fixRounds: 0, reviews: [], sessions: {}, branch: null, worktree: null, summary: '', handoff: '', changed: [], usage: emptyUsage() }))
+          const cheap = run.config.effortMode === 'cheap'
+          run.tasks = plan.tasks.map((p) => ({ id: p.id, title: p.title, goal: p.goal, acceptance: p.acceptance, deps: p.deps, agent: cheap && p.kind !== 'research' && p.agent === 'claude' && live.available.includes('codex') ? 'codex' : p.agent ?? routeAgent(p.kind, live.available, mem.stats, cheap), kind: p.kind, files: p.files, status: 'queued', phase: null, attempts: 0, fixRounds: 0, reviews: [], sessions: {}, branch: null, worktree: null, summary: '', handoff: '', changed: [], usage: emptyUsage() }))
           if (!live.paused) this.setStatus(run, 'running') // a soft pause during planning stays a pause
           this.out(run, { type: 'plan', runId: run.id, summary: plan.summary, tasks: run.tasks })
           return
@@ -929,6 +972,10 @@ export class TeamOrchestrator {
       if (t.status !== 'queued' || live.running.has(t.id)) continue
       if (!t.deps.every((d) => settled(run.tasks.find((x) => x.id === d)!))) continue
       if (!live.available.includes(t.agent)) t.agent = live.available[0] ?? t.agent
+      else if (!this.ready(live).includes(t.agent)) {
+        const to = this.switchAgent(run, live, t.agent, '', t.id) // already known to be out: this only picks who takes the queued task
+        if (to) (t.agent = to), this.touch(run, t)
+      }
       if (perAgent(t.agent) >= (t.agent === 'local' ? 1 : run.config.maxParallelPerAgent)) continue // one local model at a time: two would fight over the GPU
       const p = this.execute(run, t).catch((e) => this.failTask(run, t, (e as Error).message)).finally(() => (live.running.delete(t.id), this.pump(run)))
       live.running.set(t.id, p)
@@ -936,6 +983,7 @@ export class TeamOrchestrator {
 
     if (live.running.size) return
     const open = run.tasks.filter((t) => !settled(t))
+    if (!open.length && this.addTestTask(run, live)) return void this.pump(run)
     if (!open.length && run.tasks.some((t) => t.status === 'done')) return this.track(live, this.finish(run).catch(() => {}))
     if (!open.length) return void this.setStatus(run, 'done', 'Nothing was done.')
     if (open.some((t) => t.status === 'queued' && t.deps.every((d) => settled(run.tasks.find((x) => x.id === d)!)))) return // ready, about to start
@@ -1003,7 +1051,7 @@ export class TeamOrchestrator {
 
     const notes = this.d.projectNotes?.(run.project) ?? { brief: '', rules: '' }
     const past = this.pastProblems(run, task)
-    const build = task.kind === 'build'
+    const build = task.kind !== 'research'
     const cwd = build ? await this.ensureWorktree(run, task) : run.integrationWorktree
 
     // ---- the work, with retries for the failures a retry can fix. A task interrupted after its work (in review, a fix or the merge)
@@ -1021,6 +1069,14 @@ export class TeamOrchestrator {
       if (res.ok) break
       const kind: ErrorKind = res.error?.kind ?? 'other'
       const msg = res.error?.message ?? 'the agent failed'
+      if (kind === 'limit') {
+        const to = this.switchAgent(run, live, task.agent, msg, task.id)
+        if (to) {
+          task.agent = to
+          this.touch(run, task)
+          continue
+        }
+      }
       if (kind === 'auth' || kind === 'missing' || kind === 'model' || kind === 'limit') return this.blockTask(run, task, `${task.agent}: ${msg}`, true) // needs the user: sign in, or wait for the plan to reset
       task.attempts++
       if (kind === 'busy' && task.attempts <= 3) {
@@ -1046,7 +1102,7 @@ export class TeamOrchestrator {
     // ---- review gate: the other agent reads the diff and says pass or fail; fail goes back to the author
     // A local model is often wrong, so its work is always reviewed by another agent, whatever the review setting says.
     if (run.config.review === 'cross' || task.agent === 'local') {
-      const reviewer = strongest(live.available, task.agent)
+      let reviewer = strongest(this.pool(live), task.agent)
       if (reviewer === task.agent) this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', taskId: task.id, body: `Only ${task.agent} is ready, so it reviewed its own work on "${task.title}".` })
       let busyTries = 0
       for (let round = 1; ; round++) {
@@ -1062,6 +1118,13 @@ export class TeamOrchestrator {
           // work nobody could check does not count as checked: wait for the user, retry, or fail the task
           const kind: ErrorKind = rr.error?.kind ?? 'other'
           const msg = `${reviewer} could not review: ${rr.error?.message ?? 'unknown error'}`
+          const to = kind === 'limit' ? this.switchAgent(run, live, reviewer, msg, `the review of ${task.id}`, task.agent) : null
+          if (to) {
+            reviewer = to
+            task.reviewSession = undefined // that was the old reviewer's conversation
+            round--
+            continue
+          }
           if (kind === 'auth' || kind === 'missing' || kind === 'model' || kind === 'limit') return (task.resumeFrom = 'review'), this.blockTask(run, task, msg, true)
           if (kind === 'busy' && ++busyTries <= 3) {
             this.post(run, { from: 'orchestrator', to: 'all', kind: 'note', taskId: task.id, body: `${reviewer} is busy right now; the review will be tried again shortly.` })
@@ -1087,7 +1150,12 @@ export class TeamOrchestrator {
         task.fixRounds++
         task.phase = 'fix'
         this.touch(run, task)
-        const fx = await this.agentRun(run, task, task.agent, 'fix', fixPrompt(task, v.issues, round, this.instructions(run, task.agent)), true, cwd, task.sessions[task.agent])
+        let fx = await this.agentRun(run, task, task.agent, 'fix', fixPrompt(task, v.issues, round, this.instructions(run, task.agent)), true, cwd, task.sessions[task.agent])
+        const to = !fx.ok && !this.stopKind(run) && fx.error?.kind === 'limit' ? this.switchAgent(run, live, task.agent, fx.error.message, task.id) : null
+        if (to) {
+          task.agent = to // the new author carries on in the same folder
+          fx = await this.agentRun(run, task, to, 'fix', fixPrompt(task, v.issues, round, this.instructions(run, to)), true, cwd, task.sessions[to])
+        }
         if (fx.sessionId) task.sessions[task.agent] = fx.sessionId
         if (this.stopKind(run)) return this.interrupted(run, task)
         if (!fx.ok) return this.failTask(run, task, `fix round failed: ${fx.error?.message ?? 'unknown'}`)
@@ -1111,7 +1179,7 @@ export class TeamOrchestrator {
       if (m.ok) return void (merged = true)
       task.phase = 'conflict'
       this.touch(run, task)
-      const resolver = strongest(live.available)
+      const resolver = strongest(this.pool(live))
       this.post(run, { from: 'orchestrator', to: resolver, kind: 'note', taskId: task.id, body: `Merge conflict in ${m.conflicts.join(', ')}; ${resolver} is resolving it.` })
       const rr = await this.agentRun(run, task, resolver, 'conflict', conflictPrompt(task, m.conflicts), true, run.integrationWorktree)
       const fin = rr.ok ? await finishMerge(run.integrationWorktree) : { ok: false, left: m.conflicts }
@@ -1198,7 +1266,7 @@ export class TeamOrchestrator {
           run.errors.push({ id: id('e'), signature: sig, text: v.output.slice(-400), at: Date.now() })
           if (round >= run.config.maxVerifyRounds) break
           if (this.stopForBudget(run, null)) return
-          const fixer = strongest(live.available)
+          const fixer = strongest(this.pool(live))
           const t = this.addTask(run, { title: `Fix failing checks (attempt ${round + 1})`, goal: `Make \`${cmd}\` pass.`, agent: fixer, kind: 'build', lastStep: true })
           t.status = 'running'
           t.phase = 'fix'
@@ -1224,11 +1292,40 @@ export class TeamOrchestrator {
       const total = await changedSince(wt, run.baseCommit).catch(() => [])
       const parts = run.tasks.filter((t) => t.status === 'done' && t.kind === 'build').length
       const localWork = run.tasks.some((t) => t.agent === 'local' && t.status === 'done' && t.changed?.length) // always checked as a whole, too
+      // ---- a security look, when the change touches what one is for
+      const sec = run.config.securityReview ?? 'auto'
+      if (sec !== 'off' && total.length) {
+        const diff = await diffText(wt, run.baseCommit)
+        if (sec === 'always' || touchesSecurity(total, diff)) {
+          if (this.stopForBudget(run, null)) return
+          const t = this.virtualTask(run, 'security', 'Security review', this.pick(live, mainAuthor(run) ?? undefined))
+          const { reviewer, rr } = await this.look(run, live, t, 'the security review', securityReviewPrompt(run, diff), wt, total.length)
+          if (live.ctl.signal.aborted) return
+          if (!rr.ok) {
+            const kind: ErrorKind = rr.error?.kind ?? 'other'
+            const msg = `${reviewer} could not do the security review: ${rr.error?.message ?? 'unknown error'}`
+            if (kind === 'auth' || kind === 'missing' || kind === 'model' || kind === 'limit') {
+              live.paused = true
+              return this.setStatus(run, 'paused', `${msg}. Resume to try again.`)
+            }
+            notes.push(`Security review: could not run — ${rr.error?.message ?? 'unknown error'}`)
+          } else {
+            const v = parseVerdict(rr.text)
+            notes.push(`Security review: ${v.verdict.toUpperCase()} — ${v.issues.replace(/\s+/g, ' ').slice(0, 500)}`)
+            this.post(run, { from: reviewer, to: 'user', kind: 'review', body: `Security review: ${v.verdict.toUpperCase()}. ${v.issues.slice(0, 600)}` })
+            if (v.verdict === 'fail') {
+              const r = await this.fixLastStep(run, live, wt, reviewer, 'Fix problems from the security review', v.issues, 'fix: security review', cmd)
+              if (r === 'stopped') return
+              if (r) verify = { ok: r.ok, command: cmd!, output: r.output }
+            }
+          }
+        }
+      }
+
       if (((run.config.finalReview && (run.config.finalReview === true || parts >= 3) && run.config.review === 'cross') || localWork) && total.length) {
         if (this.stopForBudget(run, null)) return
-        const reviewer = strongest(live.available)
-        const t = this.virtualTask(run, 'final', 'Final review', reviewer)
-        const rr = await this.agentRun(run, t, reviewer, 'final-review', finalReviewPrompt(run, await diffText(wt, run.baseCommit)), false, wt)
+        const t = this.virtualTask(run, 'final', 'Final review', strongest(this.pool(live)))
+        const { reviewer, rr } = await this.look(run, live, t, 'the final review', finalReviewPrompt(run, await diffText(wt, run.baseCommit)), wt, total.length)
         if (live.ctl.signal.aborted) return
         if (!rr.ok) {
           const kind: ErrorKind = rr.error?.kind ?? 'other'
@@ -1243,25 +1340,9 @@ export class TeamOrchestrator {
           notes.push(`${reviewer}: ${v.verdict.toUpperCase()} — ${v.issues.replace(/\s+/g, ' ').slice(0, 500)}`)
           this.post(run, { from: reviewer, to: 'user', kind: 'review', body: `Final review: ${v.verdict.toUpperCase()}. ${v.issues.slice(0, 600)}` })
           if (v.verdict === 'fail') {
-            const author = strongest(live.available, reviewer)
-            const ft = this.addTask(run, { title: 'Fix problems from the final review', goal: v.issues, agent: author, kind: 'build', lastStep: true })
-            ft.status = 'running'
-            ft.phase = 'fix'
-            this.touch(run, ft)
-            const fx = await this.agentRun(run, ft, author, 'fix', fixPrompt(ft, v.issues, 1, this.instructions(run, author)), true, wt)
-            if (live.ctl.signal.aborted) return void (await this.clean(wt))
-            await commitAll(wt, 'fix: final review')
-            ft.changed = await changedSince(wt, run.baseCommit)
-            ft.status = fx.ok ? 'done' : 'failed'
-            ft.summary = fx.text
-            this.touch(run, ft)
-            if (cmd) {
-              // the fix changed the code: the project's check has to be run again on the result
-              const v2 = await runVerify(cmd, wt, live.ctl.signal)
-              if (live.ctl.signal.aborted) return
-              verify = { ok: v2.ok, command: cmd, output: v2.output }
-              this.out(run, { type: 'verify', runId: run.id, command: cmd, ok: v2.ok, output: v2.output.slice(-4000) })
-            }
+            const r = await this.fixLastStep(run, live, wt, reviewer, 'Fix problems from the final review', v.issues, 'fix: final review', cmd)
+            if (r === 'stopped') return
+            if (r) verify = { ok: r.ok, command: cmd!, output: r.output }
           }
         }
       }
@@ -1286,6 +1367,64 @@ export class TeamOrchestrator {
       live.finishing = false
       if (run.status === 'running' && !live.paused) this.pump(run) // resumed while the stopped checks were still unwinding
     }
+  }
+
+  // Who does a whole-result job: the strongest ready agent, not the one given, and the local model only when it is the only one.
+  private pick(live: Live, not?: AgentName): AgentName {
+    const pool = this.pool(live)
+    const big = pool.filter((a) => a !== 'local')
+    return strongest(big.length ? big : pool, not)
+  }
+
+  // A read-only look at the whole result. If the reviewer's plan runs out, the next agent does it instead of the run stopping.
+  private async look(run: Run, live: Live, t: Task, what: string, prompt: string, wt: string, files: number): Promise<{ reviewer: AgentName; rr: RunResult }> {
+    let reviewer = t.agent
+    for (;;) {
+      const rr = await this.agentRun(run, t, reviewer, 'final-review', prompt, false, wt, undefined, files)
+      const to = !rr.ok && !live.ctl.signal.aborted && rr.error?.kind === 'limit' ? this.switchAgent(run, live, reviewer, rr.error.message, what) : null
+      if (!to) return { reviewer, rr }
+      reviewer = t.agent = to
+    }
+  }
+
+  // A fix for problems the whole-result review found, then the project's check again on the changed result. 'stopped' when the run was stopped meanwhile.
+  private async fixLastStep(run: Run, live: Live, wt: string, reviewer: AgentName, title: string, issues: string, commit: string, cmd: string | null): Promise<'stopped' | { ok: boolean; output: string } | null> {
+    const author = strongest(this.pool(live), reviewer)
+    const ft = this.addTask(run, { title, goal: issues, agent: author, kind: 'build', lastStep: true })
+    ft.status = 'running'
+    ft.phase = 'fix'
+    ft.startedAt = Date.now()
+    this.touch(run, ft)
+    const fx = await this.agentRun(run, ft, author, 'fix', fixPrompt(ft, issues, 1, this.instructions(run, author)), true, wt)
+    if (live.ctl.signal.aborted) return void (await this.clean(wt)), 'stopped'
+    await commitAll(wt, commit)
+    ft.changed = await changedSince(wt, run.baseCommit)
+    ft.status = fx.ok ? 'done' : 'failed'
+    ft.summary = fx.text
+    ft.endedAt = Date.now()
+    this.touch(run, ft)
+    if (!cmd) return null
+    // the fix changed the code: the project's check has to be run again on the result
+    const v = await runVerify(cmd, wt, live.ctl.signal)
+    if (live.ctl.signal.aborted) return 'stopped'
+    this.out(run, { type: 'verify', runId: run.id, command: cmd, ok: v.ok, output: v.output.slice(-4000) })
+    return { ok: v.ok, output: v.output }
+  }
+
+  // One task that writes or extends tests, once the build tasks are done and before the project check. Not when the project has no test command, the
+  // changes are only docs or config, the user turned it off, or a test task (the planner's, or one of an earlier round that came after the builds) is there.
+  private addTestTask(run: Run, live: Live): boolean {
+    if (run.config.testTask === false || run.config.verify === null) return false
+    const num = (t: Task) => Number(t.id.replace(/\D/g, '')) || 0
+    const builds = run.tasks.filter((t) => t.kind === 'build' && !t.lastStep)
+    const done = builds.filter((t) => t.status === 'done')
+    const last = Math.max(0, ...builds.map(num))
+    if (!done.length || run.tasks.some((t) => t.kind === 'test' && (num(t) > last || builds.every((b) => t.deps.includes(b.id))))) return false
+    const files = done.flatMap((t) => t.changed)
+    if (!files.length || onlyDocsOrConfig(files) || !detectVerify(run.integrationWorktree)) return false
+    const t = this.addTask(run, { title: 'Write or extend tests for the changed code', goal: `Write or extend tests for the code the build tasks changed (${new Set(files.map((f) => f.path)).size} files). Look at the diff since the start of the run and add focused tests next to the code.`, agent: this.pick(live, mainAuthor(run) ?? undefined), kind: 'test', deps: builds.map((b) => b.id), acceptance: ['The new tests pass', 'Production code is unchanged, except for an obvious bug the tests found'] })
+    this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', taskId: t.id, body: `Added ${t.id} "${t.title}" for ${t.agent}.` })
+    return true
   }
 
   // Puts a team folder back to its last commit: nothing that was not committed is checked, merged over or reported as done.
@@ -1404,8 +1543,8 @@ export class TeamOrchestrator {
         if (run.status === 'verifying') return 'The team is checking the result and cannot take new tasks now. Put it in your handoff instead.'
         if (task?.proposedBy) return 'A subtask cannot propose more subtasks.'
         if (run.tasks.filter((t) => t.proposedBy).length >= MAX_PROPOSALS || run.tasks.length >= (run.config.budget.maxTasks ?? 12)) return 'The team already has as many tasks as allowed.'
-        const avail = this.liveOf(run).available
-        const agent: AgentName = isAgent(args.agent) ? (avail.includes(args.agent) ? args.agent : avail[0]) : routeAgent('build', avail, this.memory(run).load().stats)
+        const avail = this.pool(this.liveOf(run))
+        const agent: AgentName = isAgent(args.agent) ? (avail.includes(args.agent) ? args.agent : avail[0]) : routeAgent('build', avail, this.memory(run).load().stats, run.config.effortMode === 'cheap')
         const t = this.addTask(run, { title: str(args.title, 120), goal: str(args.goal, 2000), agent, kind: 'build', acceptance: Array.isArray(args.acceptance) ? args.acceptance.map((x: unknown) => str(x, 300)).slice(0, 4) : [], proposedBy: ctx.taskId })
         this.post(run, { from: ctx.agent, to: 'all', kind: 'note', taskId: ctx.taskId, body: `Added task ${t.id} "${t.title}" for ${agent}.` })
         setTimeout(() => this.pump(run), 0)

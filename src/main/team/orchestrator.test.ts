@@ -33,14 +33,15 @@ type Script = {
   limitsPct?: number // emitted by the work step, like Codex app-server's plan readout
   steerable?: boolean
   stream?: boolean // emit typing events and leave a file in the folder for a while
-  fail?: (agent: AgentName, kind: 'plan' | 'work' | 'review' | 'fix' | 'verifyfix', task: string, n: number, resume?: string) => RunResult | null
+  fail?: (agent: AgentName, kind: 'plan' | 'work' | 'review' | 'fix' | 'verifyfix' | 'security', task: string, n: number, resume?: string) => RunResult | null
+  security?: string[] // verdicts of the security review in order; default PASS
 }
 
 function harness(script: Script, over: { available?: AgentName[]; cfg?: object; sleep?: (ms: number) => Promise<void>; deps?: Partial<Deps> } = {}) {
   const proj = project()
   const teamDir = mkdtempSync(join(tmpdir(), 'forge-orch-t-'))
   const events: RunEvent[] = []
-  const calls: { agent: AgentName; kind: string; task: string; cwd: string; resume?: string; model?: string; prompt: string }[] = []
+  const calls: { agent: AgentName; kind: string; task: string; cwd: string; resume?: string; model?: string; prompt: string; effort?: string }[] = []
   const counts = new Map<string, number>()
   const steers: string[] = []
   let active = 0, maxActive = 0
@@ -54,8 +55,9 @@ function harness(script: Script, over: { available?: AgentName[]; cfg?: object; 
     else if (/A reviewer checked your work on task (t\d+)/.test(p)) (kind = 'fix'), (task = find(/work on task (t\d+)/))
     else if (/produced conflicts/.test(p)) (kind = 'conflict'), (task = find(/Merging task (t\d+)/))
     else if (/project's check failed/.test(p)) kind = 'verifyfix'
+    else if (/You are the security reviewer/.test(p)) kind = 'security'
     else if (/The team finished this goal/.test(p)) kind = 'final'
-    calls.push({ agent, kind, task, cwd: o.cwd, resume: o.resume, model: o.model, prompt: p })
+    calls.push({ agent, kind, task, cwd: o.cwd, resume: o.resume, model: o.model, prompt: p, effort: o.effort })
     if (kind === 'work') approve = o.onApproval
     const n = (counts.set(`${kind}:${task}`, (counts.get(`${kind}:${task}`) ?? 0) + 1), counts.get(`${kind}:${task}`)!)
     const failure = script.fail?.(agent, kind as never, task, n, o.resume)
@@ -95,6 +97,10 @@ function harness(script: Script, over: { available?: AgentName[]; cfg?: object; 
       if (kind === 'verifyfix') {
         script.verifyFix?.(o.cwd)
         return ok('fixed the check', agent, 'v')
+      }
+      if (kind === 'security') {
+        const v = script.security?.[n - 1] ?? 'PASS'
+        return ok(`- ${v === 'FAIL' ? 'user input reaches a shell' : 'nothing found'}\nVERDICT: ${v}`, agent, task)
       }
       return ok('VERDICT: PASS', agent, task)
     } finally {
@@ -645,7 +651,7 @@ describe('team orchestrator', () => {
       plan: { tasks: [T('a', { agent: 'claude' })] },
       fail: (agent, kind, task, n) => (kind === 'work' && n <= 1 ? { ok: false, text: '', usage: { input: 0, output: 0, cached: 0, costUsd: 0 }, events: [], error: { kind: 'limit', message: 'Claude AI usage limit reached|1793747988' } } : null),
     })
-    const run = await x.orch.start(x.proj, 'limit')
+    const run = await x.orch.start(x.proj, 'limit', { autoSwitch: false })
     const r = await until(x.orch, run.id, (r) => r.status === 'paused')
     expect(r.tasks[0].status).toBe('blocked')
     expect(r.pausedReason).toMatch(/claude.*usage limit/i)
@@ -1334,4 +1340,171 @@ describe('orchestrator audit fixes, round 2', () => {
       clear.mockRestore()
     }
   }, 30000)
+})
+
+describe('crew engine: auto-switch, effort, stats, test agent, security review', () => {
+  const failed = (kind: string, message: string): RunResult => ({ ok: false, text: '', usage: { input: 0, output: 0, cached: 0, costUsd: 0 }, events: [], error: { kind: kind as never, message } })
+  const withTests = (x: ReturnType<typeof h>) => writeFileSync(join(x.proj, 'package.json'), JSON.stringify({ scripts: { test: 'node -e "process.exit(0)"' } }))
+  const soon = () => `usage limit reached|${Math.floor(Date.now() / 1000) + 3600}`
+  const ts = (_a: AgentName, task: string, cwd: string) => writeFileSync(join(cwd, `${task}.ts`), 'x\n')
+
+  it('auto-switch: a task whose agent hit its limit goes to the other agent, queued tasks follow, and nobody pauses', async () => {
+    const x = h({ plan: { tasks: [T('a', { agent: 'claude' }), T('b', { agent: 'claude', deps: ['a'] })] }, fail: (agent, kind) => (agent === 'claude' && kind === 'work' ? failed('limit', soon()) : null) })
+    const run = await x.orch.start(x.proj, 'switch')
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect(r.tasks.map((t) => [t.agent, t.status])).toEqual([['codex', 'done'], ['codex', 'done']])
+    expect(r.messages.some((m) => m.kind === 'note' && /Claude hit its limit: Codex took over t1/.test(m.body))).toBe(true)
+    expect(r.messages.some((m) => m.kind === 'note' && /Claude hit its limit: Codex took over t2/.test(m.body))).toBe(true)
+    expect(x.calls.filter((c) => c.agent === 'claude' && c.kind !== 'plan')).toHaveLength(1) // the one that failed; reviews and the later task stayed away
+  })
+
+  it('auto-switch: a limit that has already reset does not keep the agent out', async () => {
+    const x = h({ plan: { tasks: [T('a', { agent: 'claude' }), T('b', { agent: 'claude', deps: ['a'] })] }, fail: (agent, kind, task) => (agent === 'claude' && kind === 'work' && task === 't1' ? failed('limit', 'usage limit reached|1793747988') : null) })
+    const run = await x.orch.start(x.proj, 'reset')
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect(r.tasks.map((t) => t.agent)).toEqual(['codex', 'claude'])
+  })
+
+  it('auto-switch: a reviewer that hit its limit is replaced, the local model never takes the review, and with nobody else the run pauses as before', async () => {
+    const x = h({ plan: { tasks: [T('a', { agent: 'local' })] }, fail: (agent, kind) => (agent === 'claude' && kind === 'review' ? failed('limit', soon()) : null) }, { available: ['claude', 'codex', 'local'] })
+    const run = await x.orch.start(x.proj, 'review switch')
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect(r.tasks[0].reviews.map((v) => v.by)).toEqual(['codex'])
+    expect(r.messages.some((m) => /Claude hit its limit: Codex took over the review of t1/.test(m.body))).toBe(true)
+    expect(x.calls.filter((c) => c.kind === 'review' || c.kind === 'final').every((c) => c.agent !== 'local')).toBe(true)
+
+    const y = h({ plan: { tasks: [T('a', { agent: 'local' })] }, fail: (agent, kind) => (agent === 'claude' && kind === 'review' ? failed('limit', soon()) : null) }, { available: ['claude', 'local'] })
+    const run2 = await y.orch.start(y.proj, 'nobody else')
+    expect((await until(y.orch, run2.id, (r) => r.status === 'paused')).pausedReason).toMatch(/claude could not review/) // only the local model is left, and it does not review
+  })
+
+  it('auto-switch: when the planner is out of allowance the next one plans, and the plan is not handed back to the planner that is out', async () => {
+    const x = h({ plan: { tasks: [T('a', { agent: 'claude' })] }, fail: (agent, kind) => (agent === 'claude' && kind === 'plan' ? failed('limit', soon()) : null) })
+    const run = await x.orch.start(x.proj, 'planner out')
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect(r.plan.plannedBy).toBe('codex')
+    expect(r.tasks[0].agent).toBe('codex')
+    expect(r.messages.some((m) => /Claude hit its limit: Codex took over planning/.test(m.body))).toBe(true)
+  })
+
+  it('auto-switch: with no other agent left the run pauses naming the agent, as before', async () => {
+    const x = h({ plan: { tasks: [T('a', { agent: 'claude' })] }, fail: (agent, kind) => (kind === 'work' ? failed('limit', 'Claude AI usage limit reached') : null) }, { available: ['claude'] })
+    const run = await x.orch.start(x.proj, 'alone')
+    const r = await until(x.orch, run.id, (r) => r.status === 'paused')
+    expect(r.tasks[0].status).toBe('blocked')
+    expect(r.pausedReason).toMatch(/claude.*usage limit/i)
+  })
+
+  it('effort: auto lowers research and small reviews, fixed keeps the configured value, cheap goes lower and moves build work to Codex', async () => {
+    const cfg = { claudeEffort: 'high', codexEffort: 'high' } as const
+    const x = h({ plan: { tasks: [T('a', { agent: 'claude' }), T('b', { agent: 'codex', kind: 'research' })] } })
+    const run = await x.orch.start(x.proj, 'auto', cfg)
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect(x.calls.find((c) => c.kind === 'work' && c.task === 't1')!.effort).toBe('high')
+    expect(x.calls.find((c) => c.kind === 'review' && c.task === 't1')!.effort).toBe('medium')
+    expect(x.calls.find((c) => c.kind === 'work' && c.task === 't2')!.effort).toBe('medium')
+
+    const f = h({ plan: { tasks: [T('a', { agent: 'claude' })] } })
+    const run2 = await f.orch.start(f.proj, 'fixed', { ...cfg, effortMode: 'fixed' })
+    await until(f.orch, run2.id, (r) => r.status === 'awaiting_approval')
+    expect(f.calls.filter((c) => c.agent !== 'local' && c.kind !== 'plan').map((c) => c.effort)).toEqual(['high', 'high'])
+
+    const c = h({ plan: { tasks: [T('a', { agent: 'claude' })] } })
+    const run3 = await c.orch.start(c.proj, 'cheap', { ...cfg, effortMode: 'cheap' })
+    const r3 = await until(c.orch, run3.id, (r) => r.status === 'awaiting_approval')
+    expect(r3.tasks[0].agent).toBe('codex')
+    expect(c.calls.find((x) => x.kind === 'work')!.effort).toBe('medium')
+    expect(c.calls.find((x) => x.kind === 'review')!.effort).toBe('low')
+  })
+
+  it('stats: every task reports time, tokens and cost, and the forecast knows what is left', async () => {
+    const x = h({ delayMs: 20, plan: { tasks: [T('a'), T('b', { deps: ['a'] })] } })
+    const run = await x.orch.start(x.proj, 'stats')
+    expect(x.orch.stats('nope')).toBeNull()
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    const s = x.orch.stats(run.id)!
+    expect(s.tasks.map((t) => t.id)).toEqual(['t1', 't2'])
+    expect(s.tasks.every((t) => t.tokens > 0 && t.seconds > 0)).toBe(true)
+    expect(s.forecast).toMatchObject({ tasksDone: 2, tasksLeft: 0, estTokensLeft: 0 })
+  })
+
+  it('test agent: after the builds one test task runs, by an agent that did not write most of the files, and goes through review and merge', async () => {
+    const x = h({ plan: { tasks: [T('a', { agent: 'claude' }), T('b', { agent: 'codex' })] }, work: (_a, task, cwd) => { writeFileSync(join(cwd, `${task}.ts`), 'x\n'); if (task === 't1') writeFileSync(join(cwd, 't1b.ts'), 'y\n') } })
+    withTests(x)
+    const run = await x.orch.start(x.proj, 'with tests')
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    const t = r.tasks.find((t) => t.kind === 'test')!
+    expect(r.tasks).toHaveLength(3)
+    expect(t).toMatchObject({ status: 'done', agent: 'codex', deps: ['t1', 't2'] })
+    expect(t.reviews.map((v) => v.by)).toEqual(['claude'])
+    expect(x.calls.find((c) => c.task === t.id && c.kind === 'work')!.prompt).toContain('focused tests next to the code')
+    expect(existsSync(join(r.integrationWorktree, `${t.id}.ts`))).toBe(true)
+    expect(x.events.filter((e) => e.type === 'verify').length).toBeGreaterThan(0) // the project check ran after it
+  })
+
+  it('test agent: not added when the planner made one, when turned off, without a test command, or for docs-only changes', async () => {
+    const planned = h({ plan: { tasks: [T('a'), T('b', { kind: 'test', deps: ['a'] })] }, work: ts })
+    withTests(planned)
+    const r1 = await planned.orch.start(planned.proj, 'planner test')
+    expect((await until(planned.orch, r1.id, (r) => r.status === 'awaiting_approval')).tasks).toHaveLength(2)
+
+    const off = h({ plan: { tasks: [T('a')] }, work: ts })
+    withTests(off)
+    const r2 = await off.orch.start(off.proj, 'off', { testTask: false })
+    expect((await until(off.orch, r2.id, (r) => r.status === 'awaiting_approval')).tasks).toHaveLength(1)
+
+    const none = h({ plan: { tasks: [T('a')] }, work: ts })
+    const r3 = await none.orch.start(none.proj, 'no test command')
+    expect((await until(none.orch, r3.id, (r) => r.status === 'awaiting_approval')).tasks).toHaveLength(1)
+
+    const docs = h({ plan: { tasks: [T('a')] }, work: (_a, _t, cwd) => writeFileSync(join(cwd, 'README.md'), 'hi\n') })
+    withTests(docs)
+    const r4 = await docs.orch.start(docs.proj, 'docs only')
+    expect((await until(docs.orch, r4.id, (r) => r.status === 'awaiting_approval')).tasks).toHaveLength(1)
+  })
+
+  it('security review: always runs, is read-only, lands in the final notes and the report; off never runs; auto looks only at risky changes', async () => {
+    const always = h({ plan: { tasks: [T('a')] }, work: ts })
+    const r1 = await always.orch.start(always.proj, 'always', { securityReview: 'always' })
+    const done = await until(always.orch, r1.id, (r) => r.status === 'awaiting_approval')
+    expect(always.calls.filter((c) => c.kind === 'security')).toHaveLength(1)
+    expect(done.final?.reviewNotes.some((n) => /^Security review: PASS — /.test(n))).toBe(true)
+    expect(done.final?.report).toMatch(/## Security review\n- PASS — /)
+
+    const off = h({ plan: { tasks: [T('a')] }, work: ts })
+    const r2 = await off.orch.start(off.proj, 'off', { securityReview: 'off' })
+    await until(off.orch, r2.id, (r) => r.status === 'awaiting_approval')
+    expect(off.calls.some((c) => c.kind === 'security')).toBe(false)
+
+    const calm = h({ plan: { tasks: [T('a')] }, work: ts })
+    const r3 = await calm.orch.start(calm.proj, 'calm')
+    await until(calm.orch, r3.id, (r) => r.status === 'awaiting_approval')
+    expect(calm.calls.some((c) => c.kind === 'security')).toBe(false)
+
+    const risky = h({ plan: { tasks: [T('a')] }, work: (_a, _t, cwd) => (mkdirSync(join(cwd, 'src/auth'), { recursive: true }), writeFileSync(join(cwd, 'src/auth/login.ts'), 'x\n')) })
+    const r4 = await risky.orch.start(risky.proj, 'risky')
+    await until(risky.orch, r4.id, (r) => r.status === 'awaiting_approval')
+    expect(risky.calls.filter((c) => c.kind === 'security')).toHaveLength(1)
+  })
+
+  it('security review: a FAIL makes a fix task and runs the check again; a review that cannot run is recorded, or pauses when the plan is out', async () => {
+    const x = h({ plan: { tasks: [T('a')] }, security: ['FAIL', 'PASS'] })
+    const run = await x.orch.start(x.proj, 'unsafe', { securityReview: 'always', verify: 'node -e "process.exit(0)"' })
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect(r.tasks.map((t) => t.title)).toContain('Fix problems from the security review')
+    expect(r.tasks.at(-1)).toMatchObject({ status: 'done', lastStep: true })
+    expect(x.events.filter((e) => e.type === 'verify').map((e: any) => e.ok)).toEqual([true, true])
+    expect(r.final?.reviewNotes[0]).toMatch(/^Security review: FAIL — .*shell/)
+
+    const broken = h({ plan: { tasks: [T('a')] }, fail: (_a, kind) => ((kind as string) === 'security' ? failed('other', 'boom') : null) })
+    const r2 = await broken.orch.start(broken.proj, 'cannot run', { securityReview: 'always' })
+    const end = await until(broken.orch, r2.id, (r) => r.status === 'awaiting_approval')
+    expect(end.final?.reviewNotes[0]).toMatch(/^Security review: could not run — boom/)
+
+    const out = h({ plan: { tasks: [T('a')] }, fail: (_a, kind) => ((kind as string) === 'security' ? failed('limit', 'usage limit reached') : null) }, { available: ['claude'] })
+    const r3 = await out.orch.start(out.proj, 'plan is out', { securityReview: 'always' })
+    const paused = await until(out.orch, r3.id, (r) => r.status === 'paused')
+    expect(paused.pausedReason).toMatch(/could not do the security review/)
+    expect(paused.final).toBeUndefined()
+  })
 })

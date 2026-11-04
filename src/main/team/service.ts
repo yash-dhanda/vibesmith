@@ -43,6 +43,10 @@ export function sanitizeConfig(raw: unknown): Partial<TeamConfig> {
   if (typeof r.allowSubtasks === 'boolean') out.allowSubtasks = r.allowSubtasks
   if (typeof r.reviewPlan === 'boolean') out.reviewPlan = r.reviewPlan
   if (r.codexMode === 'exec' || r.codexMode === 'app-server') out.codexMode = r.codexMode
+  if (typeof r.autoSwitch === 'boolean') out.autoSwitch = r.autoSwitch
+  if (r.effortMode === 'fixed' || r.effortMode === 'auto' || r.effortMode === 'cheap') out.effortMode = r.effortMode
+  if (typeof r.testTask === 'boolean') out.testTask = r.testTask
+  if (r.securityReview === 'off' || r.securityReview === 'auto' || r.securityReview === 'always') out.securityReview = r.securityReview
   const cap = num(r.maxLimitPercent, 0, 100)
   if (cap !== undefined) out.maxLimitPercent = cap
   if (typeof r.verify === 'string') out.verify = r.verify.slice(0, 300) || null
@@ -139,6 +143,8 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
       await orch.followUp(id, text, to, cleanAttachments(join(teamDir, 'attachments'), attachments))
     },
     list: () => orch.list().map(summarize),
+    // Per-task time, tokens and cost, and what is left of the plan; null for an unknown run.
+    stats: (id: string) => orch.stats(id),
     // A plain-text summary to paste into a bug report: versions, sign-ins, plan allowance, recent runs. No secrets, no file contents.
     async diagnostics(): Promise<string> {
       const [agents, models, limits] = await Promise.all([health(true), codexModels(), codexLimits()])

@@ -2,7 +2,7 @@ import type { AgentName, TeamEvent } from './events'
 
 // ---- the shared model of one team run: everything the orchestrator, the agents (through the mailbox) and the UI agree on ----
 
-export type TaskKind = 'build' | 'research' // research reads and reports, build changes files
+export type TaskKind = 'build' | 'research' | 'test' // research reads and reports, build changes files, test writes or extends tests for what the build tasks changed
 export type TaskStatus = 'queued' | 'running' | 'blocked' | 'done' | 'failed' | 'cancelled' | 'interrupted' | 'proposed'
 export type TaskPhase = 'work' | 'review' | 'fix' | 'merge' | 'conflict'
 
@@ -90,9 +90,13 @@ export type TeamConfig = {
   codexMode: 'exec' | 'app-server' // app-server: live steering, approvals, plan-allowance readout
   reviewPlan?: boolean // stop after planning so the user can edit and approve the plan before any agent works on it
   maxLimitPercent: number // pause when a subscription's short-window allowance is this used (0 = never)
+  autoSwitch?: boolean // when an agent's plan runs out, hand its work to another ready agent and carry on instead of pausing (default on)
+  effortMode?: 'fixed' | 'auto' | 'cheap' // fixed: the configured efforts everywhere; auto: lower effort for research and small reviews; cheap: lowest sensible effort, and build work goes to Codex/local when ready (default auto)
+  testTask?: boolean // after the build tasks, one task writes or extends tests for the changed code, when the project has a test command (default on)
+  securityReview?: 'off' | 'auto' | 'always' // a read-only security look before the final review: auto = only when the diff touches auth, payments, secrets, routes or dependencies (default auto)
 }
 
-export const DEFAULT_CONFIG: TeamConfig = { planner: 'auto', codexModel: '', maxParallelPerAgent: 2, maxFixRounds: 3, maxVerifyRounds: 2, review: 'cross', finalReview: 'auto', bypassPermissions: true, allowSubtasks: true, budget: { maxTasks: 12 }, codexMode: 'app-server', reviewPlan: false, maxLimitPercent: 0 }
+export const DEFAULT_CONFIG: TeamConfig = { planner: 'auto', codexModel: '', maxParallelPerAgent: 2, maxFixRounds: 3, maxVerifyRounds: 2, review: 'cross', finalReview: 'auto', bypassPermissions: true, allowSubtasks: true, budget: { maxTasks: 12 }, codexMode: 'app-server', reviewPlan: false, maxLimitPercent: 0, autoSwitch: true, effortMode: 'auto', testTask: true, securityReview: 'auto' }
 
 export type RunFinal = { report: string; files: Task['changed']; verifyOk: boolean | null; verifyOutput: string; reviewNotes: string[] }
 

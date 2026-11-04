@@ -73,9 +73,14 @@ export class ProjectMemoryStore {
 }
 
 // Which agent to give a job when the plan does not say: the one with the better record on this project, else the default for the job.
-export function routeAgent(kind: string, available: AgentName[], stats: RoleStats): AgentName {
+// `cheap`: jobs that write code go to Codex, else the local model, when one is ready.
+export function routeAgent(kind: string, available: AgentName[], stats: RoleStats, cheap = false): AgentName {
   const fallback: AgentName = kind === 'research' ? 'claude' : 'codex'
   if (available.length === 1) return available[0]
+  if (cheap && kind !== 'research') {
+    const pick = (['codex', 'local'] as const).find((a) => available.includes(a))
+    if (pick) return pick
+  }
   const rate = (a: AgentName) => {
     const s = stats[`${a}:${kind}`]
     return s && s.ok + s.fail >= 3 ? s.ok / (s.ok + s.fail) : null
