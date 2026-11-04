@@ -5,6 +5,7 @@ import { fileIcon, icon, type IconName } from './icons'
 import { $, cleanErr, emo, h, toast } from './ui'
 import { replayRun } from './teamReplay'
 import { enabledSkillCount } from './skillsPanel'
+import { historyButton } from './projectHistory'
 import { AGENT_FULL, AGENT_NAME, N } from './names'
 import { RUN_GLYPH, STEP_GLYPH, TASK_GLYPH, TOOL_GLYPH } from './glyphs'
 import { buildStage, pushCode, type StageCode } from './teamStage'
@@ -220,7 +221,7 @@ async function showEntry() {
   start.disabled = !ready.length
   const diagnostics = h('button', 'icon-btn') as HTMLButtonElement; diagnostics.type = 'button'; diagnostics.append(icon('info')); diagnostics.setAttribute('aria-label', 'Copy diagnostics'); diagnostics.title = 'Copy diagnostics: versions, agent status and recent runs for a bug report. No secrets or file contents.'
   diagnostics.onclick = () => void call(async () => { const text = replay ? 'Forge replay diagnostics' : await window.forge.teamDiagnostics(); await navigator.clipboard.writeText(text); toast('Diagnostics copied') })
-  const actions = h('div', 'team-start-actions'); actions.append(project, diagnostics, h('span', 'grow'), start)
+  const actions = h('div', 'team-start-actions'); actions.append(project, diagnostics, historyButton(), h('span', 'grow'), start)
   const agentsBox = h('section', 'team-agents'); agentsBox.setAttribute('aria-label', 'Models and effort')
   const agentCard = (agent: 'claude' | 'codex' | 'local', model: HTMLSelectElement, effortSel?: HTMLSelectElement) => {
     const card = h('div', `team-agent-card ${agent}`); const name = h('div', 'team-agent-name'); name.append(h('span', `agent-orb ${agent}`), h('strong', '', AGENT_FULL[agent]))
@@ -345,6 +346,7 @@ function renderRunHeader() {
   const status = asking ? h('span', 'status-pill awaiting_approval asking') : statusTag(run!.status); if (asking) status.append(emo(RUN_GLYPH.awaiting_approval), N.waiting); status.setAttribute('role', 'status')
   const elapsed = h('span', 'team-elapsed', fmtTime(Math.floor((Date.now() - run!.createdAt) / 1000))); elapsed.id = 'team-elapsed'
   const controls = h('div', 'team-controls')
+  controls.append(historyButton())
   const planPending = run!.approvals.some(a => a.kind === 'plan' && a.status === 'pending')
   if (planPending) { /* the plan card starts the team */ }
   else if (['paused', 'interrupted'].includes(run!.status)) controls.append(actionButton('Resume', () => teamAction(() => window.forge.teamResume(run!.id))))

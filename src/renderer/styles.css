@@ -392,6 +392,21 @@ dialog[open] { opacity: 1; scale: 1; }
 dialog::backdrop { background: transparent; transition: background-color var(--t1), overlay var(--t1) allow-discrete, display var(--t1) allow-discrete; }
 dialog[open]::backdrop { background: var(--scrim); }
 @starting-style { dialog[open]::backdrop { background: transparent; } }
+/* project history */
+#project-history { width: min(760px, 94vw); height: min(640px, 86vh); overflow: hidden; }
+#project-history[open] { display: flex; flex-direction: column; }
+.modal-head { display: flex; align-items: center; gap: 9px; padding: 12px 12px 12px 18px; border-bottom: 1px solid var(--hair); }
+.modal-head h3 { display: flex; align-items: center; gap: 9px; margin: 0; font-size: 14.5px; font-weight: 600; }
+.modal-head h3 .ic { color: var(--muted); }
+.history-filter { display: flex; align-items: center; gap: 8px; margin: 12px 18px 0; height: 34px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--r-md); color: var(--faint); }
+.history-filter:focus-within { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
+.history-filter input { flex: 1; min-width: 0; border: 0; background: transparent; outline: 0; color: var(--text); font-size: 12.5px; }
+.history-filter input:focus-visible { outline: 0; animation: none; }
+.history-body { flex: 1; min-height: 0; overflow: auto; margin: 12px 18px; border: 1px solid var(--hair); border-radius: var(--r-md); background: var(--ed-bg); }
+.history-text { margin: 0; padding: 12px 14px; font: 12px/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ed-fg); }
+.history-body .empty-state { padding-top: 70px; }
+.modal-foot .modal-hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-btn { flex: none; }
 /* modal anatomy: icon + title + close, a divider, the body, then a footer with a muted hint left and actions right */
 .modal-foot { display: flex; align-items: center; gap: 9px; padding: 12px 18px; border-top: 1px solid var(--hair); }
 .modal-hint { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--faint); font-size: 11.5px; }

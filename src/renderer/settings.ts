@@ -2,6 +2,7 @@ import type { TeamConfig } from '../main/team/types'
 import { getCustomIds, loadModels, setCustomIds } from './models'
 import { $, MINUTE_CHOICES, STEP_CHOICES, agentLimits, cleanErr, h, numCtxPref, onOff, setThemePref, themePref, toast, type ThemePref } from './ui'
 import { renderSkillsPanel } from './skillsPanel'
+import { openProjectHistory } from './projectHistory'
 import { icon, type IconName } from './icons'
 import { openLibrary } from './library'
 import { renderUsage } from './usage'
@@ -362,6 +363,9 @@ async function team(into: HTMLElement) {
     row('Never ask me', 'Agents run commands and read files without asking. They still cannot push to git, use sudo, or write outside their own task folder.', onOff(cfg.bypassPermissions !== false, (v) => put('bypassPermissions', v))),
     row('Project check', 'The command that verifies the result. Leave blank to detect it from the project.', verify),
   )
+  const hist = group('Project history')
+  hist.box.append(row('What happened', 'Forge keeps a history of everything that happens in a project in .forge/what-happened.txt and shows it to every agent.', action('Show history', 'list', () => void openProjectHistory())))
+  into.append(hist.g)
   into.append(perm.g, status)
 }
 
