@@ -3,6 +3,7 @@ import type { AgentEvent, Mode } from '../main/agent/loop'
 import type { ChatListItem, ChatStatus, TranscriptItem } from '../main/chatStore'
 import type { UsageSummary } from '../main/usageStore'
 import type { ProjectHit } from '../main/projectScan'
+import type { SkillRepo } from '../main/skills'
 import type { RunSummary, TeamMemory } from '../main/team/service'
 import type { Run as TeamRun, RunEvent as TeamRunEvent, TeamConfig } from '../main/team/types'
 
@@ -17,6 +18,11 @@ export type OpenedChat = { id: string; title: string; project: string | null; mi
 const api = {
   // app + chats
   appInit: (): Promise<{ chats: ChatListItem[]; project: string | null; usage: UsageSummary }> => ipcRenderer.invoke('app:init'),
+  skillsList: (): Promise<SkillRepo[]> => ipcRenderer.invoke('skills:list'),
+  skillsAdd: (url: string): Promise<SkillRepo> => ipcRenderer.invoke('skills:add', url),
+  skillsUpdate: (id: string): Promise<SkillRepo> => ipcRenderer.invoke('skills:update', id),
+  skillsToggle: (id: string, enabled: boolean): Promise<SkillRepo[]> => ipcRenderer.invoke('skills:toggle', id, enabled),
+  skillsRemove: (id: string): Promise<SkillRepo[]> => ipcRenderer.invoke('skills:remove', id),
   scanProjects: (fresh?: boolean): Promise<ProjectHit[]> => ipcRenderer.invoke('project:scan', fresh),
   suggestProjects: (query: string): Promise<ProjectHit[]> => ipcRenderer.invoke('project:suggest', query),
   setProject: (path: string): Promise<string> => ipcRenderer.invoke('project:set', path),

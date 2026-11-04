@@ -24,12 +24,12 @@ export const realRunner: AgentRunner = async (agent, o): Promise<RunResult> => {
     }
     return runCodex({ ...common, model, effort: o.effort, team: o.link ?? undefined })
   }
-  if (!o.link) return runClaude({ ...common, model: o.model, effort: o.effort })
+  if (!o.link) return runClaude({ ...common, model: o.model, effort: o.effort, addDirs: o.addDirs })
   const dir = mkdtempSync(join(tmpdir(), 'forge-mcp-'))
   const mcpConfig = join(dir, 'mcp.json')
   writeFileSync(mcpConfig, claudeMcpConfig(o.link), { mode: 0o600 })
   try {
-    return await runClaude({ ...common, model: o.model, effort: o.effort, mcpConfig, team: o.link })
+    return await runClaude({ ...common, model: o.model, effort: o.effort, addDirs: o.addDirs, mcpConfig, team: o.link })
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

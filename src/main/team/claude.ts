@@ -8,6 +8,7 @@ export type ClaudeOpts = RunOpts & {
   effort?: string
   resume?: string // session id from an earlier run
   systemAppend?: string
+  addDirs?: string[] // extra folders Claude may read, for example the skill libraries
   mcpConfig?: string // path to an MCP config file (the Forge team server)
   team?: TeamLink // when set, permission prompts are answered by Forge's policy and the user instead of being denied
   allow?: string[]
@@ -28,6 +29,7 @@ export function claudeArgs(o: ClaudeOpts): string[] {
   if (o.effort) a.push('--effort', o.effort)
   if (o.resume) a.push('--resume', o.resume)
   if (o.systemAppend) a.push('--append-system-prompt', o.systemAppend)
+  if (o.addDirs?.length) a.push('--add-dir', ...o.addDirs)
   if (o.mcpConfig) a.push('--mcp-config', o.mcpConfig, '--strict-mcp-config')
   const allow = [...(o.allow ?? (o.write ? CLAUDE_ALLOW : [])), ...(o.team ? [`mcp__${SERVER}`] : [])]
   if (allow.length) a.push('--allowedTools', allow.join(','))

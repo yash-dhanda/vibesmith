@@ -144,7 +144,8 @@ ${write ? '- Work only inside the current folder. Make the change, run the check
 }
 
 export function reviewPrompt(run: Run, task: Task, diff: string, round: number, c: Ctx): string {
-  return `You are reviewing another agent's work. Read only; do not change files.
+  const small = task.agent === 'local' ? `\nThe author is a small local model. It is often wrong and its summary is not evidence. Open the files yourself, check every item it must satisfy one by one, run the project's tests or the file itself if you can, and fail the task if anything is missing, invented (names, imports, APIs that do not exist) or untested.\n` : ''
+  return `You are reviewing another agent's work. Read only; do not change files.${small}
 
 # Team goal
 ${run.goal}
@@ -204,7 +205,7 @@ export function finalReviewPrompt(run: Run, diff: string): string {
   return `The team finished this goal:
 ${run.goal}
 
-Below is the complete change they made (merged result). Read only; do not change files. Check that the whole thing works together and meets the goal: missing pieces, integration mistakes between parts written by different agents, security problems, leftover debug code.
+Below is the complete change they made (merged result). Part of it may come from a small local model, which is often wrong: do not trust summaries, check names, imports and APIs actually exist. Read only; do not change files. Check that the whole thing works together and meets the goal: missing pieces, integration mistakes between parts written by different agents, security problems, leftover debug code.
 
 ${diff || '(no changes)'}
 

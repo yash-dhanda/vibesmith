@@ -28,6 +28,7 @@ import { AttachmentStore, inlineText } from './attachments'
 import { getVerify, setVerify } from './settings'
 import { registerLibrary } from './library'
 import { rankProjects, scanProjects, type ProjectHit } from './projectScan'
+import { SkillStore, type SkillRepo } from './skills'
 import { UsageStore } from './usageStore'
 import { createTeamService, sanitizeConfig, type TeamService } from './team/service'
 
@@ -200,6 +201,16 @@ ipcMain.handle('project:pick', async (_e, chatId: string) => {
   rememberProject(root)
   return root
 })
+
+// Skill libraries: GitHub repositories the user adds; the agents of a team run read the skills that fit their task.
+let skillStoreInst: SkillStore | null = null
+const skillStore = () => (skillStoreInst ??= new SkillStore(join(app.getPath('userData'), 'skills')))
+const skillId = (v: unknown) => String(v ?? '').slice(0, 200)
+ipcMain.handle('skills:list', () => skillStore().list())
+ipcMain.handle('skills:add', (_e, url: unknown) => skillStore().add(String(url ?? '')))
+ipcMain.handle('skills:update', (_e, id: unknown) => skillStore().update(skillId(id)))
+ipcMain.handle('skills:toggle', (_e, id: unknown, enabled: unknown) => skillStore().setEnabled(skillId(id), enabled === true))
+ipcMain.handle('skills:remove', (_e, id: unknown) => skillStore().remove(skillId(id)))
 
 // Folder finder for Team mode: scan the home folder for projects, match them to what the user typed, and open the one they click.
 let scanCache: { at: number; hits: ProjectHit[] } | null = null
@@ -628,6 +639,7 @@ const teamSvc = (): TeamService =>
       win?.webContents.send('team:event', ev)
       teamNotify(ev)
     },
+    skills: () => skillStore().catalog(),
     projectNotes: (p) => {
       const b = briefStore().get(p)
       return { brief: [b.name, b.description].filter(Boolean).join(': '), rules: b.rules }

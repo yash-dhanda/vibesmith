@@ -94,6 +94,11 @@ describe('argument builders', () => {
     const rw = claudeArgs({ cwd: '/p', prompt: 'x', write: true, resume: 'abc', mcpConfig: '/m.json', model: 'sonnet', effort: 'high' })
     expect(rw).toEqual(expect.arrayContaining(['acceptEdits', '--resume', 'abc', '--mcp-config', '/m.json', '--model', 'sonnet', '--effort', 'high', '--allowedTools']))
   })
+  it('claude: may read the skill libraries through --add-dir, and gets no extra folders otherwise', () => {
+    const a = claudeArgs({ cwd: '/p', prompt: 'x', write: true, addDirs: ['/skills/a__b'] })
+    expect(a.slice(a.indexOf('--add-dir'), a.indexOf('--add-dir') + 2)).toEqual(['--add-dir', '/skills/a__b'])
+    expect(claudeArgs({ cwd: '/p', prompt: 'x', write: true })).not.toContain('--add-dir')
+  })
   it('codex: passes the chosen reasoning effort, and nothing when none is chosen', () => {
     expect(codexArgs({ cwd: '/p', prompt: 'x', write: true, model: 'm', effort: 'xhigh' })).toContain('model_reasoning_effort="xhigh"')
     expect(codexArgs({ cwd: '/p', prompt: 'x', write: true, model: 'm' }).join(' ')).not.toContain('model_reasoning_effort')

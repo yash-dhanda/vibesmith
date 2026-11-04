@@ -67,7 +67,7 @@ export async function ensureRepo(project: string) {
 
 const ACTIVE = ['planning', 'running', 'paused', 'verifying', 'awaiting_approval', 'interrupted']
 
-export function createTeamService(o: { userData: string; mcpScript: string; emit: (ev: RunEvent) => void; projectNotes: (project: string) => { brief: string; rules: string } }) {
+export function createTeamService(o: { userData: string; mcpScript: string; emit: (ev: RunEvent) => void; projectNotes: (project: string) => { brief: string; rules: string }; skills?: () => { block: string; dirs: string[] } }) {
   const teamDir = join(o.userData, 'team')
   let healthAt = 0
   let healthCache: Health[] = []
@@ -91,6 +91,7 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
     },
     emit: o.emit,
     projectNotes: o.projectNotes,
+    skills: o.skills,
     mcpScript: o.mcpScript,
   })
   orch.recoverAll()

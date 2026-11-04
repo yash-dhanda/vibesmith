@@ -23,6 +23,7 @@ export type AgentCall = {
   codexMode?: 'exec' | 'app-server'
   onApproval?: (a: ApprovalAsk) => Promise<boolean> // Codex app-server asks before leaving its sandbox
   onHandle?: (h: ServerHandle | null) => void // lets the orchestrator steer a running agent
+  addDirs?: string[] // extra folders the agent may read (the skill libraries)
 }
 export type AgentRunner = (agent: AgentName, o: AgentCall) => Promise<RunResult>
 
@@ -36,6 +37,7 @@ export type Deps = {
   emit: (ev: RunEvent) => void
   projectNotes?: (project: string) => { brief: string; rules: string }
   limits?: () => Promise<Partial<Record<AgentName, { primaryPct: number; primaryResetsAt?: number; secondaryPct?: number; secondaryResetsAt?: number }>>> // plan allowance used, when an agent can say
+  skills?: () => { block: string; dirs: string[] } // the skill libraries the user added: what agents are told, and folders Claude may read
   mcpScript?: string // path to the bundled team-mcp.js; without it agents run without the mailbox
   node?: string
   sleep?: (ms: number) => Promise<void>
@@ -607,6 +609,8 @@ export class TeamOrchestrator {
   // The one place an agent is run: wires events, usage, session handles and the budget.
   private async agentRun(run: Run, task: Task, agent: AgentName, phase: TaskPhase | 'plan' | 'final-review', prompt: string, write: boolean, cwd: string, resume?: string): Promise<RunResult> {
     const live = this.liveOf(run)
+    const skills = ['work', 'fix', 'plan'].includes(phase) && agent !== 'local' ? this.d.skills?.() : undefined // the local model cannot read outside its task folder
+    if (skills?.block) prompt = `${skills.block}\n\n${prompt}`
     if (agent === 'local') prompt = forLocal(prompt)
     this.out(run, { type: 'agent', runId: run.id, taskId: task.id, phase, ev: { type: 'prompt', agent, text: prompt.slice(0, 16_000) } })
     const stopWatching = write ? this.watch(run, task, cwd, task.base ?? run.baseCommit) : null
@@ -615,6 +619,7 @@ export class TeamOrchestrator {
       model: agent === 'codex' ? run.config.codexModel : agent === 'local' ? run.config.localModel : run.config.claudeModel,
       effort: agent === 'claude' ? run.config.claudeEffort : agent === 'codex' ? run.config.codexEffort : undefined,
       codexMode: run.config.codexMode,
+      addDirs: skills?.dirs,
       onEvent: (ev) => {
         if (ev.type === 'limits') {
           const { agent: _a, type: _t, ...rest } = ev
@@ -842,7 +847,8 @@ export class TeamOrchestrator {
     if (!task.changed.length) return this.complete(run, task, `${task.title}: finished without changing any file.`)
 
     // ---- review gate: the other agent reads the diff and says pass or fail; fail goes back to the author
-    if (run.config.review === 'cross') {
+    // A local model is often wrong, so its work is always reviewed by another agent, whatever the review setting says.
+    if (run.config.review === 'cross' || task.agent === 'local') {
       const reviewer = strongest(live.available, task.agent)
       for (let round = 1; ; round++) {
         task.phase = 'review'
@@ -979,7 +985,8 @@ export class TeamOrchestrator {
       const notes: string[] = []
       const total = await changedSince(wt, run.baseCommit).catch(() => [])
       const parts = run.tasks.filter((t) => t.status === 'done' && t.kind === 'build').length
-      if (run.config.finalReview && (run.config.finalReview === true || parts >= 3) && run.config.review === 'cross' && total.length) {
+      const localWork = run.tasks.some((t) => t.agent === 'local' && t.status === 'done' && t.changed?.length) // always checked as a whole, too
+      if (((run.config.finalReview && (run.config.finalReview === true || parts >= 3) && run.config.review === 'cross') || localWork) && total.length) {
         const reviewer = strongest(live.available)
         const t = this.virtualTask(run, 'final', 'Final review', reviewer)
         const rr = await this.agentRun(run, t, reviewer, 'final-review', finalReviewPrompt(run, await diffText(wt, run.baseCommit)), false, wt)

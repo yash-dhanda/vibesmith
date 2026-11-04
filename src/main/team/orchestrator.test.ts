@@ -604,6 +604,14 @@ describe('mailbox operations agents call', () => {
     await x.orch.cancel(run.id)
   })
 
+  it('always has another agent check the local model\'s work, even with review turned off', async () => {
+    const x = h({ plan: { tasks: [T('a', { agent: 'local' })] } }, { available: ['claude', 'local'] })
+    const run = await x.orch.start(x.proj, 'local check', { review: 'off', finalReview: false })
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect(r.tasks[0].reviews.length).toBeGreaterThan(0)
+    expect(r.tasks[0].reviews[0].by).toBe('claude')
+  })
+
   it('lets an agent ask the user a question with options, even when permission prompts are off, and hands the answer back', async () => {
     const x = h({ delayMs: 600, plan: { tasks: [T('a', { agent: 'claude' })] } })
     const run = await x.orch.start(x.proj, 'ask', { bypassPermissions: true })
