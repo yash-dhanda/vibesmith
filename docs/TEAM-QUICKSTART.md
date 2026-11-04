@@ -12,7 +12,7 @@ Claude Code, Codex and a local Ollama model working on one goal, inside Forge, o
 ## A run
 Describe the goal -> a planner splits it into tasks -> tasks run in their own git branches, in parallel where they can -> the other agent reviews each one -> everything merges on a team branch -> your test command runs -> you read the report and press **Apply**. Nothing touches your folder before Apply, and **Undo** takes it back out.
 
-Watch it live: each agent's text and code as it is typed, the files changing, what each agent was told, and the shared notes. Use **Tell the team** to steer. Pause, resume or cancel any time. Approval cards block an agent until you answer (anything destructive, deploy-like, secret-touching or outside the folder).
+Watch it live: each agent's text and code as it is typed, the files changing, what each agent was told, and the shared notes. Use the message box at the bottom to steer; after the run finishes, the same box starts more work in the same run. Pause, resume or cancel any time. Approval cards block an agent until you answer (anything destructive, deploy-like, secret-touching or outside the folder).
 
 ## Plan usage
 - Everything runs on your plan allowance. Forge reads your ChatGPT allowance (free) and leaves Codex out at 80% of the 5-hour or weekly window; a Claude or Codex plan limit pauses the run, and you resume when it resets.

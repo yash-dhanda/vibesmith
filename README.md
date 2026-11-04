@@ -1,18 +1,51 @@
 # Forge
 
-A desktop app that builds software for you. Describe what you want in a chat; an AI agent creates and edits the files on your computer, runs commands and tests, and asks you for what it still needs. It works with local models through Ollama or with your own API keys (Anthropic, OpenAI, OpenRouter).
+A desktop app that builds software for you. Describe what you want in a chat; an AI agent creates and edits the files on your computer, runs commands and tests, and asks you for what it still needs. It works with local models through Ollama, with your own API keys (Anthropic, OpenAI, OpenRouter), or as a **Crew** of Claude Code, Codex and a local model on your existing subscriptions.
 
 The editor, file tree and terminal exist but stay hidden behind the **Workspace** button. The app opens as a chat.
 
-## The build studio
 
-Your conversation sits beside a living build brief: the goal, the agent’s plan, your next-message priorities, and the files taking shape. Ctrl K finds actions, chats and models. Changes have per-file Undo; the optional Workspace keeps code and the terminal a click away.
+## Two ways to work
 
-![Forge build studio in dark mode](docs/screenshots/after-project-dark.png)
+**Solo** is one agent in a chat. **Crew** is Claude Code, OpenAI Codex and a local Ollama model working on the same goal as a team, on your own subscriptions (no API keys, no per-token billing).
 
-![Forge’s light theme](docs/screenshots/after-empty-light.png)
+![Forge Solo chat](docs/screenshots/forge-solo-dark.png)
 
-[Design principles and verification](docs/DESIGN.md) · [Before/after screenshots](docs/screenshots/) · [Backend UI requests](docs/UI-REQUESTS.md)
+### Crew
+
+Describe a goal. A planner splits it into tasks, the tasks run in their own git branches (in parallel where they can), a different agent reviews each one, everything merges on a team branch, your project's checks run, and you press **Apply**. Nothing touches your folder before that, and Undo takes it back out.
+
+![Crew starting a run](docs/screenshots/forge-crew-start-dark.png)
+
+- **Watch it live.** One shared editor shows every agent typing its code side by side, with the files that are changing and a feed of what the agents tell each other.
+- **A chat that never ends.** The message box at the bottom of a run is always there. While the crew works your message steers it; when the result is waiting or already applied, the same message reopens the same run with a new task. You keep working in one place.
+- **Agents ask you questions** inside the app, with choices, instead of guessing.
+- **Local model is always checked.** Anything the local model writes is reviewed by Claude or Codex before it counts.
+- **Web research.** Agents can search the web and read pages.
+- **Attachments.** Paste or drop photos, files and videos (a video becomes frames the agents can read), also in Solo chats.
+- **Skills.** Paste a GitHub repo link and Forge clones it; Claude and Codex use the `SKILL.md` files inside. There is a hand-checked catalog of 50 UI/UX, motion and engineering skill repos to add with one click.
+- **Project history.** Every run appends to a history file in the project so any agent knows what happened so far.
+- **Folder finder.** Describe the job and Forge scans your computer for the folder it belongs in.
+- **Models and effort visible.** The model and reasoning effort of Claude and Codex are shown and set per run. No budget or allowance limit unless you set one.
+- **Background.** Crew notes and check results stay tucked in a collapsed Background row.
+
+![A Crew run in progress](docs/screenshots/forge-crew-run-dark.png)
+
+![The same run in the light theme](docs/screenshots/forge-crew-run-light.png)
+
+### Skills and usage
+
+![Skills page](docs/screenshots/forge-settings-skills-dark.png)
+
+Token use is counted per day for Claude, Codex and Local, with an all-time total and a per-model table (Settings > Usage & spend).
+
+### Use it from your phone
+
+Forge can serve itself to your phone, so the agents keep running on your computer while you steer from anywhere. Turn on **Settings > Remote access**, install Tailscale on both devices, scan the one-time pairing code, then Add to Home Screen in Safari. The pairing does not expire and nothing is exposed to the internet. The phone page is its own layout: bottom tabs, swipe-in chat list, a light-weight live view and a reconnecting indicator.
+
+![Remote access settings](docs/screenshots/forge-settings-remote-dark.png)
+
+[Design principles and verification](docs/DESIGN.md) · [Crew quick start](docs/TEAM-QUICKSTART.md) · [Crew design](docs/TEAM.md) · [Older before/after screenshots](docs/screenshots/)
 
 ## Download
 
@@ -46,7 +79,7 @@ For local models install [Ollama](https://ollama.com) and pull one, for example 
 - **Checks its own work.** After editing it runs your project's check (`npm test` is detected) and feeds failures back; without one it reviews its own work once.
 - **Background work.** Chats keep running while you look at another one. You get a notification when one finishes or needs approval.
 - **Long jobs.** Steps and time per run are configurable (up to 200 steps and 2 hours). Old tool output is shrunk automatically when the model's memory fills.
-- **Usage.** Tokens read and written, tokens per second, memory use, and a lifetime total with a per-model breakdown (Settings > Usage).
+- **Usage.** Tokens read and written, tokens per second, memory use, a lifetime total, a per-model breakdown and today's tokens per agent for Claude, Codex and Local (Settings > Usage).
 
 ## Safety
 
