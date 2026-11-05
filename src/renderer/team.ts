@@ -466,7 +466,7 @@ function renderRunHeader() {
   else modelsPanel = null
   const controls = h('div', 'team-controls')
   controls.append(historyButton(run!.id))
-  if (typeof window.forge.teamSetModels === 'function' && !replay && !['done', 'cancelled'].includes(run!.status)) controls.append(actionButton('Models', () => { modelsOpen = !modelsOpen; renderRun() }, modelsOpen ? 'active' : '', 'cpu'))
+  if (typeof window.forge.teamSetModels === 'function' && !replay) controls.append(actionButton('Models', () => { modelsOpen = !modelsOpen; renderRun() }, modelsOpen ? 'active' : '', 'cpu'))
   if (typeof window.forge.teamRunApp === 'function' && run!.tasks.some(t => t.status === 'done')) controls.append(actionButton('Run website', () => void call(async () => { toast('Starting the website…', 2500); const r = await window.forge.teamRunApp(run!.id); toast(r.message, 12000); await refreshRun() }), '', 'globe'))
   const planPending = run!.approvals.some(a => a.kind === 'plan' && a.status === 'pending')
   if (planPending) { /* the plan card starts the team */ }
