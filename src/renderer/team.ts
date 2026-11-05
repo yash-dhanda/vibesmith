@@ -1,5 +1,5 @@
 import { keyCard } from './keyCard'
-import { splitKeyAnswer } from '../main/keyAnswer'
+import { keyLines, splitKeyAnswer } from '../main/keyAnswer'
 import type { Run, RunEvent, Task, TeamConfig } from '../main/team/types'
 import type { RunSummary, TeamMemory } from '../main/team/service'
 import { md, folderName, formatTokens, timeAgo } from './format'
@@ -622,8 +622,13 @@ function renderBoard() {
   const section = h('section', 'team-board-section'); section.append(sectionHead(N.plan, run!.plan.summary || `${run!.tasks.length} tasks`))
   const board = h('div', 'team-board')
   if (!run!.tasks.length) { if (run!.status === 'planning') for (let i = 0; i < 3; i++) board.append(h('div', 'task-card task-skeleton skel')); else board.append(h('p', 'team-empty', 'No tasks yet.')) }
-  for (const [index, task] of run!.tasks.entries()) board.append(renderTask(task, index))
-  section.append(board); return section
+  // Tasks the crew added by itself (fixing failed checks or review problems, writing tests) stay in a closed fold, so the board shows the plan and the user's own messages.
+  const AUTO = /^(Fix failing checks|Fix problems from|Write or extend tests)/
+  const auto = h('div', 'team-board')
+  for (const [index, task] of run!.tasks.entries()) (AUTO.test(task.title) ? auto : board).append(renderTask(task, index))
+  section.append(board)
+  if (auto.childElementCount) section.append(fold(`Added by the crew: checks, fixes and tests (${auto.childElementCount})`, autoOpen, o => { autoOpen = o }, auto))
+  return section
 }
 function renderTask(task: Task, index: number) {
   const card = h('article', `task-card ${task.status}`); card.dataset.task = task.id; enter(card, `${run!.id}:${task.id}`, index)
@@ -657,10 +662,37 @@ function renderBackground() {
   d.ontoggle = () => { backgroundOpen = d.open }
   return d
 }
+// The run page shows what matters: the answer (logins, URLs, commands the user asked for) and what the user sent. Live coding and the team's own
+// chatter, background checks and changes stay one click away, closed by default.
+let liveOpen = false, activityOpen = false, autoOpen = false
+const AGENT_BODY = (m: { body: string }) => m.body.replace(/\s*Attached files \(open and look at them\):[\s\S]*$/, '').replace(/\s+/g, ' ').trim()
+function liveKeys(): string[] {
+  return keyLines([...run!.tasks.flatMap(t => [t.summary ?? '', t.handoff ?? '']), ...run!.messages.filter(m => m.from !== 'user').map(m => m.body)].join('\n'))
+}
+// What the user sent, each with the first reply an agent gave after it.
+function renderYours(): HTMLElement | null {
+  const mine = run!.messages.filter(m => m.from === 'user').slice(-8)
+  if (!mine.length) return null
+  const section = h('section', 'team-yours'); section.append(h('div', 'key-title', 'What you sent'))
+  for (const m of mine) {
+    const item = h('article', 'yours-item'); item.append(h('p', 'yours-text', AGENT_BODY(m).slice(0, 400)))
+    const reply = run!.messages.find(r => r.at > m.at && r.from !== 'user' && r.from !== 'orchestrator' && (r.kind === 'handoff' || r.kind === 'finding'))
+    if (reply) { const note = h('p', 'yours-reply', `${AGENT_NAME[reply.from as 'claude']}: ${oneLine(reply.body, 220)}`); item.append(note) }
+    section.append(item)
+  }
+  return section
+}
+function fold(title: string, open: boolean, set: (o: boolean) => void, ...kids: HTMLElement[]) {
+  const d = h('details', 'team-fold') as HTMLDetailsElement; d.open = open
+  d.append(h('summary', '', title), ...kids); d.ontoggle = () => set(d.open)
+  return d
+}
 function renderStory() {
   const area = h('section', 'team-story')
+  area.append(keyCard(liveKeys()))
+  const yours = renderYours(); if (yours) area.append(yours)
   const side = h('aside', 'team-side-story'); side.append(renderLiveFiles(), renderFeed(), renderBackground(), renderDiffPanel())
-  area.append(renderLanes(), side); return area
+  area.append(fold('Live work', liveOpen, o => { liveOpen = o }, renderLanes()), fold('Team activity and changes', activityOpen, o => { activityOpen = o }, side)); return area
 }
 const usedAgents = () => (['claude', 'codex', 'local'] as const).filter(a => run!.tasks.some(t => t.agent === a) || log.some(x => x.ev.type === 'agent' && x.ev.ev.agent === a))
 function makeDetailsToggle() {

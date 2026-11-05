@@ -6,6 +6,7 @@ export function keyCard(lines: string[]): HTMLElement {
   const card = h('section', 'key-card')
   card.setAttribute('aria-label', 'Key answer')
   card.append(h('div', 'key-title', 'Key answer'))
+  if (!lines.length) card.append(h('p', 'key-empty', 'Nothing yet. When you ask for a login, a URL or a command, it shows here.'))
   for (const line of lines) {
     const row = h('div', 'key-row')
     const copy = h('button', 'icon-btn xs') as HTMLButtonElement

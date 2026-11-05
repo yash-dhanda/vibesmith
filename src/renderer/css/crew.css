@@ -261,7 +261,7 @@
 .task-actions .btn { height: 26px; padding: 0 10px; font-size: 12px; }
 .task-skeleton { height: 82px; }
 /* the story: the live editor gets the height; the side column keeps the context */
-.team-story { display: grid; grid-template-columns: minmax(0, 1fr) clamp(290px, 27%, 360px); gap: 12px; align-items: start; }
+.team-story { display: flex; flex-direction: column; gap: 10px; max-width: 860px; margin-inline: auto; }
 .team-lanes { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; min-width: 0; }
 .team-lanes.single { grid-template-columns: minmax(0, 1fr); }
 .agent-lane { --agent: var(--a-claude); min-width: 0; border: 1px solid var(--hair); border-radius: var(--r-md); overflow: hidden; animation: rise var(--t2) var(--ease) both; }
