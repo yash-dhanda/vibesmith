@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentName } from './events'
 import { ProjectMemoryStore } from './memory'
-import { TeamOrchestrator, type AgentCall, type AgentRunner, type Deps } from './orchestrator'
+import { asksForLocal, TeamOrchestrator, type AgentCall, type AgentRunner, type Deps } from './orchestrator'
 import type { RunResult } from './process'
 import { TeamStore } from './store'
 import type { Run, RunEvent } from './types'
@@ -1654,5 +1654,12 @@ describe('changing models during a run', () => {
     expect(r.config.claudeEffort).not.toBe('bogus')
     expect(x.orch.setModels('nope', { localModel: 'x' })).toBeNull()
     await until(x.orch, run.id, (q) => q.status === 'awaiting_approval')
+  })
+})
+
+describe('asking for the local model in words', () => {
+  it('recognises "let local fix this" and friends, and leaves other uses of the word alone', () => {
+    for (const t of ['this is happening also let local fix this', 'use the local model for it', 'mainly local please', 'do it with local AI', 'let Local fix it, then claude review']) expect(asksForLocal(t)).toBe(true)
+    for (const t of ['fix the local storage bug', 'start the local server', 'the localhost page is blank', 'use localStorage for the theme', 'run it locally']) expect(asksForLocal(t)).toBe(false)
   })
 })

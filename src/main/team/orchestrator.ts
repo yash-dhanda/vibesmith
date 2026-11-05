@@ -58,6 +58,9 @@ export type Deps = {
   sleep?: (ms: number) => Promise<void>
 }
 
+// The user asked for the local model by name in a message sent to everyone.
+export const asksForLocal = (text: string) => /\b(?:let|use|using|ask|by|mainly|mostly|only|with|give (?:it )?to|make)\s+(?:the\s+)?local(?:\s+(?:ai|model|agent|llm))?\b/i.test(text)
+
 class Mutex {
   private tail: Promise<unknown> = Promise.resolve()
   run<T>(fn: () => Promise<T>): Promise<T> {
@@ -405,7 +408,9 @@ export class TeamOrchestrator {
   }
 
   private messageTask(run: Run, live: Live, body: string, to: AgentName | 'all') {
-    const agent = to !== 'all' && live.available.includes(to) ? to : strongest(this.pool(live))
+    // "let local fix this", "use the local model": the words count as much as the recipient box when it says Everyone.
+    const named: AgentName | null = to === 'all' && asksForLocal(body) && live.available.includes('local') ? 'local' : null
+    const agent = named ?? (to !== 'all' && live.available.includes(to) ? to : strongest(this.pool(live)))
     return this.addTask(run, { title: body.replace(/\s+/g, ' ').slice(0, 70), goal: body, agent, kind: 'build', proposedBy: 'user' })
   }
 
