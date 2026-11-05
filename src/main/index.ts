@@ -566,14 +566,14 @@ async function send(e: IpcMainInvokeEvent, p: SendArgs) {
 
   if (!s) {
     const chat = store.create(root, p.chatId)
-    chat.messages.push({ role: 'system', content: systemPromptFor(briefOf(root)) })
+    chat.messages.push({ role: 'system', content: systemPromptFor({ ...briefOf(root), skills: p.model.startsWith('ollama:') ? skillStore().inline() : '' }) })
     s = { chat, tools: new ToolBox(root), run: null, dirty: false, saveTimer: null, plan: null, steer: [] }
     sessions.set(chat.id, s)
   }
   const session = s
   const { chat, tools } = session
   // The project's description and rules can change between messages: the model always gets the current ones.
-  if (chat.messages[0]?.role === 'system') chat.messages[0] = { role: 'system', content: systemPromptFor(briefOf(root)) }
+  if (chat.messages[0]?.role === 'system') chat.messages[0] = { role: 'system', content: systemPromptFor({ ...briefOf(root), skills: p.model.startsWith('ollama:') ? skillStore().inline() : '' }) }
   if (!chat.transcript.length) chat.title = titleFrom(p.text)
   const info = found.map(({ id, name, kind, size }) => ({ id, name, kind, size }))
   chat.transcript.push({ type: 'user', text: p.text, ...(info.length ? { attachments: info } : {}) })
@@ -840,6 +840,7 @@ const teamSvc = (): TeamService =>
       teamNotify(ev)
     },
     skills: () => skillStore().catalog(),
+    localSkills: () => skillStore().inline(),
     projectNotes: (p) => {
       const b = briefOf(p)
       return { brief: [b.name, b.description].filter(Boolean).join(': '), rules: b.rules }

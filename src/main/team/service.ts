@@ -87,7 +87,7 @@ export async function ensureRepo(project: string) {
 
 const ACTIVE = ['planning', 'running', 'paused', 'verifying', 'awaiting_approval', 'interrupted']
 
-export function createTeamService(o: { userData: string; mcpScript: string; emit: (ev: RunEvent) => void; projectNotes: (project: string) => { brief: string; rules: string }; recordUsage?: (agent: AgentName, u: { input: number; output: number }) => void; visualCapture?: Capture; skills?: () => { block: string; dirs: string[] }; notify?: (kind: 'finished' | 'attention') => void }) {
+export function createTeamService(o: { userData: string; mcpScript: string; emit: (ev: RunEvent) => void; projectNotes: (project: string) => { brief: string; rules: string }; recordUsage?: (agent: AgentName, u: { input: number; output: number }) => void; visualCapture?: Capture; skills?: () => { block: string; dirs: string[] }; localSkills?: () => string; notify?: (kind: 'finished' | 'attention') => void }) {
   const teamDir = join(o.userData, 'team')
   let healthAt = 0
   let healthCache: Health[] = []
@@ -125,6 +125,7 @@ export function createTeamService(o: { userData: string; mcpScript: string; emit
     projectNotes: o.projectNotes,
     recordUsage: o.recordUsage,
     skills: o.skills,
+    localSkills: o.localSkills,
     mcpScript: o.mcpScript,
   })
   orch.recoverAll()

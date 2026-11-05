@@ -1,0 +1,13 @@
+id,date,description,amount
+B1,2026-03-01,Salary ACME,"₹50,000.00"
+B2,02/03/2026,"Rent, March",(12000.00)
+B3,2026-03-03,Coffee,-4.50
+
+B4,2026-03-03,coffee ,-4.50
+B5,05/03/2026,Groceries,"-1,234.56"
+B6,2026-03-10,Refund,$15
+B7,2026-03-10,Refund,15.00
+B8,2026-03-12,Transfer,100.10
+B9,2026-03-12,Transfer out,-0.1
+B10,2026-03-20,"Invoice ""Q1"", paid",300
+B11,31/03/2026,Late fee,-25

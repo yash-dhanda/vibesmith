@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { setRoot } from '../project'
-import { looksUnfinished, needsApproval, repeatNudge, requestOf, runAgent, type AgentEvent, type Mode, type RunOpts } from './loop'
+import { isCodePath, isTestPath, isTransient, withRetry, looksUnfinished, needsApproval, repeatNudge, requestOf, runAgent, type AgentEvent, type Mode, type RunOpts } from './loop'
 import type { Message, Provider, ToolCall } from './provider'
 import { emptyPlan } from './plan'
 import { ToolBox } from './tools'
@@ -445,5 +445,53 @@ describe('systemPromptFor', () => {
     expect(p).toContain('About this project ("Shop"), in the user\'s words: a flower shop site')
     expect(p).toContain('Plain HTML only.')
     expect(p.indexOf('Plain HTML only.')).toBeGreaterThan(p.indexOf('flower shop'))
+  })
+})
+
+describe('test gate', () => {
+  const makeCode: ToolCall[] = [{ name: 'create_file', args: { path: 'sum.js', content: 'module.exports = (a, b) => a + b\n' } }]
+  const makeTest: ToolCall[] = [{ name: 'create_file', args: { path: 'test.js', content: 'require("./sum")\n' } }]
+  const asked = (messages: Message[]) => messages.filter((m) => m.role === 'user' && m.content.includes('wrote no test')).length
+
+  it('new code with no test and no project check is sent back to write one, once', async () => {
+    const { messages } = await run([makeCode], 'full-auto', true)
+    expect(asked(messages)).toBe(1)
+  })
+  it('no push-back when a test file was written, when the project has its own check, or when only text was edited', async () => {
+    expect(asked((await run([makeCode, makeTest], 'full-auto', true)).messages)).toBe(0)
+    expect(asked((await run([makeCode], 'full-auto', true, undefined, async () => ({ command: 'npm test', ok: true, output: '' }))).messages)).toBe(0)
+    expect(asked((await run([edit], 'full-auto', true)).messages)).toBe(0)
+  })
+  it('tells test files from source files', () => {
+    expect(['test.js', 'src/a.test.ts', 'tests/x.py', 'spec/a.rb', 'lib/foo_test.go'].map(isTestPath)).toEqual([true, true, true, true, true])
+    expect(['sum.js', 'src/reconcile.ts', 'main.py', 'latest.js'].map(isTestPath)).toEqual([false, false, false, false])
+    expect(['sum.js', 'main.py', 'a.test.js', 'README.md'].map(isCodePath)).toEqual([true, true, false, false])
+  })
+})
+
+describe('repeat detector', () => {
+  it('does not call a run stuck when the files changed between identical commands', async () => {
+    const cmd: ToolCall[] = [{ name: 'run_command', args: { command: 'echo same' } }]
+    const fix = (n: number): ToolCall[] => [{ name: 'create_file', args: { path: `f${n}.txt`, content: 'x' } }]
+    const { events } = await run([cmd, cmd, fix(1), cmd, fix(2), cmd], 'full-auto', true)
+    expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'finished' })
+  })
+  it('still stops when nothing changes', async () => {
+    const cmd: ToolCall[] = [{ name: 'run_command', args: { command: 'echo same' } }]
+    const { events } = await run([cmd, cmd, cmd, cmd], 'full-auto', true)
+    expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'stuck' })
+  })
+})
+
+describe('connection retry', () => {
+  it('retries a dropped connection, but not an ordinary error', async () => {
+    let n = 0
+    const notes: string[] = []
+    const flaky = async () => { if (++n < 3) throw new Error('terminated'); return 'ok' }
+    expect(await withRetry(flaky, (m) => notes.push(m), new AbortController().signal, 3, async () => {})).toBe('ok')
+    expect(notes).toHaveLength(2)
+    await expect(withRetry(async () => { throw new Error('Ollama 400: bad request') }, () => {}, new AbortController().signal, 3, async () => {})).rejects.toThrow('400')
+    expect(['terminated', 'fetch failed', 'read ECONNRESET'].every((m) => isTransient(new Error(m)))).toBe(true)
+    expect(isTransient(new Error('Cannot reach Ollama at x. Is "ollama serve" running?'))).toBe(false) // the server is not running: waiting will not help
   })
 })

@@ -42,6 +42,11 @@ export const SYSTEM_PROMPT = `You are Forge, a coding agent working inside the u
 - Do not invent file names or APIs: use list_dir, search and read_file to check.
 - Secrets such as API keys and tokens: the code reads them from process.env (or os.environ) with no fallback value. Whenever you write such code you MUST also call create_file for .env.example listing each variable with a placeholder value, then tell the user to copy it to .env. Never write a real secret into a file, and never ask the user to paste one into the chat.
 
+Evidence, not guesses:
+- Only state what a tool result showed. Never invent an expected value or a requirement: quote the test line or the sentence of the request it comes from.
+- A failing test or check is never "environment-specific" or "unrelated". Find the cause: read the code the test runs, then try other inputs, settings or time zones (for example TZ=America/Los_Angeles node test.js). If you cannot fix it, say plainly that it still fails.
+- Do not judge your own program by its own output. Work out by hand what a small example must give according to the request, and compare it with what the program printed: any difference is a bug. For new code, write a test whose expected values come from the request (not from the program), run it, and fix until it passes.
+
 Do exactly what the user asked, nothing more: no extra features, redesigns, refactors, renamed files or new dependencies they did not name. Use literal details they give (names, colours, pages) exactly as written.
 When the user asked you to hand them something (a login id and password you created, a URL or port, a command), end your reply with one line each starting "KEY: ", short and exact, for example "KEY: Admin login: id admin, password <the password>". No KEY line when nothing like that was asked.
 
@@ -50,8 +55,9 @@ Only when you built something new and still need a value you cannot decide yours
 
 // The system prompt for one project: the fixed rules, then what the user said about the project. Their words are data for
 // the model to follow, never able to loosen the fixed rules above (approvals and the folder jail are enforced in code anyway).
-export function systemPromptFor(about: { name?: string; description?: string; rules?: string } = {}): string {
+export function systemPromptFor(about: { name?: string; description?: string; rules?: string; skills?: string } = {}): string {
   const parts = [SYSTEM_PROMPT]
+  if (about.skills) parts.push(about.skills)
   if (about.description) parts.push(`About this project${about.name ? ` ("${about.name}")` : ''}, in the user's words: ${about.description}`)
   if (about.rules) parts.push(`The user's standing rules for this project (follow them unless they conflict with the rules above):\n"""\n${about.rules}\n"""`)
   return parts.join('\n\n')
@@ -92,6 +98,25 @@ export function looksUnfinished(text: string): boolean {
   const finished = /\b(done|complete[d]?|finished|successfully|all set)\b/i
   if (finished.test(t.slice(-300)) && !forward.test(t.slice(-200))) return false
   return forward.test(tail)
+}
+// A program built without any test is judged by its own output, which proves nothing. Source files and test files are told apart by name.
+const CODE_FILE = /\.(?:[cm]?[jt]sx?|py|go|rs|java|rb|php|cs|cpp|c)$/i
+const TEST_FILE = /(?:^|[\\/])(?:tests?|spec|__tests__)[\\/]|(?:^|[\\/._-])(?:test|spec)[\\/._-]|\.(?:test|spec)\./i
+export const isTestPath = (p: string) => TEST_FILE.test(p)
+export const isCodePath = (p: string) => CODE_FILE.test(p) && !TEST_FILE.test(p)
+const TEST_NUDGE = '[Forge: you built this but wrote no test, and a program cannot be judged by its own output. Before you finish: create a test file (for example test.js) with at least three cases, one per rule in the request, including an edge case. Work out each expected value BY HAND from the request, never by copying what the program printed. Run it and fix the program until every case passes. If a case you worked out by hand and the program disagree, check your arithmetic against the request, then fix whichever is wrong.]'
+// A model on another computer can drop a connection for a moment (a network switch, a sleeping link). Try again a couple of times instead of ending the run.
+export const isTransient = (e: unknown) => /terminated|ECONNRESET|EPIPE|ETIMEDOUT|socket|fetch failed|other side closed|UND_ERR/i.test((e as Error)?.message ?? '')
+export async function withRetry<T>(fn: () => Promise<T>, onRetry: (msg: string) => void, signal: AbortSignal, tries = 6, wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))): Promise<T> {
+  for (let i = 1; ; i++) {
+    try {
+      return await fn()
+    } catch (e) {
+      if (i >= tries || signal.aborted || !isTransient(e)) throw e
+      onRetry((e as Error).message.slice(0, 80))
+      await wait(Math.min(5000 * i, 20_000))
+    }
+  }
 }
 const TRUNCATED_NUDGE = '[Forge: your last reply was cut off at the output limit, so its tool call was not run. Do the work in smaller pieces: a shorter file, or several smaller edits.]'
 const UNFINISHED_NUDGE = '[Forge: you described what to do next but did not do it. Do not describe: act now with the tools, one step at a time.]'
@@ -142,6 +167,9 @@ export async function runAgent(o: RunOpts): Promise<void> {
   let nudges = 0
   let envChecked = false
   let editedSinceReview = false
+  let codeEdited = false // a source file was written or changed in this run
+  let testWritten = false // a test file was written in this run
+  let testNudged = false
   let holdNext = false
   let lastInput = 0 // real prompt size of the previous model call, when the provider reports it
   let trimNoted = false
@@ -174,7 +202,11 @@ export async function runAgent(o: RunOpts): Promise<void> {
       const reflecting = holdNext
       holdNext = false
       let held = ''
-      const turn = await o.provider.chat(onlyLatestImages(o.messages), toolDefs, (text) => (reflecting ? (held += text) : o.emit({ type: 'delta', text })), sig(), { explore })
+      const turn = await withRetry(
+        () => o.provider.chat(onlyLatestImages(o.messages), toolDefs, (text) => (reflecting ? (held += text) : o.emit({ type: 'delta', text })), sig(), { explore }),
+        (msg) => o.emit({ type: 'note', text: `The model connection dropped (${msg}). Trying again.` }),
+        o.signal,
+      )
       explore = false
       if (reflecting && (turn.toolCalls.length || held.trim().length > 60)) o.emit({ type: 'delta', text: held })
       const u = turn.usage ?? estimateUsage(o.messages, turn)
@@ -205,6 +237,13 @@ export async function runAgent(o: RunOpts): Promise<void> {
             editedSinceReview = true
             continue
           }
+        }
+        // New code with no test of its own and no project check: it has to be tested against values worked out from the request.
+        if (codeEdited && !testWritten && !o.verify && !testNudged) {
+          testNudged = true
+          o.messages.push({ role: 'user', content: TEST_NUDGE })
+          editedSinceReview = true
+          continue
         }
         // After changes, review the work against the original request before finishing (and again after later changes).
         if (editedSinceReview && reviews < (o.maxReviews ?? MAX_REVIEWS)) {
@@ -272,11 +311,15 @@ export async function runAgent(o: RunOpts): Promise<void> {
           // A shell command can write files too (cat > app.js): compare the project before and after, so the check and the review still run.
           const before = call.name === 'run_command' && !isAllowlisted(String((call.args as { command?: unknown } | null)?.command)) ? await treeStamp(o.tools.root) : null
           text = await o.tools.run(call.name, call.args, sig())
-          if (before !== null && (await treeStamp(o.tools.root)) !== before) (edited = true), (editedSinceReview = true)
+          if (before !== null && (await treeStamp(o.tools.root)) !== before) (edited = true), (editedSinceReview = true), repeats.clear()
         }
         const ok = !text.startsWith('ERROR:') && !text.startsWith('DENIED:')
         if (ok && (call.name === 'edit_file' || call.name === 'create_file')) {
           ;(edited = true), (editedSinceReview = true)
+          repeats.clear() // the project changed: the same command may now give a different answer, so earlier repeats prove nothing
+          const path = String((call.args as { path?: unknown } | null)?.path ?? '')
+          if (isTestPath(path)) testWritten = true
+          else if (isCodePath(path)) codeEdited = true
         }
 
         // The same call returning the same result three times means nothing is changing: the model is looping.

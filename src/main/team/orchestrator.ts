@@ -52,6 +52,7 @@ export type Deps = {
   stopApp?: (run: Run) => { ok: boolean; message: string }
   limits?: () => Promise<Partial<Record<AgentName, { primaryPct: number; primaryResetsAt?: number; secondaryPct?: number; secondaryResetsAt?: number }>>> // plan allowance used, when an agent can say
   skills?: () => { block: string; dirs: string[] } // the skill libraries the user added: what agents are told, and folders Claude may read
+  localSkills?: () => string // the debugging and verification skills as text: the local model cannot open the skill folders
   mcpScript?: string // path to the bundled team-mcp.js; without it agents run without the mailbox
   node?: string
   sleep?: (ms: number) => Promise<void>
@@ -880,7 +881,11 @@ export class TeamOrchestrator {
     const past = ['work', 'fix', 'plan'].includes(phase) ? historyBlock(run.project) : ''
     if (past) prompt = `${past}\n\n${prompt}`
     if (skills?.block) prompt = `${skills.block}\n\n${prompt}`
-    if (agent === 'local') prompt = forLocal(prompt)
+    if (agent === 'local') {
+      const text = ['work', 'fix'].includes(phase) ? this.d.localSkills?.() : ''
+      prompt = forLocal(prompt)
+      if (text) prompt = `${text}\n\n${prompt}`
+    }
     this.out(run, { type: 'agent', runId: run.id, taskId: task.id, phase, ev: { type: 'prompt', agent, text: prompt.slice(0, 16_000) } })
     const stopWatching = write ? this.watch(run, task, cwd, task.base ?? run.baseCommit) : null
     const call = async (resumeId: string | undefined) => this.d.runner(agent, {
