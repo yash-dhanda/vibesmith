@@ -506,6 +506,21 @@ export class TeamOrchestrator {
     if (run.status === 'paused') void this.resume(runId)
   }
 
+  // Change which models the agents use for the rest of the run. Work already running keeps its model; the next task each agent starts uses the new one.
+  setModels(runId: string, m: { claudeModel?: string; codexModel?: string; localModel?: string; claudeEffort?: string; codexEffort?: string }) {
+    const run = this.runOf(runId)
+    if (!run) return null
+    const name = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, 120) : undefined)
+    const c = run.config
+    if (m.claudeModel !== undefined) c.claudeModel = name(m.claudeModel) || undefined
+    if (m.codexModel !== undefined && name(m.codexModel)) c.codexModel = name(m.codexModel)!
+    if (m.localModel !== undefined) c.localModel = name(m.localModel) || undefined
+    if (['low', 'medium', 'high', 'xhigh', 'max'].includes(m.claudeEffort ?? '')) c.claudeEffort = m.claudeEffort as TeamConfig['claudeEffort']
+    if (['low', 'medium', 'high', 'xhigh'].includes(m.codexEffort ?? '')) c.codexEffort = m.codexEffort as TeamConfig['codexEffort']
+    this.save(run)
+    return { claudeModel: c.claudeModel, codexModel: c.codexModel, localModel: c.localModel, claudeEffort: c.claudeEffort, codexEffort: c.codexEffort }
+  }
+
   private raiseBudget(run: Run, factor = 1.5) {
     const b = run.config.budget
     for (const k of ['maxTokens', 'maxMinutes', 'maxAgentRuns', 'maxCostUsd'] as const) if (b[k]) b[k] = Math.ceil(b[k]! * factor * 100) / 100

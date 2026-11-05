@@ -416,6 +416,31 @@ function renderRun() {
 
 // The header: folder, the goal clamped to two lines (click or "Show all" to read it all), one line of status, time, tokens and
 // progress, and the run's actions on the right. The open/closed goal survives live redraws.
+// Models for the rest of the run: change which Claude, Codex and local model the agents use. The panel is built once per run and kept, so a live redraw never resets what is being picked.
+let modelsOpen = false
+let modelsPanel: HTMLElement | null = null
+let modelsFor = ''
+const CLAUDE_MODEL_CHOICES: [string, string][] = [['', 'Default'], ['claude-opus-5-5', 'Opus 5.5'], ['claude-sonnet-5-5', 'Sonnet 5.5'], ['claude-haiku-5-5', 'Haiku 5.5'], ['claude-fable-5-1', 'Fable 5.1']]
+function buildModelsPanel(): HTMLElement {
+  const c = run!.config
+  const box = h('section', 'team-models'); box.setAttribute('aria-label', 'Models for this run')
+  const fill = (el: HTMLSelectElement, values: string[], current: string) => { const all = [...new Set([...(current ? [current] : []), ...values])]; el.replaceChildren(...all.map(v => new Option(v, v))); el.value = current }
+  const claude = select(CLAUDE_MODEL_CHOICES.some(([v]) => v === (c.claudeModel ?? '')) ? CLAUDE_MODEL_CHOICES : [...CLAUDE_MODEL_CHOICES, [c.claudeModel!, c.claudeModel!]], c.claudeModel ?? '')
+  const claudeEffort = select([['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high'], ['max', 'Maximum']], c.claudeEffort ?? 'high')
+  const codex = select([], ''); fill(codex, [], c.codexModel ?? '')
+  const codexEffort = select([['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high']], c.codexEffort ?? 'high')
+  const local = select([], ''); fill(local, [], c.localModel ?? '')
+  window.forge.teamHealth().then((hl) => { fill(codex, hl.codexModels, codex.value); fill(local, hl.localModels, local.value || hl.localModels[0] || '') }).catch(() => {})
+  const grid = h('div', 'team-models-grid')
+  grid.append(field('Claude model', claude), field('Claude effort', claudeEffort), field('Codex model', codex), field('Codex effort', codexEffort), field(`${AGENT_NAME.local} model`, local, 'The Ollama model, on this computer or the one Forge is pointed at.'))
+  const apply = h('button', 'btn primary', 'Use these models') as HTMLButtonElement; apply.type = 'button'
+  apply.onclick = () => void teamAction(async () => { await window.forge.teamSetModels(run!.id, { claudeModel: claude.value, claudeEffort: claudeEffort.value, codexModel: codex.value, codexEffort: codexEffort.value, localModel: local.value }); modelsOpen = false; toast('Saved. Each agent uses the new model from the next task it starts.', 4500) })
+  const cancel = h('button', 'btn', 'Close') as HTMLButtonElement; cancel.type = 'button'; cancel.onclick = () => { modelsOpen = false; renderRun() }
+  const actions = h('div', 'team-models-actions'); actions.append(apply, cancel)
+  box.append(h('strong', '', 'Models for the rest of this run'), h('p', 'muted', 'Work that is already running keeps its model. The next task each agent starts uses what you pick here.'), grid, actions)
+  return box
+}
+
 let goalOpen = false
 function renderRunHeader() {
   const header = h('header', 'team-run-header')
@@ -436,8 +461,12 @@ function renderRunHeader() {
   const identity = h('div', 'team-run-identity'); identity.append(where, goalBox, meta)
   const sent = run!.config?.attachments ?? []
   if (sent.length) identity.append(sentChips(sent))
+  if (modelsFor !== run!.id) { modelsFor = run!.id; modelsPanel = null; modelsOpen = false }
+  if (modelsOpen) identity.append((modelsPanel ??= buildModelsPanel()))
+  else modelsPanel = null
   const controls = h('div', 'team-controls')
   controls.append(historyButton(run!.id))
+  if (typeof window.forge.teamSetModels === 'function' && !replay && !['done', 'cancelled'].includes(run!.status)) controls.append(actionButton('Models', () => { modelsOpen = !modelsOpen; renderRun() }, modelsOpen ? 'active' : '', 'cpu'))
   if (typeof window.forge.teamRunApp === 'function' && run!.tasks.some(t => t.status === 'done')) controls.append(actionButton('Run website', () => void call(async () => { toast('Starting the website…', 2500); const r = await window.forge.teamRunApp(run!.id); toast(r.message, 12000); await refreshRun() }), '', 'globe'))
   const planPending = run!.approvals.some(a => a.kind === 'plan' && a.status === 'pending')
   if (planPending) { /* the plan card starts the team */ }
@@ -451,6 +480,8 @@ function renderRunHeader() {
     if (agent === 'local' && !run!.usage.local?.runs) continue
     const u = run!.usage[agent] ?? { input: 0, output: 0, cached: 0, costUsd: 0, runs: 0 }, item = h('span', 'team-usage-item')
     item.append(h('span', `agent-orb ${agent}`), h('strong', '', AGENT_NAME[agent]), h('span', '', `${formatTokens(u.input + u.output)} tokens`)); item.title = `${AGENT_NAME[agent]}: ${(u.input + u.output).toLocaleString()} tokens`
+    const model = agent === 'claude' ? run!.config.claudeModel || 'default' : agent === 'codex' ? run!.config.codexModel : run!.config.localModel
+    if (model) { item.append(h('span', 'team-usage-model', model)); item.title += ` · model ${model}` }
     if (u.costUsd > 0) item.append(h('span', '', `~$${u.costUsd.toFixed(2)}`))
     const limits = run!.limits?.[agent]; if (limits) { const meter = h('span', 'limit-meter', `${Math.round(limits.primaryPct)}% plan`); meter.title = `ChatGPT plan: ${Math.round(limits.primaryPct)}% of this window used`; item.append(meter) }
     usage.append(item)

@@ -1642,3 +1642,17 @@ describe('landing part of a run', () => {
     expect(readFileSync(join(x.proj, 't2.txt'), 'utf8')).toBe('team version\n')
   })
 })
+
+describe('changing models during a run', () => {
+  it('the next agent call uses the new local and Claude model, bad values are ignored, and the choice is saved on the run', async () => {
+    const x = h({ plan: { tasks: [T('a', { agent: 'local' })] } }, { available: ['claude', 'codex', 'local'] })
+    const run = await x.orch.start(x.proj, 'models', { localModel: 'old:1b', claudeModel: 'claude-sonnet-5-5' })
+    expect(x.orch.setModels(run.id, { localModel: ' qwen3-coder:30b ', claudeModel: 'claude-opus-5-5', codexModel: '   ', claudeEffort: 'bogus', codexEffort: 'low' })).toMatchObject({ localModel: 'qwen3-coder:30b', claudeModel: 'claude-opus-5-5', codexEffort: 'low' })
+    const r = x.orch.get(run.id)!
+    expect(r.config.localModel).toBe('qwen3-coder:30b')
+    expect(r.config.codexModel).not.toBe('')
+    expect(r.config.claudeEffort).not.toBe('bogus')
+    expect(x.orch.setModels('nope', { localModel: 'x' })).toBeNull()
+    await until(x.orch, run.id, (q) => q.status === 'awaiting_approval')
+  })
+})

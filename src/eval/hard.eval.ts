@@ -91,7 +91,10 @@ const ordersCheck = (dir: string): string[] => {
   return bad
 }
 
+// HARD=custom HARD_SEED=/path/to/project HARD_GOAL="..." : a read-only copy of a real project (no secrets, no node_modules, no .git); no hidden check, you read the trace.
+const SKIP = /(^|\/)(\.env[^/]*|node_modules|\.next|\.git|\.forge|\.impeccable|\.secrets?[^/]*|[^/]*\.pem|[^/]*\.key)$/
 const PROBLEMS: Record<string, Problem> = {
+  custom: { seed: process.env.HARD_SEED ?? '', goal: process.env.HARD_GOAL ?? '', verify: '', check: () => [] },
   reconcile: { seed: 'seed-reconcile', goal: RECONCILE_GOAL, verify: 'node reconcile.js bank.csv ledger.csv', check: reconcileCheck },
   orders: { seed: 'seed-orders', goal: ORDERS_GOAL, verify: 'node test.js', check: ordersCheck },
 }
@@ -104,7 +107,7 @@ describe.skipIf(!process.env.HARD)('hard problem', () => {
     const provider = buildProvider(MODEL, () => null, { numCtx: 32_768 })
     line(`problem: ${which}   model: ${MODEL}   host: ${process.env.EVAL_HOST ?? 'local'}`)
     const dir = mkdtempSync(join(tmpdir(), 'forge-hard-p-'))
-    cpSync(join(HERE, p.seed), dir, { recursive: true })
+    cpSync(p.seed.startsWith('/') ? p.seed : join(HERE, p.seed), dir, { recursive: true, filter: (src) => !SKIP.test(src) })
     sh(dir, 'init', '-q')
     sh(dir, 'add', '-A')
     sh(dir, 'commit', '-q', '-m', 'init')

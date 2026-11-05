@@ -65,3 +65,8 @@
 .team-fold > summary { padding: 8px 12px; cursor: pointer; font-size: 12px; color: var(--muted); }
 .team-fold[open] > summary { border-bottom: 1px solid var(--hair); }
 .team-fold > .team-lanes, .team-fold > .team-side-story { padding: 8px; }
+.team-usage-item > .team-usage-model { color: var(--muted); max-width: 22ch; overflow: hidden; text-overflow: ellipsis; }
+.team-models { margin-top: 10px; padding: 12px 14px; border: 1px solid var(--hair); border-radius: 8px; background: var(--panel, transparent); }
+.team-models p { margin: 4px 0 10px; font-size: 12px; }
+.team-models-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px 14px; }
+.team-models-actions { display: flex; gap: 8px; margin-top: 12px; }

@@ -119,6 +119,7 @@ const api = {
   teamSteer: (id: string, text: string, to?: 'claude' | 'codex' | 'local' | 'all'): Promise<void> => ipcRenderer.invoke('team:steer', id, text, to),
   teamRetryTask: (id: string, taskId: string): Promise<void> => ipcRenderer.invoke('team:retry-task', id, taskId),
   teamSkipTask: (id: string, taskId: string): Promise<void> => ipcRenderer.invoke('team:skip-task', id, taskId),
+  teamSetModels: (id: string, models: { claudeModel?: string; codexModel?: string; localModel?: string; claudeEffort?: string; codexEffort?: string }): Promise<{ claudeModel?: string; codexModel: string; localModel?: string; claudeEffort?: string; codexEffort?: string } | null> => ipcRenderer.invoke('team:set-models', id, models),
   teamExtendBudget: (id: string): Promise<void> => ipcRenderer.invoke('team:extend-budget', id),
   teamLiveDiff: (id: string, taskId: string, path?: string): Promise<string> => ipcRenderer.invoke('team:live-diff', id, taskId, path),
   teamMemory: (id: string): Promise<TeamMemory | null> => ipcRenderer.invoke('team:memory', id),
