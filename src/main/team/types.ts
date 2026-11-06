@@ -13,6 +13,7 @@ export const emptyUsage = (): Usage => ({ input: 0, output: 0, cached: 0, costUs
 export type Task = {
   id: string
   promptId?: string // the main request this task answers (missing = the first)
+  stopRequested?: boolean // the user pressed Stop between two agent calls
   title: string
   goal: string
   acceptance: string[]

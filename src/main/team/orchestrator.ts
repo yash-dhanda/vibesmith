@@ -61,6 +61,9 @@ export type Deps = {
   sleep?: (ms: number) => Promise<void>
 }
 
+// Thrown out of a task when the user stopped it: the task ends as stopped, it is not retried and does not count as a failure.
+class TaskStopped extends Error {}
+
 // When does a plan that ran out come back? Claude's limit message ends with "|<unix seconds>"; Codex reports resetsAt in its limits. null = a limit with no known end.
 export function limitBackAt(message: string, limits: Run['limits'], now = Date.now()): number | null {
   const ts = Number(/\|(\d{9,11})\b/.exec(message)?.[1])
@@ -99,7 +102,7 @@ type Live = {
   finishing: boolean
   handles: Map<string, { agent: AgentName; h: ServerHandle }> // running agents that can be steered mid-turn
   planning: boolean // a planner is running: a second one must not start beside it
-  agentRuns: Map<string, { ac: AbortController; last: number; started: number; why?: 'stalled' | 'capped' }> // every agent call in flight, for the watchdog
+  agentRuns: Map<string, { ac: AbortController; last: number; started: number; why?: 'stalled' | 'capped' | 'user' }> // every agent call in flight, for the watchdog
   checkpointing: boolean // a mid-run check is running
   checkedAt: number // how many finished build tasks the last mid-run check covered
   replans: number // newer requests still being planned: the run is not finished while any is
@@ -558,6 +561,29 @@ export class TeamOrchestrator {
     for (const o of run.tasks) if (o.status === 'blocked' && o.deps.includes(t.id)) (o.status = 'queued'), (o.error = undefined)
     void this.resume2(run)
   }
+  // Stop one running task without stopping the run: its agent is cut off, the task ends as stopped and the rest carries on (like Skip for a queued task).
+  stopTask(runId: string, taskId: string): boolean {
+    const run = this.runOf(runId)
+    const t = run?.tasks.find((x) => x.id === taskId)
+    if (!run || !t) return false
+    if (t.status !== 'running') { this.skipTask(runId, taskId); return true }
+    const live = this.liveOf(run)
+    let hit = false
+    for (const [key, a] of live.agentRuns) if (key.startsWith(`${taskId}:`) && !a.why) (a.why = 'user'), a.ac.abort(), (hit = true)
+    if (!hit) { t.stopRequested = true; this.touch(run, t) } // between two agent calls: the task stops at the next one
+    return true
+  }
+
+  private stoppedTask(run: Run, t: Task) {
+    t.status = 'cancelled'
+    t.phase = null
+    t.error = 'Stopped by you.'
+    t.stopRequested = undefined
+    for (const o of run.tasks) if (o.status === 'blocked' && o.deps.includes(t.id)) (o.status = 'queued'), (o.error = undefined)
+    this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', taskId: t.id, body: `Stopped "${t.title}".` })
+    this.touch(run, t)
+  }
+
   skipTask(runId: string, taskId: string) {
     const run = this.runOf(runId)
     const t = run?.tasks.find((x) => x.id === taskId)
@@ -1042,9 +1068,10 @@ export class TeamOrchestrator {
     }
     this.out(run, { type: 'agent', runId: run.id, taskId: task.id, phase, ev: { type: 'prompt', agent, text: prompt.slice(0, 16_000) } })
     const stopWatching = write ? this.watch(run, task, cwd, task.base ?? run.baseCommit) : null
+    if (task.stopRequested) throw new TaskStopped('Stopped by you.')
     // this call's own stop switch: the run's stop still reaches it, and so does the watchdog
     const ac = new AbortController()
-    const state = { ac, last: Date.now(), started: Date.now(), why: undefined as 'stalled' | 'capped' | undefined }
+    const state = { ac, last: Date.now(), started: Date.now(), why: undefined as 'stalled' | 'capped' | 'user' | undefined }
     const runKey = `${task.id}:${phase}`
     const relay = () => ac.abort()
     live.ctl.signal.addEventListener('abort', relay, { once: true })
@@ -1095,7 +1122,8 @@ export class TeamOrchestrator {
         res({ allow: false, note: 'The agent that asked has finished.' })
       }
     }
-    if (state.why && !live.ctl.signal.aborted) {
+    const stoppedByUser = state.why === 'user' && !live.ctl.signal.aborted
+    if (state.why && state.why !== 'user' && !live.ctl.signal.aborted) {
       const mins = state.why === 'stalled' ? (run.config.stallMinutes ?? 15) : (run.config.taskMinutes ?? 60)
       res = { ...res, ok: false, error: { kind: state.why === 'stalled' ? 'stalled' : 'timeout', message: state.why === 'stalled' ? `${agent} gave no output for ${mins} minutes and was stopped` : `${agent} was still working after ${mins} minutes and was stopped` } }
       this.post(run, { from: 'orchestrator', to: 'all', kind: 'note', taskId: task.id, body: `${label(agent)} ${state.why === 'stalled' ? `went quiet for ${mins} minutes` : `ran past ${mins} minutes on this task`}: stopped it.` })
@@ -1110,6 +1138,7 @@ export class TeamOrchestrator {
     if (res.usage.input || res.usage.output) this.d.recordUsage?.(agent, res.usage)
     this.out(run, { type: 'usage', runId: run.id, usage: run.usage })
     this.save(run)
+    if (stoppedByUser) throw new TaskStopped('Stopped by you.') // after the tokens it used are counted
     return res
   }
 
@@ -1213,7 +1242,7 @@ export class TeamOrchestrator {
         if (to) (t.agent = to), this.touch(run, t)
       }
       if (perAgent(t.agent) >= (t.agent === 'local' ? 1 : run.config.maxParallelPerAgent)) continue // one local model at a time: two would fight over the GPU
-      const p = this.execute(run, t).catch((e) => this.failTask(run, t, (e as Error).message)).finally(() => (live.running.delete(t.id), this.pump(run)))
+      const p = this.execute(run, t).catch((e) => (e instanceof TaskStopped ? this.stoppedTask(run, t) : this.failTask(run, t, (e as Error).message))).finally(() => (live.running.delete(t.id), this.pump(run)))
       live.running.set(t.id, p)
     }
 

@@ -1797,3 +1797,26 @@ describe('long unattended runs: checkpoints', () => {
     expect(r.messages.some((m) => /Checkpoint after/.test(m.body))).toBe(false)
   })
 })
+
+describe('stopping one task', () => {
+  it('Stop on a running task cuts its agent off, ends it as stopped, and the rest of the run carries on', async () => {
+    const x = h({ plan: { tasks: [T('a'), T('b')] }, hang: (_a, kind, task) => kind === 'work' && task === 't1' }, { deps: { watchMs: 20 } })
+    const run = await x.orch.start(x.proj, 'stop one', { review: 'off', maxParallelPerAgent: 2 })
+    await until(x.orch, run.id, (q) => q.tasks[0]?.status === 'running' && x.calls.some((c) => c.kind === 'work' && c.task === 't1'))
+    expect(x.orch.stopTask(run.id, 't1')).toBe(true)
+    const r = await until(x.orch, run.id, (q) => q.status === 'awaiting_approval', 20000)
+    expect(r.tasks.find((t) => t.id === 't1')).toMatchObject({ status: 'cancelled', error: 'Stopped by you.' })
+    expect(r.tasks.find((t) => t.id === 't2')?.status).toBe('done')
+    expect(x.calls.filter((c) => c.kind === 'work' && c.task === 't1')).toHaveLength(1) // not retried
+    expect(r.messages.some((m) => /Stopped "Task a"/.test(m.body))).toBe(true)
+  })
+
+  it('Stop on a queued task skips it', async () => {
+    const x = h({ delayMs: 200, plan: { tasks: [T('a'), T('b', { deps: ['t1'] })] } })
+    const run = await x.orch.start(x.proj, 'skip queued', { review: 'off' })
+    await until(x.orch, run.id, (q) => q.tasks[0]?.status === 'running')
+    x.orch.stopTask(run.id, 't2')
+    const r = await until(x.orch, run.id, (q) => q.status === 'awaiting_approval', 20000)
+    expect(r.tasks.find((t) => t.id === 't2')?.status).toBe('cancelled')
+  })
+})

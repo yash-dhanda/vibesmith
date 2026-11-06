@@ -877,6 +877,7 @@ ipcMain.handle('team:stop-app', (_e, id: unknown) => teamSvc().stopApp(teamId(id
 ipcMain.handle('team:follow', (_e, id: unknown, text: unknown, to?: unknown, attachments?: unknown) => teamSvc().followUp(teamId(id), String(text ?? ''), to === 'claude' || to === 'codex' || to === 'local' ? to : 'all', attachments))
 ipcMain.handle('team:steer', (_e, id: unknown, text: unknown, to?: unknown) => teamSvc().orch.steer(teamId(id), String(text ?? ''), to === 'claude' || to === 'codex' || to === 'local' ? to : 'all'))
 ipcMain.handle('team:retry-task', (_e, id: unknown, taskId: unknown) => teamSvc().orch.retryTask(teamId(id), teamId(taskId)))
+ipcMain.handle('team:stop-task', (_e, id: unknown, taskId: unknown) => teamSvc().orch.stopTask(teamId(id), teamId(taskId)))
 ipcMain.handle('team:skip-task', (_e, id: unknown, taskId: unknown) => teamSvc().orch.skipTask(teamId(id), teamId(taskId)))
 ipcMain.handle('team:set-models', (_e, id: unknown, m: unknown) => {
   const o = (m && typeof m === 'object' ? m : {}) as Record<string, unknown>
