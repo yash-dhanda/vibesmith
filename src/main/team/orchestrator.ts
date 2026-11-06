@@ -53,10 +53,24 @@ export type Deps = {
   limits?: () => Promise<Partial<Record<AgentName, { primaryPct: number; primaryResetsAt?: number; secondaryPct?: number; secondaryResetsAt?: number }>>> // plan allowance used, when an agent can say
   skills?: () => { block: string; dirs: string[] } // the skill libraries the user added: what agents are told, and folders Claude may read
   localSkills?: () => string // the debugging and verification skills as text: the local model cannot open the skill folders
+  resumeSlackMs?: number // how long after a plan resets the run continues (default 30 s)
+  startResumeMs?: number // how long after startup interrupted runs continue by themselves (default 5 s)
+  watchMs?: number // how often stalled and over-long agents are looked for (default 30 s; tests use less)
   mcpScript?: string // path to the bundled team-mcp.js; without it agents run without the mailbox
   node?: string
   sleep?: (ms: number) => Promise<void>
 }
+
+// When does a plan that ran out come back? Claude's limit message ends with "|<unix seconds>"; Codex reports resetsAt in its limits. null = a limit with no known end.
+export function limitBackAt(message: string, limits: Run['limits'], now = Date.now()): number | null {
+  const ts = Number(/\|(\d{9,11})\b/.exec(message)?.[1])
+  if (ts) return ts * 1000
+  const times = Object.values(limits ?? {}).flatMap((l) => (l && l.primaryPct >= 100 && l.primaryResetsAt ? [l.primaryResetsAt * 1000] : []))
+  const next = times.filter((t) => t > now).sort((a, b) => a - b)[0]
+  return next ?? null
+}
+// Only a plan limit is waited out. A missing sign-in or a broken model needs the user.
+export const isLimitPause = (message: string) => /limit|allowance|usage|quota|resets?\b/i.test(message) && !/sign in|signed in|not signed|auth|log ?in|model.*not found/i.test(message)
 
 // The user asked for the local model by name in a message sent to everyone.
 export const asksForLocal = (text: string) => /\b(?:let|use|using|ask|by|mainly|mostly|only|with|give (?:it )?to|make)\s+(?:the\s+)?local(?:\s+(?:ai|model|agent|llm))?\b/i.test(text)
@@ -85,6 +99,9 @@ type Live = {
   finishing: boolean
   handles: Map<string, { agent: AgentName; h: ServerHandle }> // running agents that can be steered mid-turn
   planning: boolean // a planner is running: a second one must not start beside it
+  agentRuns: Map<string, { ac: AbortController; last: number; started: number; why?: 'stalled' | 'capped' }> // every agent call in flight, for the watchdog
+  checkpointing: boolean // a mid-run check is running
+  checkedAt: number // how many finished build tasks the last mid-run check covered
   replans: number // newer requests still being planned: the run is not finished while any is
   replanChain: Promise<unknown> // one request is planned at a time, in the order they were sent
   late: { body: string; to: AgentName | 'all' }[] // messages sent while the last checks ran, which no task would read
@@ -108,8 +125,30 @@ export class TeamOrchestrator {
   private hub: TeamHub
   private hubReady: Promise<string> | null = null
 
+  private watchTimer: ReturnType<typeof setInterval> | null = null
+  private resumeTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
   constructor(private d: Deps) {
     this.hub = new TeamHub((op, args, ctx) => this.onHub(op, args, ctx))
+    this.watchTimer = setInterval(() => this.watchdog(), d.watchMs ?? 30_000)
+    this.watchTimer.unref?.()
+  }
+
+  // Long runs stop in two quiet ways: an agent that hangs without a word, and a task that never ends. Both are cut off here, and the task flow retries them.
+  private watchdog() {
+    for (const [runId, live] of this.live) {
+      const run = this.runs.get(runId)
+      if (!run || live.paused || live.ctl.signal.aborted || !['planning', 'running', 'verifying'].includes(run.status)) continue
+      const stall = (run.config.stallMinutes ?? 15) * 60_000
+      const cap = (run.config.taskMinutes ?? 60) * 60_000
+      const now = Date.now()
+      for (const [key, a] of live.agentRuns) {
+        if (a.why) continue
+        const waiting = run.approvals.some((x) => x.status === 'pending' && x.taskId === key.split(':')[0]) // a question for the user is not a stall
+        if (!waiting && now - a.last >= stall) (a.why = 'stalled'), a.ac.abort()
+        else if (now - a.started >= cap) (a.why = 'capped'), a.ac.abort()
+      }
+    }
   }
 
   // ------------------------------------------------------------------ public API
@@ -134,6 +173,9 @@ export class TeamOrchestrator {
     return this.d.store.events(runId, limit)
   }
   shutdown() {
+    if (this.watchTimer) clearInterval(this.watchTimer)
+    for (const t of this.resumeTimers.values()) clearTimeout(t)
+    this.resumeTimers.clear()
     this.flush()
     for (const l of this.live.values()) {
       l.stop = 'pause'
@@ -143,11 +185,13 @@ export class TeamOrchestrator {
     this.hubReady = null // a run resumed after a cancelled quit starts a new hub
   }
 
-  // A run found half-done at startup is not resumed by itself (that would spend quota without being asked): it is marked interrupted.
+  // A run found half-done at startup is marked interrupted, and a few seconds later the ones that were working (not paused by the user) carry on by themselves, so an overnight run survives a restart. Turn it off with autoResume: false.
   recoverAll() {
+    const again: string[] = []
     for (const r of this.list()) {
       if (!this.runs.has(r.id)) this.runs.set(r.id, r)
       if (!['planning', 'running', 'verifying', 'paused'].includes(r.status)) continue
+      if (r.status !== 'paused' && r.config.autoResume !== false) again.push(r.id) // it was working when Forge closed (not paused by the user): it carries on by itself
       for (const t of r.tasks) {
         if (t.status !== 'running') continue
         t.status = 'interrupted'
@@ -159,6 +203,11 @@ export class TeamOrchestrator {
       r.status = 'interrupted'
       r.pausedReason = 'Forge was closed while this was running.'
       this.d.store.save(r)
+    }
+    if (again.length) {
+      const timer = setTimeout(() => { for (const id of again) if (!this.runs.get(id)?.approvals.some((a) => a.kind === 'plan' && a.status === 'pending')) void this.resume(id).catch(() => {}) }, this.d.startResumeMs ?? 5000)
+      timer.unref?.()
+      this.resumeTimers.set('startup', timer)
     }
   }
 
@@ -228,6 +277,8 @@ export class TeamOrchestrator {
   async resume(runId: string) {
     const run = this.runOf(runId)
     if (!run || !['paused', 'interrupted'].includes(run.status)) return
+    clearTimeout(this.resumeTimers.get(runId))
+    this.resumeTimers.delete(runId)
     if (run.approvals.some((a) => a.kind === 'plan' && a.status === 'pending')) return void this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: 'Approve or edit the plan first; nothing starts before that.' })
     const { agents: available, skipped } = await this.usable(run.config.maxLimitPercent) // the user may have just signed an agent in
     for (const note of skipped) this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: note })
@@ -785,7 +836,7 @@ export class TeamOrchestrator {
   }
 
   private newLive(available: AgentName[]): Live {
-    return { ctl: new AbortController(), stop: null, paused: false, running: new Map(), pending: new Map(), budgetAsk: false, git: new Mutex(), merge: new Mutex(), available, finishing: false, handles: new Map(), planning: false, replans: 0, replanChain: Promise.resolve(), late: [], limited: new Map(), bg: new Set() }
+    return { ctl: new AbortController(), stop: null, paused: false, running: new Map(), pending: new Map(), budgetAsk: false, git: new Mutex(), merge: new Mutex(), available, finishing: false, handles: new Map(), planning: false, agentRuns: new Map(), checkpointing: false, checkedAt: 0, replans: 0, replanChain: Promise.resolve(), late: [], limited: new Map(), bg: new Set() }
   }
   private liveOf(run: Run): Live {
     let l = this.live.get(run.id)
@@ -991,8 +1042,15 @@ export class TeamOrchestrator {
     }
     this.out(run, { type: 'agent', runId: run.id, taskId: task.id, phase, ev: { type: 'prompt', agent, text: prompt.slice(0, 16_000) } })
     const stopWatching = write ? this.watch(run, task, cwd, task.base ?? run.baseCommit) : null
+    // this call's own stop switch: the run's stop still reaches it, and so does the watchdog
+    const ac = new AbortController()
+    const state = { ac, last: Date.now(), started: Date.now(), why: undefined as 'stalled' | 'capped' | undefined }
+    const runKey = `${task.id}:${phase}`
+    const relay = () => ac.abort()
+    live.ctl.signal.addEventListener('abort', relay, { once: true })
+    live.agentRuns.set(runKey, state)
     const call = async (resumeId: string | undefined) => this.d.runner(agent, {
-      cwd, prompt, write, resume: resumeId, signal: live.ctl.signal, taskId: task.id, link: await this.linkFor(run, task, agent),
+      cwd, prompt, write, resume: resumeId, signal: ac.signal, taskId: task.id, link: await this.linkFor(run, task, agent),
       model: agent === 'codex' ? run.config.codexModel : agent === 'local' ? run.config.localModel : run.config.claudeModel,
       effort: effortFor({ agent, phase, kind: task.kind, changedFiles: changedFiles ?? (phase === 'review' ? task.changed.length : undefined), config: run.config }),
       codexMode: run.config.codexMode,
@@ -1000,6 +1058,7 @@ export class TeamOrchestrator {
       images: [...imagePaths(att), ...(phase === 'final-review' && agent !== 'local' ? (live.shots ?? []).map((x) => x.path) : [])],
       web: run.config.webResearch !== false,
       onEvent: (ev) => {
+        state.last = Date.now()
         if (ev.type === 'limits') {
           const { agent: _a, type: _t, ...rest } = ev
           ;(run.limits ??= {})[agent] = rest
@@ -1024,6 +1083,8 @@ export class TeamOrchestrator {
         res = await call(undefined)
       }
     } finally {
+      live.ctl.signal.removeEventListener('abort', relay)
+      live.agentRuns.delete(runKey)
       stopWatching?.()
       // the agent is gone: its open questions have no one waiting, so a late answer must not go to a dead socket
       for (const a of run.approvals) {
@@ -1033,6 +1094,11 @@ export class TeamOrchestrator {
         live.pending.delete(a.id)
         res({ allow: false, note: 'The agent that asked has finished.' })
       }
+    }
+    if (state.why && !live.ctl.signal.aborted) {
+      const mins = state.why === 'stalled' ? (run.config.stallMinutes ?? 15) : (run.config.taskMinutes ?? 60)
+      res = { ...res, ok: false, error: { kind: state.why === 'stalled' ? 'stalled' : 'timeout', message: state.why === 'stalled' ? `${agent} gave no output for ${mins} minutes and was stopped` : `${agent} was still working after ${mins} minutes and was stopped` } }
+      this.post(run, { from: 'orchestrator', to: 'all', kind: 'note', taskId: task.id, body: `${label(agent)} ${state.why === 'stalled' ? `went quiet for ${mins} minutes` : `ran past ${mins} minutes on this task`}: stopped it.` })
     }
     for (const u of [(run.usage[agent] ??= emptyUsage()), task.usage]) {
       u.input += res.usage.input
@@ -1115,6 +1181,7 @@ export class TeamOrchestrator {
     if (planners.length && blocked.length >= planners.length) {
       // every planner is waiting for the user (a sign-in, or the plan's allowance to reset): pause, and Resume plans again
       live.paused = true
+      this.scheduleAutoResume(run, blocked.join(' '))
       return void this.setStatus(run, 'paused', `${blocked.join(' ')} Resume to plan again.`)
     }
     throw new Error(`Could not make a plan: ${lastErr}`)
@@ -1259,6 +1326,21 @@ export class TeamOrchestrator {
         }
       }
       if (kind === 'auth' || kind === 'missing' || kind === 'model' || kind === 'limit') return this.blockTask(run, task, `${task.agent}: ${msg}`, true) // needs the user: sign in, or wait for the plan to reset
+      if (kind === 'stalled' || kind === 'timeout') {
+        // a hung or endless agent is not asked to continue its own session: a new session retries once, then another agent takes the task, then the task fails
+        delete task.sessions[task.agent]
+        task.attempts++
+        if (task.attempts === 2) {
+          const other = strongest(this.pool(live), task.agent)
+          if (other !== task.agent) {
+            this.post(run, { from: 'orchestrator', to: 'all', kind: 'note', taskId: task.id, body: `${label(task.agent)} stopped twice on "${task.title}": ${label(other)} takes it.` })
+            task.agent = other
+          }
+        }
+        if (task.attempts > 3) return this.failTask(run, task, `${task.agent}: ${msg}`)
+        this.touch(run, task)
+        continue
+      }
       task.attempts++
       if (kind === 'busy' && task.attempts <= 3) {
         this.post(run, { from: 'orchestrator', to: 'all', kind: 'note', taskId: task.id, body: `${task.agent} is busy right now; trying again shortly.` })
@@ -1389,6 +1471,21 @@ export class TeamOrchestrator {
     return true
   }
 
+  // A run paused because a plan ran out continues by itself when the plan comes back (a few seconds after, to be sure). Overnight runs do not wait for a click.
+  private scheduleAutoResume(run: Run, reason: string) {
+    if (run.config.autoResume === false || !isLimitPause(reason)) return
+    const back = limitBackAt(reason, run.limits)
+    const delay = Math.max(1000, back ? back - Date.now() + (this.d.resumeSlackMs ?? 30_000) : 30 * 60_000)
+    clearTimeout(this.resumeTimers.get(run.id))
+    const timer = setTimeout(() => {
+      this.resumeTimers.delete(run.id)
+      if (run.status === 'paused') void this.resume(run.id).catch(() => {})
+    }, delay)
+    timer.unref?.()
+    this.resumeTimers.set(run.id, timer)
+    this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: `Waiting for the plan allowance: this run continues by itself ${back ? `at ${new Date(back + (this.d.resumeSlackMs ?? 30_000)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'in about 30 minutes'}.` })
+  }
+
   private async blockTask(run: Run, task: Task, message: string, pauseRun: boolean) {
     task.status = 'blocked'
     task.phase = null
@@ -1397,6 +1494,7 @@ export class TeamOrchestrator {
     if (pauseRun) {
       this.liveOf(run).paused = true
       this.setStatus(run, 'paused', message)
+      this.scheduleAutoResume(run, message)
     }
   }
 
@@ -1412,6 +1510,39 @@ export class TeamOrchestrator {
       await this.liveOf(run).git.run(() => removeWorktree(run.project, task.worktree!, task.branch ?? undefined))
       task.worktree = null
     }
+    this.maybeCheckpoint(run)
+  }
+
+  // A long run must not pile up broken work for hours: every few finished tasks the project's own check runs on what has been merged so far,
+  // and a failure becomes a fix task at once, not a surprise at the end.
+  private maybeCheckpoint(run: Run) {
+    const every = run.config.checkpointEvery ?? 5
+    const live = this.liveOf(run)
+    if (!every || live.checkpointing || live.finishing || run.status !== 'running') return
+    const done = run.tasks.filter((t) => t.status === 'done' && t.kind === 'build' && t.changed.length && !t.lastStep).length
+    if (done - live.checkedAt < every) return
+    live.checkedAt = done
+    live.checkpointing = true
+    this.track(live, this.checkpoint(run, live, done).catch(() => {}).finally(() => (live.checkpointing = false)))
+  }
+
+  private async checkpoint(run: Run, live: Live, done: number) {
+    const wt = run.integrationWorktree
+    const cmd = run.config.verify === undefined ? detectVerify(wt) : run.config.verify
+    if (!cmd) return
+    // holding the merge lock: nothing is merged into the folder while the check reads it
+    const v = await live.merge.run(async () => {
+      await this.clean(wt)
+      return runVerify(cmd, wt, live.ctl.signal)
+    })
+    if (live.ctl.signal.aborted) return
+    if (v.ok) return void this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: `Checkpoint after ${done} tasks: \`${cmd}\` passed.` })
+    run.errors.push({ id: id('e'), signature: errorSignature(v.output), text: v.output.slice(-400), at: Date.now() })
+    const open = run.tasks.some((t) => /^Fix failing checks \(checkpoint/.test(t.title) && !['done', 'cancelled', 'failed'].includes(t.status))
+    this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: `Checkpoint after ${done} tasks: \`${cmd}\` failed${open ? ' (a fix is already under way)' : '; a fix task was added'}.` })
+    if (open) return
+    this.addTask(run, { title: `Fix failing checks (checkpoint after ${done} tasks)`, goal: `The project check \`${cmd}\` fails on the work merged so far. Make it pass without breaking what works. Output:\n${v.output.slice(-1500)}`, agent: strongest(this.pool(live)), kind: 'build' })
+    this.pump(run)
   }
 
   private pastProblems(run: Run, task: Task): string[] {

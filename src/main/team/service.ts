@@ -35,6 +35,10 @@ export function sanitizeConfig(raw: unknown): Partial<TeamConfig> {
   if (typeof r.webResearch === 'boolean') out.webResearch = r.webResearch
   if (typeof r.askQuestions === 'boolean') out.askQuestions = r.askQuestions
   if (typeof r.claudeModel === 'string' && /^[\w.:\[\]-]{1,60}$/.test(r.claudeModel)) out.claudeModel = r.claudeModel
+  const stall = num(r.stallMinutes, 1, 240); if (stall) out.stallMinutes = stall
+  const taskCap = num(r.taskMinutes, 5, 720); if (taskCap) out.taskMinutes = taskCap
+  const every = num(r.checkpointEvery, 0, 50); if (every !== undefined && r.checkpointEvery !== undefined) out.checkpointEvery = every
+  if (typeof r.autoResume === 'boolean') out.autoResume = r.autoResume
   const par = num(r.maxParallelPerAgent, 1, 8)
   if (par) out.maxParallelPerAgent = par
   const fix = num(r.maxFixRounds, 0, 5)

@@ -369,7 +369,7 @@ async function team(into: HTMLElement) {
 
   const l = group('Limits', 'Empty means no limit.')
   l.box.append(
-    row('Parallel tasks per agent', 'More tasks can finish sooner, but use more allowance.', num(cfg.maxParallelPerAgent ?? 2, 1, 4, '2', (v) => put('maxParallelPerAgent', Number(v)))),
+    row('Parallel tasks per agent', 'More tasks can finish sooner, but use more allowance.', num(cfg.maxParallelPerAgent ?? 2, 1, 8, '2', (v) => put('maxParallelPerAgent', Number(v)))),
     row('Fix attempts per task', 'How often an agent may retry after a failed review or check.', num(cfg.maxFixRounds ?? 3, 0, 5, '3', (v) => put('maxFixRounds', Number(v)))),
     row('Maximum tasks', 'The most tasks one plan may have.', num(cfg.budget?.maxTasks ?? 12, 1, 30, '12', (v) => budget('maxTasks', v))),
     row('Time limit (minutes)', 'Pause the run after this long.', num(cfg.budget?.maxMinutes, 1, 100000, 'No limit', (v) => budget('maxMinutes', v))),
@@ -378,6 +378,15 @@ async function team(into: HTMLElement) {
     row('Pause at plan usage %', '0 disables this limit.', num(cfg.maxLimitPercent ?? 0, 0, 100, '0', (v) => put('maxLimitPercent', Number(v)))),
   )
   into.append(l.g)
+
+  const long = group('Long runs', 'For runs that work for hours without you.')
+  long.box.append(
+    row('Continue by itself', 'After Forge restarts, or when a plan allowance that ran out comes back, the run carries on without a click.', onOff(cfg.autoResume !== false, (v) => put('autoResume', v))),
+    row('Stop a silent agent after (minutes)', 'An agent that prints nothing for this long is stopped and its task tried again, then given to another agent.', num(cfg.stallMinutes, 1, 240, '15', (v) => put('stallMinutes', Number(v)))),
+    row('Longest task (minutes)', 'A single task that runs longer than this is stopped and retried.', num(cfg.taskMinutes, 5, 720, '60', (v) => put('taskMinutes', Number(v)))),
+    row('Check the project every N tasks', 'Runs the project check after every N finished tasks and adds a fix task when it fails. 0 turns it off.', num(cfg.checkpointEvery ?? 5, 0, 50, '5', (v) => put('checkpointEvery', Number(v)))),
+  )
+  into.append(long.g)
 
   const perm = group('Permissions')
   const verify = field('text', cfg.verify ?? '', 'Detect from project')

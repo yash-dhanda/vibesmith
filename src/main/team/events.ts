@@ -2,7 +2,7 @@
 export type AgentName = 'claude' | 'codex' | 'local'
 export const AGENTS: AgentName[] = ['claude', 'codex', 'local']
 export const isAgent = (v: unknown): v is AgentName => v === 'claude' || v === 'codex' || v === 'local'
-export type ErrorKind = 'auth' | 'model' | 'limit' | 'timeout' | 'aborted' | 'missing' | 'protocol' | 'busy' | 'other'
+export type ErrorKind = 'auth' | 'model' | 'limit' | 'timeout' | 'stalled' | 'aborted' | 'missing' | 'protocol' | 'busy' | 'other'
 
 export type TeamEvent =
   | { type: 'session'; agent: AgentName; sessionId: string }

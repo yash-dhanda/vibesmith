@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentName } from './events'
 import { ProjectMemoryStore } from './memory'
-import { asksForLocal, TeamOrchestrator, type AgentCall, type AgentRunner, type Deps } from './orchestrator'
+import { asksForLocal, isLimitPause, limitBackAt, TeamOrchestrator, type AgentCall, type AgentRunner, type Deps } from './orchestrator'
 import type { RunResult } from './process'
 import { TeamStore } from './store'
 import type { Run, RunEvent } from './types'
@@ -35,6 +35,7 @@ type Script = {
   stream?: boolean // emit typing events and leave a file in the folder for a while
   fail?: (agent: AgentName, kind: 'plan' | 'work' | 'review' | 'fix' | 'verifyfix' | 'security', task: string, n: number, resume?: string) => RunResult | null
   security?: string[] // verdicts of the security review in order; default PASS
+  hang?: (agent: AgentName, kind: string, task: string, n: number) => boolean // the agent says nothing until it is stopped, like a hung CLI
 }
 
 function harness(script: Script, over: { available?: AgentName[]; cfg?: object; sleep?: (ms: number) => Promise<void>; deps?: Partial<Deps> } = {}) {
@@ -62,6 +63,10 @@ function harness(script: Script, over: { available?: AgentName[]; cfg?: object; 
     const n = (counts.set(`${kind}:${task}`, (counts.get(`${kind}:${task}`) ?? 0) + 1), counts.get(`${kind}:${task}`)!)
     const failure = script.fail?.(agent, kind as never, task, n, o.resume)
     if (failure) return failure
+    if (script.hang?.(agent, kind, task, n)) {
+      await new Promise<void>((res) => (o.signal.aborted ? res() : o.signal.addEventListener('abort', () => res(), { once: true })))
+      return { ...ok('', agent, task), ok: false, error: { kind: 'aborted', message: 'stopped' } }
+    }
     active++
     maxActive = Math.max(maxActive, active)
     try {
@@ -1704,5 +1709,91 @@ describe('several main requests in one run', () => {
     expect(c).toMatchObject({ speed: 'fast', review: 'off', testTask: false, maxParallelPerAgent: 6, finalReview: false })
     x.orch.setSpeed(run.id, false)
     expect(x.orch.get(run.id)!.config).toMatchObject({ speed: 'normal', review: 'cross', maxParallelPerAgent: 2 })
+  })
+})
+
+describe('long unattended runs: the watchdog', () => {
+  const quick = { watchMs: 20 }
+  it('an agent that goes quiet is stopped and the task is retried in a new session', async () => {
+    const x = h({ plan: { tasks: [T('a')] }, hang: (_a, kind, _t, n) => kind === 'work' && n === 1 }, { deps: quick })
+    const run = await x.orch.start(x.proj, 'quiet agent', { stallMinutes: 0.01, review: 'off' })
+    const r = await until(x.orch, run.id, (q) => q.status === 'awaiting_approval', 20000)
+    expect(r.tasks[0].status).toBe('done')
+    expect(r.messages.some((m) => /went quiet/.test(m.body))).toBe(true)
+    expect(x.calls.filter((c) => c.kind === 'work')).toHaveLength(2)
+    expect(x.calls.filter((c) => c.kind === 'work')[1].resume).toBeUndefined() // the hung session is not resumed
+  })
+
+  it('after two stalls another agent takes the task, and a task that keeps stalling fails instead of blocking the run', async () => {
+    const x = h({ plan: { tasks: [T('a')] }, hang: (agent, kind) => kind === 'work' && agent === 'claude' }, { deps: quick })
+    const run = await x.orch.start(x.proj, 'always quiet', { stallMinutes: 0.01, review: 'off' })
+    const r = await until(x.orch, run.id, (q) => q.status === 'awaiting_approval', 30000)
+    expect(r.tasks[0]).toMatchObject({ agent: 'codex', status: 'done' })
+    expect(r.messages.some((m) => /stopped twice/.test(m.body))).toBe(true)
+  })
+
+  it('a task that runs past its time cap is stopped', async () => {
+    const x = h({ plan: { tasks: [T('a')] }, hang: (_a, kind, _t, n) => kind === 'work' && n === 1 }, { deps: quick })
+    const run = await x.orch.start(x.proj, 'endless', { stallMinutes: 600, taskMinutes: 0.01, review: 'off' })
+    const r = await until(x.orch, run.id, (q) => q.status === 'awaiting_approval', 20000)
+    expect(r.messages.some((m) => /ran past/.test(m.body))).toBe(true)
+    expect(r.tasks[0].status).toBe('done')
+  })
+})
+
+describe('long unattended runs: coming back by themselves', () => {
+  it('limitBackAt reads Claude\'s reset time and Codex\'s, and isLimitPause tells a plan limit from a missing sign-in', () => {
+    const now = 1_000_000_000_000
+    expect(limitBackAt('usage limit reached|1000000600', undefined, now)).toBe(1_000_000_600_000)
+    expect(limitBackAt('limit', { codex: { primaryPct: 100, primaryResetsAt: 1_000_000_900 } }, now)).toBe(1_000_000_900_000)
+    expect(limitBackAt('limit', { codex: { primaryPct: 40, primaryResetsAt: 1_000_000_900 } }, now)).toBeNull()
+    expect(isLimitPause('claude: usage limit reached|1000000600')).toBe(true)
+    expect(isLimitPause('Claude Code is not signed in. Run: claude auth login')).toBe(false)
+  })
+
+  it('a run that stopped on a plan limit continues by itself when the plan comes back', async () => {
+    const back = Math.floor(Date.now() / 1000) + 1
+    const x = h({ plan: { tasks: [T('a')] }, fail: (agent, kind, _t, n) => (kind === 'work' && n === 1 ? ({ ok: false, text: '', usage: { input: 0, output: 0, cached: 0, costUsd: 0 }, events: [], error: { kind: 'limit', message: `usage limit reached|${back}` } } as RunResult) : null) }, { available: ['claude'], deps: { resumeSlackMs: 50 } })
+    const run = await x.orch.start(x.proj, 'limit then back', { review: 'off' })
+    await until(x.orch, run.id, (q) => q.status === 'paused', 10000)
+    expect(x.orch.get(run.id)!.messages.some((m) => /continues by itself/.test(m.body))).toBe(true)
+    const r = await until(x.orch, run.id, (q) => q.status === 'awaiting_approval', 20000)
+    expect(r.tasks[0].status).toBe('done')
+  })
+
+  it('autoResume: false leaves a limit pause for the user', async () => {
+    const back = Math.floor(Date.now() / 1000) + 1
+    const x = h({ plan: { tasks: [T('a')] }, fail: (_a, kind, _t, n) => (kind === 'work' && n === 1 ? ({ ok: false, text: '', usage: { input: 0, output: 0, cached: 0, costUsd: 0 }, events: [], error: { kind: 'limit', message: `usage limit reached|${back}` } } as RunResult) : null) }, { available: ['claude'], deps: { resumeSlackMs: 50 } })
+    const run = await x.orch.start(x.proj, 'no auto', { review: 'off', autoResume: false })
+    await until(x.orch, run.id, (q) => q.status === 'paused', 10000)
+    await new Promise((r) => setTimeout(r, 1500))
+    expect(x.orch.get(run.id)!.status).toBe('paused')
+  })
+})
+
+describe('long unattended runs: checkpoints', () => {
+  const four = [T('a'), T('b'), T('c'), T('d')]
+  it('the project check runs after every few finished tasks and says so', async () => {
+    const x = h({ plan: { tasks: four } })
+    const run = await x.orch.start(x.proj, 'checkpoints pass', { verify: 'exit 0', checkpointEvery: 2, review: 'off', testTask: false, finalReview: false, maxParallelPerAgent: 1 })
+    const r = await until(x.orch, run.id, (q) => q.status === 'awaiting_approval', 30000)
+    expect(r.messages.filter((m) => /Checkpoint after \d+ tasks: `exit 0` passed/.test(m.body)).length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('a failing checkpoint adds one fix task at once, not a pile of them', async () => {
+    const x = h({ plan: { tasks: four } })
+    const run = await x.orch.start(x.proj, 'checkpoints fail', { verify: 'exit 1', checkpointEvery: 2, review: 'off', testTask: false, finalReview: false, maxVerifyRounds: 0, maxParallelPerAgent: 1 })
+    const r = await until(x.orch, run.id, (q) => q.status === 'awaiting_approval', 30000)
+    const fixes = r.tasks.filter((t) => /^Fix failing checks \(checkpoint/.test(t.title))
+    expect(fixes.length).toBeGreaterThanOrEqual(1)
+    expect(fixes[0].goal).toContain('exit 1')
+    expect(r.messages.some((m) => /failed; a fix task was added/.test(m.body))).toBe(true)
+  })
+
+  it('checkpointEvery: 0 turns them off', async () => {
+    const x = h({ plan: { tasks: four } })
+    const run = await x.orch.start(x.proj, 'no checkpoints', { verify: 'exit 0', checkpointEvery: 0, review: 'off', testTask: false, finalReview: false })
+    const r = await until(x.orch, run.id, (q) => q.status === 'awaiting_approval', 30000)
+    expect(r.messages.some((m) => /Checkpoint after/.test(m.body))).toBe(false)
   })
 })

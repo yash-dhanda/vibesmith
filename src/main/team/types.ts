@@ -98,6 +98,10 @@ export type TeamConfig = {
   visualCheck?: 'off' | 'auto' | 'always' // before the final review: start the site, screenshot the pages at desktop and phone sizes and show them to the reviewer (auto = only when UI files changed; default off, it starts a dev server)
   visualRoutes?: string[] // the pages to screenshot (default just "/")
   neverPush?: boolean // this project never goes to a remote: the Crew panel hides Push and Open pull request and the main process refuses both (default off)
+  stallMinutes?: number // an agent with no output at all for this long is stopped and the task retried (default 15)
+  taskMinutes?: number // one task may take at most this long before it is stopped and retried elsewhere (default 60)
+  autoResume?: boolean // pick a run up again by itself after a restart or when the plan allowance comes back (default on)
+  checkpointEvery?: number // run the project's check after this many finished tasks, and queue a fix when it fails (default 5; 0 = off)
   speed?: 'normal' | 'fast' // fast: many sessions at once, no cross-review, no extra test task, light effort (set by the user's words or by hand)
   speedSaved?: Partial<TeamConfig> // what fast mode replaced, put back when the user stops asking for speed
   securityReview?: 'off' | 'auto' | 'always' // a read-only security look before the final review: auto = only when the diff touches auth, payments, secrets, routes or dependencies (default auto)

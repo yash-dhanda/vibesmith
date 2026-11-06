@@ -1,4 +1,5 @@
-import { app, BrowserWindow, dialog, ipcMain, Notification, shell, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Notification, powerSaveBlocker, shell, type IpcMainInvokeEvent } from 'electron'
+import { makeKeepAwake, WORKING_STATUSES } from './keepAwake'
 import type * as PtyModule from 'node-pty'
 import { homedir } from 'node:os'
 import { existsSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
@@ -806,6 +807,8 @@ app.on('second-instance', () => {
 })
 
 // ---- team mode: Claude Code and Codex working as one team, each on its own git branch (see docs/TEAM.md) ----
+// never lets a failure to block sleep stop a run
+const keepAwake = makeKeepAwake({ start: (t) => { try { return powerSaveBlocker.start(t) } catch { return -1 } }, stop: (id) => { try { if (id >= 0) powerSaveBlocker.stop(id) } catch {} } })
 let team: TeamService | null = null
 // A long team run goes on while the user is elsewhere: say so when it needs them or ends. Same switch as the chat notifications.
 function teamNotify(ev: import('./team/types').RunEvent) {
@@ -836,6 +839,7 @@ const teamSvc = (): TeamService =>
     visualCapture: electronCapture,
     notify: (kind) => void push().event(kind),
     emit: (ev) => {
+      if (ev.type === 'run') keepAwake.set(ev.runId, WORKING_STATUSES.includes(ev.status))
       win?.webContents.send('team:event', ev)
       teamNotify(ev)
     },
