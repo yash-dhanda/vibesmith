@@ -615,11 +615,14 @@ async function rerender() {
   if (q && !fresh.childNodes.length) fresh.append(h('p', 'set-none', `No settings match “${query.trim()}”.`))
   clearTimeout(slow)
   if (mine !== token) return
+  const focusables = 'button, input, select, textarea, a[href]'
+  const at = document.activeElement && body.contains(document.activeElement) ? [...body.querySelectorAll(focusables)].indexOf(document.activeElement) : -1
   body.replaceChildren(...fresh.childNodes)
+  if (at >= 0) body.querySelectorAll<HTMLElement>(focusables)[at]?.focus({ preventScroll: true }) // a Phone or Push toggle redraws the page; focus stays on it
   if (scroller) scroller.scrollTop = q ? 0 : scroll // a redraw of the same page keeps its place
 }
 
-async function show(page: Page) {
+async function show(page: Page, turn = true) {
   current = page
   document.querySelectorAll<HTMLElement>('.set-nav [data-page]').forEach((b) => {
     const on = b.dataset.page === page && !query
@@ -630,7 +633,7 @@ async function show(page: Page) {
   if (headTitle) headTitle.replaceChildren(icon(query ? 'search' : GLYPH[page]), document.createTextNode(query ? 'Search results' : TITLE[page]))
   if (scroller) scroller.scrollTop = 0 // every page opens at its top
   headNote?.replaceChildren()
-  if (body) { body.classList.remove('turn'); void body.offsetWidth; body.classList.add('turn') } // the page fades in
+  if (body && turn) { body.classList.remove('turn'); void body.offsetWidth; body.classList.add('turn') } // the page fades in (not on every search keystroke)
   await rerender()
 }
 
@@ -650,8 +653,8 @@ export async function openSettings(asked?: Page) {
   searchEl = input
   input.setAttribute('aria-label', 'Search settings')
   let timer: ReturnType<typeof setTimeout> | null = null
-  input.oninput = () => { if (timer) clearTimeout(timer); timer = setTimeout(() => { query = input.value; wrap.classList.toggle('show-page', !!query || wrap.classList.contains('show-page')); void show(current) }, 140) }
-  input.onkeydown = (e) => { if (e.key === 'Escape' && input.value) { e.preventDefault(); e.stopPropagation(); input.value = ''; query = ''; void show(current) } }
+  input.oninput = () => { if (timer) clearTimeout(timer); timer = setTimeout(() => { query = input.value; wrap.classList.toggle('show-page', !!query || wrap.classList.contains('show-page')); void show(current, false) }, 140) }
+  input.onkeydown = (e) => { if (e.key === 'Escape' && input.value) { e.preventDefault(); e.stopPropagation(); input.value = ''; query = ''; void show(current, false) } }
   search.append(icon('search', 'sm'), input, h('kbd', '', 'Ctrl F'))
   nav.append(back, search)
   for (const [label, items] of NAV) {

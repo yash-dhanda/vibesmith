@@ -25,7 +25,7 @@ import type { TeamAttachment } from '../main/team/attach'
 import { cacheGet, cacheSet, isRemote, onResync, phone, toggleDrawer } from './phone'
 import { colorize, mountDiff } from './codeColor'
 import { normaliseTeamEventsAsync, reduceTeamView, type LoggedTeamEvent } from './teamReducer'
-import { forget, keep, morphChildren } from './morph'
+import { forget, keep, morph, morphChildren } from './morph'
 
 type Logged = LoggedTeamEvent
 type Summary = RunSummary
@@ -125,7 +125,7 @@ function folderFinder(goal: HTMLTextAreaElement, pill: HTMLButtonElement) {
   const home = (p: string) => p.replace(/^\/home\/[^/]+/, '~')
   const mark = () => { hint.replaceChildren(icon('folder', 'sm'), document.createTextNode(currentProject ? `Working in ${home(currentProject)}` : 'No folder chosen yet. Describe the job, or find a folder.')) }
   const choose = async (path: string) => {
-    try { const root = await window.forge.setProject(path); currentProject = root; window.dispatchEvent(new CustomEvent('forge-project-picked', { detail: root })); pill.replaceChildren(icon('folder', 'sm'), document.createTextNode(folderName(root))); pill.title = root; mark(); chips.replaceChildren(); panel.hidden = true; toast(`Using ${folderName(root)}`) }
+    try { const root = await window.forge.setProject(path); currentProject = root; window.dispatchEvent(new CustomEvent('forge-project-picked', { detail: root })); pill.replaceChildren(icon('folder', 'sm'), document.createTextNode(folderName(root))); pill.title = root; mark(); chips.replaceChildren(); chips.dataset.sig = ''; panel.hidden = true; toast(`Using ${folderName(root)}`) }
     catch (e) { toast(cleanErr(e), 4000) }
   }
   const item = (hit: { path: string; name: string; markers: string[]; mtime: number }, cls = 'team-folder-chip') => {
@@ -133,8 +133,13 @@ function folderFinder(goal: HTMLTextAreaElement, pill: HTMLButtonElement) {
     b.onclick = () => void choose(hit.path); return b
   }
   let timer: ReturnType<typeof setTimeout> | null = null, token = 0
-  const suggest = () => { if (!apiOk) return; const mine = ++token, q = goal.value.trim(); if (q.length < 4) { chips.replaceChildren(); return }
-    void window.forge.suggestProjects(q).then(hits => { if (mine !== token) return; chips.replaceChildren(...(hits[0]?.path === currentProject ? [] : hits.filter(x => x.path !== currentProject).slice(0, 4).map(x => item(x)))) }).catch(() => {}) }
+  const suggest = () => { if (!apiOk) return; const mine = ++token, q = goal.value.trim(); if (q.length < 4) { chips.replaceChildren(); chips.dataset.sig = ''; return }
+    void window.forge.suggestProjects(q).then(hits => { // the chips are redrawn only when the folders change: each redraw replays their staggered rise
+      if (mine !== token) return
+      const next = hits[0]?.path === currentProject ? [] : hits.filter(x => x.path !== currentProject).slice(0, 4)
+      const sig = next.map(x => x.path).join('\n'); if (chips.dataset.sig === sig) return
+      chips.dataset.sig = sig; chips.replaceChildren(...next.map(x => item(x)))
+    }).catch(() => {}) }
   goal.addEventListener('input', () => { if (timer) clearTimeout(timer); timer = setTimeout(suggest, 350) })
   let all: { path: string; name: string; markers: string[]; mtime: number }[] = []
   const draw = () => { const q = filter.value.trim().toLowerCase(); const shown = all.filter(x => !q || x.path.toLowerCase().includes(q)).slice(0, 60); list.replaceChildren(...(shown.length ? shown.map(x => item(x, 'team-folder-row-item')) : [h('p', 'team-empty', all.length ? 'No folder matches.' : 'No project folders found.')])) }
@@ -349,7 +354,8 @@ function emptyState(glyph: IconName, title: string, copy: string, action?: [stri
 // Previous runs as a sessions board: a header with view, filter, sort, search and New; then a table (or cards) of runs.
 function renderRunList() {
   const section = h('section', `team-runs ${phone.matches ? 'grid' : runView}`) // a phone shows runs as cards
-  const redraw = (focusSearch = false) => { const next = renderRunList(); section.replaceWith(next); if (focusSearch) queueMicrotask(() => { const field = next.querySelector<HTMLInputElement>('input[type="search"]'); field?.focus(); field?.setSelectionRange(field.value.length, field.value.length) }) }
+  // Patched in place, so the search keeps its focus and caret. Handlers reach their fields through the event: a redraw copies them onto the live ones.
+  const redraw = () => { const live = document.querySelector<HTMLElement>('.team-runs'); if (live) morph(live, renderRunList()) }
   const head = h('div', 'page-head'); const title = h('h2', 'page-title', N.recentRuns); title.append(h('span', 'page-count', String(summaries.length))); head.append(title, h('span', 'grow'))
   const tools = h('div', 'head-tools')
   const view = h('div', 'view-toggle'); view.setAttribute('role', 'group'); view.setAttribute('aria-label', 'Layout')
@@ -357,15 +363,15 @@ function renderRunList() {
     const b = h('button', `icon-btn sm${runView === v ? ' on' : ''}`); b.append(icon(glyph, 'sm')); b.title = `${label} view`; b.setAttribute('aria-label', `${label} view`); b.setAttribute('aria-pressed', String(runView === v))
     b.onclick = () => { runView = v; try { localStorage.setItem('forge.teamRunView', v) } catch {} redraw() }; view.append(b)
   }
-  const filter = select([['all', 'All runs'], ['active', 'In progress'], ['attention', 'Needs attention'], ['done', 'Finished']], runFilter); filter.onchange = () => { runFilter = filter.value; redraw() }
-  const sort = select([['opened', 'Last opened'], ['created', 'Created'], ['goal', 'Goal A-Z']], runSort); sort.onchange = () => { runSort = sort.value; redraw() }
+  const filter = select([['all', 'All runs'], ['active', 'In progress'], ['attention', 'Needs attention'], ['done', 'Finished']], runFilter); filter.onchange = e => { runFilter = (e.currentTarget as HTMLSelectElement).value; redraw() }
+  const sort = select([['opened', 'Last opened'], ['created', 'Created'], ['goal', 'Goal A-Z']], runSort); sort.onchange = e => { runSort = (e.currentTarget as HTMLSelectElement).value; redraw() }
   const searchWrap = h('div', `head-search${runSearchOpen || runSearch ? ' open' : ''}`)
   const search = input('search', runSearch); search.placeholder = 'Search goals'; search.setAttribute('aria-label', 'Search crew runs')
   const searchBtn = h('button', 'icon-btn sm'); searchBtn.append(icon('search', 'sm')); searchBtn.title = 'Search runs'; searchBtn.setAttribute('aria-label', 'Search runs')
-  searchBtn.onclick = () => { runSearchOpen = true; searchWrap.classList.add('open'); search.focus() }
-  search.onblur = () => { if (!search.value) { runSearchOpen = false; searchWrap.classList.remove('open') } }
-  search.onkeydown = e => { if (e.key === 'Escape') { e.stopPropagation(); search.value = ''; runSearch = ''; runSearchOpen = false; redraw() } }
-  search.oninput = () => { runSearch = search.value; runSearchOpen = true; redraw(true) }
+  searchBtn.onclick = e => { runSearchOpen = true; const w = (e.currentTarget as HTMLElement).parentElement!; w.classList.add('open'); w.querySelector('input')!.focus() }
+  search.onblur = e => { const f = e.currentTarget as HTMLInputElement; if (!f.value) { runSearchOpen = false; f.parentElement!.classList.remove('open') } }
+  search.onkeydown = e => { if (e.key === 'Escape') { e.stopPropagation(); (e.currentTarget as HTMLInputElement).value = ''; runSearch = ''; runSearchOpen = false; redraw() } }
+  search.oninput = e => { runSearch = (e.currentTarget as HTMLInputElement).value; runSearchOpen = true; redraw() }
   searchWrap.append(searchBtn, search)
   const add = h('button', 'btn primary'); add.append(icon('plus', 'sm'), document.createTextNode('New')); add.title = 'Start a new crew run'; add.onclick = newRun
   tools.append(view, selectButton('filter', filter, 'Filter crew runs'), selectButton('sort', sort, 'Sort crew runs'), searchWrap, add); head.append(tools); section.append(head)
@@ -379,7 +385,7 @@ function renderRunList() {
   if (!summaries.length) { section.append(emptyState('users', 'No crew runs yet', 'Describe a goal above and the crew plans it, splits the work and brings back one checked result.', ['New run', newRun])); return section }
   if (!visible.length) { section.append(emptyState('search', 'No runs match', 'Try another search or filter.', ['Clear filters', () => { runSearch = ''; runFilter = 'all'; runSearchOpen = false; redraw() }])); return section }
   for (const [index, item] of visible.entries()) {
-    const row = h('article', 'run-row'); row.setAttribute('role', 'row'); enter(row, `row:${item.id}`, index)
+    const row = h('article', 'run-row'); row.setAttribute('role', 'row'); row.dataset.key = item.id; enter(row, `row:${item.id}`, index)
     const open = h('button', 'run-open run-cols'); open.setAttribute('aria-label', `Open ${item.goal}`); open.onclick = () => void (replay ? openRun(item.id, replayRun('interrupted')) : openRun(item.id))
     const count = h('span', 'c-tasks', `${item.tasks.done}/${item.tasks.total}`); count.title = `${item.tasks.done} of ${item.tasks.total} tasks done`
     const where = h('span', 'c-project', folderName(item.project)); where.title = item.project
@@ -1123,7 +1129,7 @@ function scheduleRun() {
 // After the phone was offline or asleep: the open run (or the run list) is read again, keeping the scroll position.
 async function resyncTeam() {
   if ($('team-screen').hidden || replay) return
-  if (!run) { summaries = await window.forge.teamList(); cacheSet('runs', summaries.slice(0, 30)); document.querySelector('.team-runs')?.replaceWith(renderRunList()); return }
+  if (!run) { summaries = await window.forge.teamList(); cacheSet('runs', summaries.slice(0, 30)); const live = document.querySelector<HTMLElement>('.team-runs'); if (live) morph(live, renderRunList()); return }
   const id = run.id
   const [saved, events] = await Promise.all([window.forge.teamGet(id), window.forge.teamEvents(id)])
   if (!saved || run?.id !== id) return

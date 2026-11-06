@@ -22,6 +22,7 @@ import { initBrief, resetBrief, projectBrief, briefGoal, briefEvent, briefUndone
 import { initPalette } from './palette'
 import { attachmentStrip, sentChips, type Kind } from './attachments'
 import { cacheGet, cacheSet, isRemote, onResync, phone, toggleDrawer } from './phone'
+import { morphChildren } from './morph'
 
 // Settings is its own chunk: nothing on the first screen needs it.
 const openSettings = (page?: Page) => import('./settings').then((m) => m.openSettings(page)).catch((e) => toast(cleanErr(e), 4000))
@@ -88,9 +89,9 @@ function drawReply() {
   replyDirty = false; replyDrawn = performance.now()
   const stick = nearBottom()
   const key = keyLines(reply.text)
-  reply.el.innerHTML = md(key.length ? withoutKey(reply.text) : reply.text)
-  reply.el.querySelector(':scope > .key-card')?.remove()
-  if (key.length) reply.el.append(keyCard(key))
+  const next = document.createElement('div')
+  next.innerHTML = md(key.length ? withoutKey(reply.text) : reply.text)
+  morphChildren(reply.el, next) // ponytail: diffs the whole reply each frame; go back to innerHTML past ~200 KB if it shows in a profile
   if (stick) toEnd()
 }
 function scheduleReply() {
@@ -501,6 +502,7 @@ function handle(ev: AgentEvent) {
     case 'turn_end':
       if (reply) {
         const text = reply.text
+        const key = keyLines(text); if (key.length) reply.el.append(keyCard(key)) // once, when the reply is complete (it was rebuilt every frame)
         const actions = h('div', 'msg-actions')
         const c = h('button')
         c.append(icon('copy', 'sm'))

@@ -3,10 +3,11 @@ import type { RunSummary } from '../main/team/service'
 import { folderName, timeAgo } from './format'
 import { icon } from './icons'
 import { h } from './ui'
-import { STEP_GLYPH } from './glyphs'
+import { morphChildren } from './morph'
 
 const list = document.getElementById('chat-list')!
 const seen = new Set<string>() // only chats appearing for the first time animate in, so live re-renders stay still
+const armed = new Map<string, ReturnType<typeof setTimeout>>() // chats whose Delete? is showing, waiting for the second click
 
 export { folderName }
 
@@ -21,8 +22,9 @@ const statusOf = (r: RunSummary) => (r.status === 'awaiting_approval' || r.pendi
 
 // A Crew run sits in the same list as the chats, with the crew icon; opening it goes to the Crew screen.
 function runItem(r: RunSummary, active: boolean, handlers: Handlers, fresh: () => number) {
-  const item = h('div', 'chat-item run-item' + (active ? ' active' : ''))
   const key = `run:${r.id}`
+  const item = h('div', 'chat-item run-item' + (active ? ' active' : ''))
+  item.dataset.key = key
   if (!seen.has(key)) { seen.add(key); item.classList.add('enter'); item.style.setProperty('--i', String(Math.min(fresh(), 12))) }
   const waiting = statusOf(r) === 'waiting'
   item.title = `${r.goal}\n${r.project}\n${waiting && r.status !== 'awaiting_approval' ? 'Needs your answer' : RUN_STATUS[r.status]} · ${timeAgo(r.updatedAt)}`
@@ -47,6 +49,7 @@ const saveFolded = () => { try { localStorage.setItem(FOLD_KEY, JSON.stringify([
 function head(label: string, count: number, key: string | null, redraw: () => void, title = '') {
   const el = h('button', 'proj-head' + (key && folded.has(key) ? ' folded' : '')) as HTMLButtonElement
   el.type = 'button'
+  el.dataset.key = `head:${key ?? 'active'}` // kept between redraws, so the chevron turns instead of jumping
   if (key) el.setAttribute('aria-expanded', String(!folded.has(key)))
   if (title) el.title = title
   const chev = icon('chevron', 'sm'); chev.classList.add('proj-chev')
@@ -60,9 +63,10 @@ let lastArgs: Parameters<typeof renderHistory> | null = null
 
 export function renderHistory(chats: ChatListItem[], activeId: string, query: string, handlers: Handlers, runs: RunSummary[] = [], activeRun = '') {
   lastArgs = [chats, activeId, query, handlers, runs, activeRun]
-  list.replaceChildren()
+  const out = h('div') // built off the page, then morphed in: rows that stay keep hover, a rename, an armed Delete? and their spinner
   if (!chats.length && !runs.length) {
-    list.append(h('div', 'empty-list', query ? 'No chats or runs match.' : 'Your chats and Crew runs will show up here.'))
+    out.append(h('div', 'empty-list', query ? 'No chats or runs match.' : 'Your chats and Crew runs will show up here.'))
+    morphChildren(list, out)
     return
   }
   const redraw = () => { if (lastArgs) renderHistory(...lastArgs) }
@@ -74,7 +78,7 @@ export function renderHistory(chats: ChatListItem[], activeId: string, query: st
 
   // what is working or waiting for you comes first, wherever it lives
   const active = merged.filter(live)
-  if (active.length) { list.append(head('Active', active.length, null, redraw, 'Working or waiting for you')); for (const e of active) list.append(draw(e)) }
+  if (active.length) { out.append(head('Active', active.length, null, redraw, 'Working or waiting for you')); for (const e of active) out.append(draw(e)) }
 
   // the rest, by project folder, the most recently used folder first; a folder folds away
   const groups = new Map<string, Entry[]>()
@@ -86,53 +90,62 @@ export function renderHistory(chats: ChatListItem[], activeId: string, query: st
     const header = head(project ? folderName(project) : 'No folder', items.length, key, redraw, project)
     if (isFolded) header.classList.add('folded')
     else header.classList.remove('folded')
-    list.append(header)
-    if (!isFolded) for (const e of items) list.append(draw(e))
+    out.append(header)
+    if (!isFolded) for (const e of items) out.append(draw(e))
   }
+  morphChildren(list, out)
 }
 
 function chatItem(c: ChatListItem, active: boolean, handlers: Handlers, fresh: () => number) {
   const item = h('div', 'chat-item' + (active ? ' active' : ''))
+  item.dataset.key = `chat:${c.id}`
   if (!seen.has(c.id)) { seen.add(c.id); item.classList.add('enter'); item.style.setProperty('--i', String(Math.min(fresh(), 12))) }
   item.title = `${c.title}\n${c.project ?? ''}\n${c.status === 'running' ? 'Working' : c.status === 'waiting' ? 'Needs your approval' : timeAgo(c.updatedAt)}`
   const open = h('button', 'chat-open')
   open.setAttribute('aria-label', `Open ${c.title}`)
   if (active) open.setAttribute('aria-current', 'page')
-  const row = h('span', 'row1')
-  if (c.status !== 'idle') row.append(h('span', 'st ' + c.status))
-  row.append(h('span', 't', c.title), h('span', 'when', when(c.updatedAt)))
+  const line = h('span', 'row1')
+  if (c.status !== 'idle') line.append(h('span', 'st ' + c.status))
+  line.append(h('span', 't', c.title), h('span', 'when', when(c.updatedAt)))
   const x = h('button', 'x')
   x.append(icon('x', 'sm'))
   x.title = 'Delete chat'
   x.setAttribute('aria-label', `Delete ${c.title}`)
   // Two clicks, no native popup: the first turns the button into "Delete?", the second deletes.
-  let armed: ReturnType<typeof setTimeout> | null = null
+  // Handlers reach the live row through the event: a redraw copies them onto the row already on the page.
   x.onclick = (e) => {
     e.stopPropagation()
-    if (!armed) {
-      x.classList.add('confirm')
-      x.replaceChildren(document.createTextNode('Delete?'))
-      armed = setTimeout(() => {
-        armed = null
-        x.classList.remove('confirm')
-        x.replaceChildren(icon('x', 'sm'))
-      }, 3000)
+    const b = e.currentTarget as HTMLElement, row = b.closest('.chat-item')!
+    clearTimeout(armed.get(c.id)); armed.delete(c.id)
+    if (!b.classList.contains('confirm')) { // this button, not the timer, says whether it is armed: a row folded or filtered away while armed comes back unarmed
+      row.setAttribute('data-hold', '') // a sidebar redraw leaves an armed row alone
+      b.classList.add('confirm')
+      b.replaceChildren(document.createTextNode('Delete?'))
+      armed.set(c.id, setTimeout(() => {
+        armed.delete(c.id)
+        row.removeAttribute('data-hold')
+        b.classList.remove('confirm')
+        b.replaceChildren(icon('x', 'sm'))
+      }, 3000))
       return
     }
-    clearTimeout(armed)
+    row.removeAttribute('data-hold')
     handlers.remove(c.id)
   }
-  open.append(row)
+  open.append(line)
   item.append(open, x)
   open.onclick = () => handlers.open(c.id)
   // Double-click renames in place, like a file manager.
   item.ondblclick = (e) => {
     e.preventDefault()
+    const row = e.currentTarget as HTMLElement, openBtn = row.querySelector<HTMLElement>('.chat-open')!
+    if (row.hasAttribute('data-hold')) return
+    row.setAttribute('data-hold', '') // a redraw during a rename used to remove the input, and its blur saved the half-typed title
     const input = document.createElement('input')
     input.className = 'edit'
     input.value = c.title
-    open.hidden = true
-    item.prepend(input)
+    openBtn.hidden = true
+    row.prepend(input)
     input.focus()
     input.select()
     let done = false
@@ -141,7 +154,8 @@ function chatItem(c: ChatListItem, active: boolean, handlers: Handlers, fresh: (
       done = true
       if (save && input.value.trim() && input.value.trim() !== c.title) handlers.rename(c.id, input.value)
       input.remove()
-      open.hidden = false
+      openBtn.hidden = false
+      row.removeAttribute('data-hold')
     }
     input.onkeydown = (ev) => {
       ev.stopPropagation()
