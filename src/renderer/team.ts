@@ -532,10 +532,10 @@ async function crewHealth() {
 }
 function openPicker(anchor: HTMLElement, groups: { title: string; options: [string, string][]; current: string; pick: (v: string) => void }[]) {
   const again = picker?.dataset.anchor === anchor.dataset.chip; closePicker(); if (again) return
-  const pop = h('div', 'crew-pop'); pop.dataset.anchor = anchor.dataset.chip ?? ''
+  const pop = h('div', 'cw-pop'); pop.dataset.anchor = anchor.dataset.chip ?? ''
   for (const g of groups) {
-    pop.append(h('div', 'crew-pop-title', g.title))
-    for (const [v, label] of g.options) { const b = h('button', `crew-pop-item${v === g.current ? ' on' : ''}`, label) as HTMLButtonElement; b.type = 'button'; b.onclick = () => { closePicker(); g.pick(v) }; pop.append(b) }
+    pop.append(h('div', 'cw-pop-title', g.title))
+    for (const [v, label] of g.options) { const b = h('button', `cw-pop-item${v === g.current ? ' on' : ''}`, label) as HTMLButtonElement; b.type = 'button'; b.onclick = () => { closePicker(); g.pick(v) }; pop.append(b) }
   }
   pop.style.left = `${anchor.offsetLeft}px`; anchor.parentElement!.append(pop); picker = pop
   const away = (e: MouseEvent) => { if (!pop.contains(e.target as Node) && !anchor.contains(e.target as Node)) { closePicker(); document.removeEventListener('mousedown', away) } }
@@ -546,7 +546,7 @@ function composerChips(): HTMLElement[] {
   if (typeof window.forge.teamSetModels !== 'function') return []
   const c = run!.config
   const chip = (key: string, label: string, title: string, on: (b: HTMLButtonElement) => void, cls = '', glyph?: IconName) => {
-    const b = h('button', `crew-chip ${cls}`) as HTMLButtonElement; b.type = 'button'; b.title = title; b.dataset.chip = key
+    const b = h('button', `cw-chip ${cls}`) as HTMLButtonElement; b.type = 'button'; b.title = title; b.dataset.chip = key
     if (glyph) b.append(icon(glyph, 'sm'))
     b.append(document.createTextNode(label)); b.onclick = () => on(b); return b
   }
@@ -976,7 +976,7 @@ function buildSteer(runId: string): SteerUi {
   const grow = () => { text.style.height = 'auto'; text.style.height = `${Math.min(text.scrollHeight, 160)}px`; sync() }
   text.oninput = () => { steerDraft = text.value; grow() }
   const to = select([['all', 'Everyone'], ['claude', 'Claude'], ['codex', 'Codex'], ['local', AGENT_NAME.local]], steerTarget); to.onchange = () => { steerTarget = to.value as typeof steerTarget }
-  const bar = h('div', 'crew-bar'); row.append(att.button, att.input, attachVoice(text, form), text, selectButton('users', to, 'Send to'), send); form.append(att.strip, row, bar); queueMicrotask(grow)
+  const bar = h('div', 'cw-bar'); row.append(att.button, att.input, attachVoice(text, form), text, selectButton('users', to, 'Send to'), send); form.append(att.strip, row, bar); queueMicrotask(grow)
   text.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit() } }
   const sent = () => { steerDraft = ''; text.value = ''; att.clear(); grow() }
   form.onsubmit = e => {

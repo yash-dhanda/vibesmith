@@ -616,6 +616,16 @@ async function chooseFolder() {
   }
 }
 
+// "Many agents": send to the Crew instead of one agent. Remembered between sessions.
+const multiOn = () => { try { return localStorage.getItem('forge.soloMulti') === '1' } catch { return false } }
+function initMulti() {
+  const b = $('multi')
+  b.hidden = typeof window.forge.teamStart !== 'function'
+  const paint = () => { b.classList.toggle('on', multiOn()); b.setAttribute('aria-pressed', String(multiOn())) }
+  b.onclick = () => { try { localStorage.setItem('forge.soloMulti', multiOn() ? '0' : '1') } catch {} paint(); prompt.focus() }
+  paint()
+}
+
 async function send() {
   const draft = prompt.value.trim()
   const text = withPriorities(draft)
@@ -624,6 +634,18 @@ async function send() {
   if (att.busy()) { toast('Wait for the files to finish uploading.'); return }
   if (!project) await chooseFolder() // like Codex: no folder, no run
   if (!project) return
+  // "Many agents" is on: the same message becomes a Crew run (several Claude and local agents side by side) and its page opens.
+  if (multiOn() && typeof window.forge.teamStart === 'function') {
+    if (att.items().length) { toast('Files go with one agent. Turn off Many agents to send them.'); return }
+    sending = true
+    try {
+      const r = await window.forge.teamStart(text, {})
+      prompt.value = ''
+      grow()
+      window.dispatchEvent(new CustomEvent('forge-open-run', { detail: r.id }))
+    } catch (e) { toast(cleanErr(e), 5000) } finally { sending = false }
+    return
+  }
   sending = true
   const files = att.items().flatMap((x) => (x.state === 'ready' && x.result ? [{ id: x.result.id, name: x.file.name, kind: x.result.kind ?? x.kind }] : []))
   const bubble = addUser(text, files)
@@ -842,6 +864,7 @@ export async function initChat(opts: {
   openWorkspace: () => void | Promise<void>
 }) {
   onFileChanged = opts.onFileChanged
+  initMulti()
   onFilesRestored = opts.onFilesRestored
   onProject = opts.onProject
   window.addEventListener('forge-project-picked', (e) => { const p = (e as CustomEvent<string>).detail; if (p && p !== project && !hasMessages) { setProject(p); void onProject(p) } })
