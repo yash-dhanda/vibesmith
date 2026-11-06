@@ -9,6 +9,10 @@ const KEY_RULE = `When the goal asks you to hand the user something (a login id 
 
 // ---------------------------------------------------------------- planning
 
+// The goal every agent is shown. With several main requests they all appear, oldest first, and the agent is told to treat them as one job.
+export const goalText = (run: Pick<Run, 'goal' | 'prompts'>): string =>
+  run.prompts && run.prompts.length > 1 ? `The user sent ${run.prompts.length} main requests. Treat them together, the newest last (it may add to, change or replace the earlier ones):\n${run.prompts.map((q, i) => `${i + 1}. ${q.text}`).join('\n\n')}` : run.goal
+
 export type PlannedTask = { id: string; title: string; goal: string; acceptance: string[]; deps: string[]; agent: AgentName | null; kind: 'build' | 'research' | 'test'; files: string[] }
 export type Plan = { summary: string; tasks: PlannedTask[] }
 
@@ -141,7 +145,7 @@ export function workPrompt(run: Run, task: Task, c: Ctx): string {
   return `${TOOLS}
 
 # Overall goal of the team
-${run.goal}
+${goalText(run)}
 
 # Your task ${task.id}: ${task.title}
 ${task.goal}
@@ -157,7 +161,7 @@ export function testPrompt(run: Run, task: Task, c: Ctx): string {
   return `${TOOLS}
 
 # Overall goal of the team
-${run.goal}
+${goalText(run)}
 
 # Your task ${task.id}: ${task.title}
 ${task.goal}
@@ -176,7 +180,7 @@ export function reviewPrompt(run: Run, task: Task, diff: string, round: number, 
   return `You are reviewing another agent's work. Read only; do not change files.${small}
 
 # Team goal
-${run.goal}
+${goalText(run)}
 
 # The task that was done: ${task.id} ${task.title}
 ${task.goal}
@@ -231,7 +235,7 @@ Find the cause and fix it with the smallest change that makes the command pass. 
 
 export function finalReviewPrompt(run: Run, diff: string): string {
   return `The team finished this goal:
-${run.goal}
+${goalText(run)}
 
 Below is the complete change they made (merged result). Part of it may come from a small local model, which is often wrong: do not trust summaries, check names, imports and APIs actually exist. Read only; do not change files. Check that the whole thing works together and meets the goal: missing pieces, anything the goal did not ask for (extra features, redesigns, unrelated changes: list each as a must-fix), integration mistakes between parts written by different agents, security problems, leftover debug code.
 
@@ -242,7 +246,7 @@ Reply with a short review, the must-fix problems first as bullets, then one fina
 
 export function securityReviewPrompt(run: Run, diff: string): string {
   return `The team finished this goal:
-${run.goal}
+${goalText(run)}
 
 You are the security reviewer. Below is the complete change they made (merged result). Read only; do not change files. You may open other files to follow a call or check how input reaches the new code. Look for:
 - secrets, keys or tokens in code, config or logs
@@ -289,3 +293,71 @@ export function buildReport(run: Run, verify: { ok: boolean | null; command?: st
   return lines.join('\n')
 }
 
+
+
+// ---------------------------------------------------------------- several main requests
+
+// "do it fast", "asap", "in parallel": the user wants speed over thoroughness. "not fast" and "don't rush" say the opposite.
+export const wantsSpeed = (text: string) => /\b(fast|faster|fastest|quick|quickly|asap|hurry|rush|speed it up|in parallel|as soon as possible)\b/i.test(text) && !/(?:\bnot|n't|\bno need to be|\bwithout)\s+(be\s+)?(too\s+)?(fast|quick|quickly|rush|rushing|hurry)\b/i.test(text)
+
+export type TaskDigest = { id: string; title: string; status: string; agent: string; summary?: string }
+
+// The planner of a run that is already under way: it reads every main request (the newest too), sees what the team has done, and adds only what is missing.
+export function replanPrompt(prompts: string[], tasks: TaskDigest[], brief: string, agents: AgentName[], fast: boolean): string {
+  const list = prompts.map((t, i) => `REQUEST ${i + 1}${i === prompts.length - 1 && prompts.length > 1 ? ' (newest)' : ''}:\n${t}`).join('\n\n')
+  const state = tasks.length ? tasks.map((t) => `- ${t.id} [${t.status}, ${t.agent}] ${t.title}${t.summary ? ` -> ${t.summary.replace(/\s+/g, ' ').slice(0, 160)}` : ''}`).join('\n') : '(no tasks yet)'
+  return `You are the lead planner of a team of coding agents that is already working. The user sent several main requests; the newest has just arrived. Read ALL of them, the newest one too, and treat them together as one job: the newest may add to, change or replace the older ones.
+
+${list}
+${brief ? `\nPROJECT NOTES:\n${brief}\n` : ''}
+WHAT THE TEAM HAS DONE SO FAR:
+${state}
+
+Look at the project folder if you need to (read-only). Then reply with ONE JSON object and nothing else:
+{"summary":"one sentence about what you add","tasks":[{"id":"n1","title":"short title","goal":"what to do and why","acceptance":["..."],"deps":[],"agent":"claude","kind":"build","files":["src/x.ts"]}],"cancel":["t4"]}
+
+Rules:
+- "tasks" holds only NEW work. Never repeat a task that is done, running or queued unless the newest request changes it: then put its id in "cancel" (only queued ones can be cancelled) and add a replacement.
+- If everything the newest request asks is already covered, reply with empty "tasks" and "cancel".
+- Give new tasks ids n1, n2, ... A task's "deps" may name those or the ids above, only when it truly needs that result.
+- Every literal request (a name, a page, "an admin id and password") goes into a task's "acceptance".
+- Tasks that touch different files run in parallel; avoid two tasks editing the same file.
+- "agent": ${agents.length > 1 ? agents.map((a) => ROLE[a]).join('; ') : `"${agents[0]}" (the only agent available)`}.
+- "kind": "build" changes files; "research" only reads; "test" writes tests.${fast ? '\n- SPEED: the user wants this fast. Split the work into as many independent tasks as can run at the same time (up to 8 at once), each touching different files, with as few deps as possible. Prefer "claude" for most of them: several Claude sessions run side by side.' : ''}`
+}
+
+export type Replan = { summary: string; tasks: PlannedTask[]; cancel: string[] }
+
+// Reads the planner's reply. New tasks come back with the ids n1, n2, ...; a dep may also be the id of a task that already exists.
+export function parseReplan(text: string, available: AgentName[], existing: string[], maxNew = 12): Replan {
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/)
+  const body = fence ? fence[1] : text
+  const a = body.indexOf('{'), b = body.lastIndexOf('}')
+  if (a < 0 || b <= a) throw new Error('the planner did not return JSON')
+  let raw: any
+  try {
+    raw = JSON.parse(body.slice(a, b + 1))
+  } catch {
+    throw new Error('the planner returned JSON that is not valid')
+  }
+  const str = (v: unknown, n: number) => String(v ?? '').trim().slice(0, n)
+  const list = (v: unknown) => (Array.isArray(v) ? v.map((x) => str(x, 300)).filter(Boolean).slice(0, 8) : [])
+  const raws: any[] = Array.isArray(raw.tasks) ? raw.tasks.slice(0, maxNew) : []
+  const ids = new Map<string, string>()
+  raws.forEach((t, i) => ids.set(str(t?.id, 40) || `n${i + 1}`, `n${i + 1}`))
+  const known = new Set(existing)
+  const tasks: PlannedTask[] = raws.map((t, i) => {
+    const title = str(t?.title, 120), goal = str(t?.goal, 2000)
+    if (!title && !goal) throw new Error(`new task ${i + 1} has no title or goal`)
+    const agent = isAgent(t?.agent) ? (available.includes(t.agent) ? t.agent : (available[0] ?? null)) : null
+    const deps = [...new Set((Array.isArray(t?.deps) ? t.deps : []).map((d: unknown) => ids.get(str(d, 40)) ?? (known.has(str(d, 40)) ? str(d, 40) : undefined)).filter((d: string | undefined): d is string => !!d && d !== `n${i + 1}`))] as string[]
+    return { id: `n${i + 1}`, title: title || goal.slice(0, 80), goal: goal || title, acceptance: list(t?.acceptance), deps, agent, kind: t?.kind === 'research' ? 'research' : t?.kind === 'test' ? 'test' : 'build', files: list(t?.files) }
+  })
+  const done = new Set<string>(existing)
+  for (let progress = true; progress && tasks.some((t) => !done.has(t.id)); ) {
+    progress = false
+    for (const t of tasks) if (!done.has(t.id) && t.deps.every((d) => done.has(d))) (done.add(t.id), (progress = true))
+  }
+  if (tasks.some((t) => !done.has(t.id))) throw new Error('the new tasks wait for each other in a circle')
+  return { summary: str(raw.summary, 500), tasks, cancel: (Array.isArray(raw.cancel) ? raw.cancel : []).map((c: unknown) => str(c, 40)).filter((c: string) => known.has(c)) }
+}

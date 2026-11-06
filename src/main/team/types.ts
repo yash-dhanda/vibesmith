@@ -97,10 +97,15 @@ export type TeamConfig = {
   visualCheck?: 'off' | 'auto' | 'always' // before the final review: start the site, screenshot the pages at desktop and phone sizes and show them to the reviewer (auto = only when UI files changed; default off, it starts a dev server)
   visualRoutes?: string[] // the pages to screenshot (default just "/")
   neverPush?: boolean // this project never goes to a remote: the Crew panel hides Push and Open pull request and the main process refuses both (default off)
+  speed?: 'normal' | 'fast' // fast: many sessions at once, no cross-review, no extra test task, light effort (set by the user's words or by hand)
+  speedSaved?: Partial<TeamConfig> // what fast mode replaced, put back when the user stops asking for speed
   securityReview?: 'off' | 'auto' | 'always' // a read-only security look before the final review: auto = only when the diff touches auth, payments, secrets, routes or dependencies (default auto)
 }
 
 export const DEFAULT_CONFIG: TeamConfig = { planner: 'auto', codexModel: '', maxParallelPerAgent: 2, maxFixRounds: 3, maxVerifyRounds: 2, review: 'cross', finalReview: 'auto', bypassPermissions: true, allowSubtasks: true, budget: { maxTasks: 12 }, codexMode: 'app-server', reviewPlan: false, maxLimitPercent: 0, autoSwitch: true, effortMode: 'auto', testTask: true, securityReview: 'auto' }
+
+// A main request of the user. A run keeps all of them in order: the first is the goal, every later one is another request the team reads together with the earlier ones.
+export type Prompt = { id: string; text: string; at: number }
 
 export type RunFinal = { report: string; files: Task['changed']; verifyOk: boolean | null; verifyOutput: string; reviewNotes: string[] }
 
@@ -108,6 +113,7 @@ export type Run = {
   id: string
   project: string
   goal: string
+  prompts?: Prompt[] // every main request, oldest first (missing on runs saved before there were several)
   status: RunStatus
   pausedReason?: string
   createdAt: number

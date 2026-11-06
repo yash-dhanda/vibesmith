@@ -877,8 +877,9 @@ ipcMain.handle('team:skip-task', (_e, id: unknown, taskId: unknown) => teamSvc()
 ipcMain.handle('team:set-models', (_e, id: unknown, m: unknown) => {
   const o = (m && typeof m === 'object' ? m : {}) as Record<string, unknown>
   const str = (v: unknown) => (typeof v === 'string' ? v : undefined)
-  return teamSvc().orch.setModels(teamId(id), { claudeModel: str(o.claudeModel), codexModel: str(o.codexModel), localModel: str(o.localModel), claudeEffort: str(o.claudeEffort), codexEffort: str(o.codexEffort) })
+  return teamSvc().orch.setModels(teamId(id), { claudeModel: str(o.claudeModel), codexModel: str(o.codexModel), localModel: str(o.localModel), claudeEffort: str(o.claudeEffort), codexEffort: str(o.codexEffort), bypassPermissions: typeof o.bypassPermissions === 'boolean' ? o.bypassPermissions : undefined })
 })
+ipcMain.handle('team:set-speed', (_e, id: unknown, fast: unknown) => teamSvc().orch.setSpeed(teamId(id), fast === true))
 ipcMain.handle('team:extend-budget', (_e, id: unknown) => teamSvc().orch.extendBudget(teamId(id)))
 ipcMain.handle('team:live-diff', (_e, id: unknown, taskId: unknown, path?: unknown) => teamSvc().orch.liveDiff(teamId(id), teamId(taskId), typeof path === 'string' ? path.slice(0, 500) : undefined))
 ipcMain.handle('team:memory', (_e, id: unknown) => teamSvc().orch.memorySnapshot(teamId(id)))

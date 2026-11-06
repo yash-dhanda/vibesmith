@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { errorSignature, ProjectMemoryStore, rank, routeAgent } from './memory'
 import { decideCommand, decideTool } from './policy'
-import { parsePlan, parseVerdict } from './prompts'
+import { goalText, parsePlan, parseReplan, parseVerdict, replanPrompt, wantsSpeed } from './prompts'
 import { TeamStore } from './store'
 import { DEFAULT_CONFIG, emptyUsage, type Run } from './types'
 
@@ -97,7 +97,7 @@ describe('TeamStore', () => {
 import { sanitizeConfig } from './service'
 describe('sanitizeConfig', () => {
   it('keeps known keys, clamps numbers, and drops everything else', () => {
-    expect(sanitizeConfig({ planner: 'codex', maxParallelPerAgent: 99, maxFixRounds: -3, review: 'off', evil: 1, codexModel: 'gpt-5.6-luna', budget: { maxAgentRuns: 5, maxCostUsd: 2.5, maxTokens: 'x' }, verify: '' })).toEqual({ planner: 'codex', maxParallelPerAgent: 4, maxFixRounds: 0, review: 'off', codexModel: 'gpt-5.6-luna', budget: { maxAgentRuns: 5, maxCostUsd: 2.5 }, verify: null })
+    expect(sanitizeConfig({ planner: 'codex', maxParallelPerAgent: 99, maxFixRounds: -3, review: 'off', evil: 1, codexModel: 'gpt-5.6-luna', budget: { maxAgentRuns: 5, maxCostUsd: 2.5, maxTokens: 'x' }, verify: '' })).toEqual({ planner: 'codex', maxParallelPerAgent: 8, maxFixRounds: 0, review: 'off', codexModel: 'gpt-5.6-luna', budget: { maxAgentRuns: 5, maxCostUsd: 2.5 }, verify: null })
     expect(sanitizeConfig({ codexModel: 'x; rm -rf /' })).toEqual({})
     expect(sanitizeConfig({ neverPush: true })).toEqual({ neverPush: true })
     expect(sanitizeConfig({ neverPush: 'yes' })).toEqual({})
@@ -120,5 +120,35 @@ describe('redact', () => {
   it('masks inside nested events', () => {
     const e = redactEvent({ type: 'agent', runId: 'r', taskId: 't', phase: 'work', ev: { type: 'tool_result', agent: 'codex', id: 'i', ok: true, text: 'xoxb-1234567890-abcdefghij' } } as never) as any
     expect(e.ev.text).toBe('[secret removed]')
+  })
+})
+
+describe('several main requests', () => {
+  const reply = (o: unknown) => '```json\n' + JSON.stringify(o) + '\n```'
+  it('parseReplan: new ids, deps on tasks that exist, only real tasks can be cancelled, empty means already covered', () => {
+    const r = parseReplan(reply({ summary: 's', tasks: [{ id: 'x', title: 'A', goal: 'do a', deps: ['t1'] }, { id: 'y', title: 'B', goal: 'do b', deps: ['x', 'nope'], agent: 'codex' }], cancel: ['t2', 'ghost'] }), ['claude', 'codex'], ['t1', 't2'])
+    expect(r.tasks.map((t) => [t.id, t.deps, t.agent])).toEqual([['n1', ['t1'], null], ['n2', ['n1'], 'codex']])
+    expect(r.cancel).toEqual(['t2'])
+    expect(parseReplan(reply({ tasks: [], cancel: [] }), ['claude'], ['t1'])).toEqual({ summary: '', tasks: [], cancel: [] })
+    expect(() => parseReplan(reply({ tasks: [{ id: 'a', title: 'A', goal: 'g', deps: ['b'] }, { id: 'b', title: 'B', goal: 'g', deps: ['a'] }] }), ['claude'], [])).toThrow(/circle/)
+    expect(() => parseReplan('no json here', ['claude'], [])).toThrow()
+  })
+  it('replanPrompt shows every request, marks the newest, lists the work so far, and asks for speed only when fast', () => {
+    const p = replanPrompt(['first', 'second'], [{ id: 't1', title: 'Do first', status: 'done', agent: 'claude', summary: 'made it' }], '', ['claude'], false)
+    expect(p).toContain('REQUEST 1:\nfirst')
+    expect(p).toContain('REQUEST 2 (newest):\nsecond')
+    expect(p).toContain('t1 [done, claude] Do first -> made it')
+    expect(p).not.toContain('SPEED')
+    expect(replanPrompt(['a'], [], '', ['claude'], true)).toContain('SPEED')
+  })
+  it('wantsSpeed hears "fast" and "asap" but not "not too fast"', () => {
+    expect(['do it fast', 'as fast as you can', 'asap please', 'run these in parallel', 'quickly'].every(wantsSpeed)).toBe(true)
+    expect(['take your time', 'not too fast', "don't rush", 'fix the fasting tracker'].some(wantsSpeed)).toBe(false)
+  })
+  it('goalText: one request stays as it is, several are numbered with the newest last', () => {
+    expect(goalText({ goal: 'g', prompts: [{ id: 'p1', text: 'g', at: 1 }] })).toBe('g')
+    const t = goalText({ goal: 'g', prompts: [{ id: 'p1', text: 'one', at: 1 }, { id: 'p2', text: 'two', at: 2 }] })
+    expect(t).toContain('2 main requests')
+    expect(t.indexOf('1. one')).toBeLessThan(t.indexOf('2. two'))
   })
 })

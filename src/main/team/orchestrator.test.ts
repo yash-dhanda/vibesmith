@@ -75,6 +75,12 @@ function harness(script: Script, over: { available?: AgentName[]; cfg?: object; 
       }
       if (script.delayMs) await sleep(script.delayMs)
       if (o.signal.aborted) return { ...ok('', agent, task), ok: false, error: { kind: 'aborted', message: 'stopped' } }
+      if (kind === 'plan' && /already working/.test(p)) {
+        // a newer request: like a real planner, add one task for it
+        const asked = [...p.matchAll(/REQUEST \d+[^\n]*:\n([\s\S]*?)(?=\n\nREQUEST \d+|\n\n(?:PROJECT NOTES|WHAT THE TEAM))/g)]
+        const newest = asked.at(-1)?.[1]?.trim() ?? 'more'
+        return ok('```json\n' + JSON.stringify({ summary: 'new request', tasks: [{ id: 'n1', title: newest.slice(0, 60), goal: newest, agent: 'claude', kind: 'build', acceptance: [], deps: [], files: [] }], cancel: [] }) + '\n```', agent, task)
+      }
       if (kind === 'plan') return ok('```json\n' + JSON.stringify(script.plan) + '\n```', agent, task)
       if (kind === 'work') {
         if (script.limitsPct) o.onEvent({ type: 'limits', agent, primaryPct: script.limitsPct, secondaryPct: 3 })
@@ -1661,5 +1667,42 @@ describe('asking for the local model in words', () => {
   it('recognises "let local fix this" and friends, and leaves other uses of the word alone', () => {
     for (const t of ['this is happening also let local fix this', 'use the local model for it', 'mainly local please', 'do it with local AI', 'let Local fix it, then claude review']) expect(asksForLocal(t)).toBe(true)
     for (const t of ['fix the local storage bug', 'start the local server', 'the localhost page is blank', 'use localStorage for the theme', 'run it locally']) expect(asksForLocal(t)).toBe(false)
+  })
+})
+
+describe('several main requests in one run', () => {
+  it('a message while the team works adds work without stopping anyone, and every agent reads both requests', async () => {
+    const x = h({ delayMs: 150, plan: { tasks: [T('a'), T('b')] } })
+    const run = await x.orch.start(x.proj, 'build the first thing')
+    await until(x.orch, run.id, (r) => r.tasks.some((t) => t.status === 'running'))
+    await x.orch.followUp(run.id, 'and also add a settings page')
+    const r = await until(x.orch, run.id, (q) => q.status === 'awaiting_approval' && q.tasks.some((t) => t.goal === 'and also add a settings page' && t.status === 'done'), 20000)
+    expect(r.prompts?.map((q) => q.text)).toEqual(['build the first thing', 'and also add a settings page'])
+    expect(r.tasks.filter((t) => t.id === 't1' || t.id === 't2').every((t) => t.status === 'done')).toBe(true) // nothing the team was doing was cancelled
+    const added = r.tasks.find((t) => t.goal === 'and also add a settings page')!
+    expect(added.proposedBy).toBe('user')
+    const workPrompt = x.calls.find((c) => c.kind === 'work' && c.task === added.id)!.prompt
+    expect(workPrompt).toContain('2 main requests')
+    expect(workPrompt).toContain('build the first thing')
+    expect(workPrompt).toContain('and also add a settings page')
+  })
+
+  it('a message after the result keeps the finished work and adds a task for the new request', async () => {
+    const x = h({ plan: { tasks: [T('a')] } })
+    const run = await x.orch.start(x.proj, 'first')
+    await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    await x.orch.followUp(run.id, 'second request')
+    const r = await until(x.orch, run.id, (q) => q.status === 'awaiting_approval' && q.tasks.some((t) => t.goal === 'second request' && t.status === 'done'))
+    expect(r.tasks.find((t) => t.id === 't1')?.status).toBe('done')
+    expect(r.prompts).toHaveLength(2)
+  })
+
+  it('"do it fast" turns on fast mode (many sessions, no cross-review, no extra test task) and the old settings come back after', async () => {
+    const x = h({ plan: { tasks: [T('a')] } })
+    const run = await x.orch.start(x.proj, 'build this as fast as you can', { maxParallelPerAgent: 2, review: 'cross' })
+    const c = x.orch.get(run.id)!.config
+    expect(c).toMatchObject({ speed: 'fast', review: 'off', testTask: false, maxParallelPerAgent: 6, finalReview: false })
+    x.orch.setSpeed(run.id, false)
+    expect(x.orch.get(run.id)!.config).toMatchObject({ speed: 'normal', review: 'cross', maxParallelPerAgent: 2 })
   })
 })

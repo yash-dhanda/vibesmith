@@ -14,7 +14,7 @@ import { errorSignature, ProjectMemoryStore, rank, routeAgent } from './memory'
 import { decideCommand, decideTool } from './policy'
 import { attachmentsBlock, imagePaths, removeAttachmentDirs } from './attach'
 import { historyBlock, HistoryRecorder, HISTORY_DIR, writeHistory } from './history'
-import { buildReport, conflictPrompt, contextFor, finalReviewPrompt, fixPrompt, forLocal, parsePlan, parseVerdict, planPrompt, reviewPrompt, securityReviewPrompt, verifyFixPrompt, workPrompt } from './prompts'
+import { buildReport, conflictPrompt, contextFor, finalReviewPrompt, fixPrompt, forLocal, parsePlan, parseVerdict, parseReplan, planPrompt, replanPrompt, reviewPrompt, wantsSpeed, securityReviewPrompt, verifyFixPrompt, workPrompt } from './prompts'
 import { effortFor } from './effort'
 import { forecast, mainAuthor, taskStats } from './forecast'
 import { onlyDocsOrConfig, touchesSecurity } from './security'
@@ -85,6 +85,8 @@ type Live = {
   finishing: boolean
   handles: Map<string, { agent: AgentName; h: ServerHandle }> // running agents that can be steered mid-turn
   planning: boolean // a planner is running: a second one must not start beside it
+  replans: number // newer requests still being planned: the run is not finished while any is
+  replanChain: Promise<unknown> // one request is planned at a time, in the order they were sent
   late: { body: string; to: AgentName | 'all' }[] // messages sent while the last checks ran, which no task would read
   limited: Map<AgentName, number> // agents whose plan ran out in this run, with the time it comes back (0 = unknown: out for the rest of the run)
   bg: Set<Promise<unknown>> // the planner and the last steps: turns that are not tasks, but must have stopped before a resume replaces the controller
@@ -176,7 +178,8 @@ export class TeamOrchestrator {
     const integrationBranch = `forge/${runId}`
     const integrationWorktree = join(this.d.teamDir, 'wt', runId, 'integration')
     await createRunBranch(project, integrationBranch, baseCommit, integrationWorktree)
-    const run: Run = { id: runId, project, goal: goal.trim(), status: 'planning', createdAt: Date.now(), updatedAt: Date.now(), activeMs: 0, activeSince: Date.now(), baseCommit, integrationBranch, integrationWorktree, plan: { summary: '', plannedBy: null }, tasks: [], messages: [], decisions: [], errors: [], approvals: [], usage: { claude: emptyUsage(), codex: emptyUsage(), local: emptyUsage() }, config }
+    const run: Run = { id: runId, project, goal: goal.trim(), prompts: [{ id: 'p1', text: goal.trim(), at: Date.now() }], status: 'planning', createdAt: Date.now(), updatedAt: Date.now(), activeMs: 0, activeSince: Date.now(), baseCommit, integrationBranch, integrationWorktree, plan: { summary: '', plannedBy: null }, tasks: [], messages: [], decisions: [], errors: [], approvals: [], usage: { claude: emptyUsage(), codex: emptyUsage(), local: emptyUsage() }, config }
+    if (wantsSpeed(goal) || config.speed === 'fast') this.applySpeed(run, true)
     this.runs.set(runId, run)
     this.saveNow(run)
     writeHistory(project, `Run ${runId} started. Goal: ${run.goal.replace(/\s+/g, ' ').slice(0, 800)} (${config.attachments?.length ? `attachments: ${config.attachments.map((a) => a.name).join(', ')}; ` : ''}crew: ${available.join(', ')}; review ${config.review}; web ${config.webResearch === false ? 'off' : 'on'})`)
@@ -368,11 +371,16 @@ export class TeamOrchestrator {
       body = `${body}\n\nAttached files (open and look at them):\n${files.map((f) => `- ${f.name}: ${f.path}${f.frames?.length ? ` (video, frames: ${f.frames.join(', ')})` : ''}`).join('\n')}`
       this.save(run)
     }
+    // Every message is a main request of its own: the run keeps them all, in order, and the team reads the newest together with the older ones.
+    ;(run.prompts ??= [{ id: 'p1', text: run.goal, at: run.createdAt }]).push({ id: `p${run.prompts.length + 1}`, text: body, at: Date.now() })
+    if (wantsSpeed(body)) this.applySpeed(run, true)
     if (['planning', 'running', 'paused', 'verifying', 'interrupted'].includes(run.status)) {
       // after the last task nobody is left to read a message: the final steps turn it into a task
       const finishing = run.status === 'verifying' || (['paused', 'interrupted'].includes(run.status) && run.tasks.length > 0 && run.tasks.every((t) => ['done', 'cancelled'].includes(t.status)))
       if (finishing) this.liveOf(run).late.push({ body, to })
-      return this.steer(runId, body, to)
+      this.steer(runId, body, to) // agents that are working read it at the start of their next turn
+      if (!finishing && to === 'all' && !asksForLocal(body)) this.queueReplan(run, this.liveOf(run), body) // and the planner adds what the new request needs, without stopping anyone
+      return
     }
     const { agents: available, skipped } = await this.usable(run.config.maxLimitPercent) // also after a restart, when nothing yet says who is signed in
     if (!available.length) throw new Error(`${skipped.join(' ') || 'No agent is signed in.'} Sign in or wait, then send this again.`)
@@ -383,7 +391,7 @@ export class TeamOrchestrator {
       this.liveOf(run).available = available
     } else {
       this.live.set(runId, this.newLive(available))
-      for (const t of run.tasks) if (!['done', 'cancelled'].includes(t.status)) (t.status = 'cancelled'), (t.error = 'Replaced by your next message.')
+      for (const t of run.tasks) if (['failed', 'blocked'].includes(t.status)) (t.status = 'cancelled'), (t.error = 'Replaced by your next message.')
       const wt = run.integrationWorktree
       if (run.applied) {
         // the result is already in the project: the new round starts from the project as it is now
@@ -401,10 +409,84 @@ export class TeamOrchestrator {
     run.landedFiles = undefined // the next result is a new diff: files landed from the old one are applied again (a three-way apply copes with identical changes)
     const live = this.liveOf(run)
     this.post(run, { from: 'user', to, kind: 'steer', body })
-    this.messageTask(run, live, body, to)
+    if (to === 'all' && !asksForLocal(body)) this.queueReplan(run, live, body)
+    else this.messageTask(run, live, body, to)
     live.paused = false
     this.setStatus(run, 'running')
     this.pump(run)
+  }
+
+  // Fast mode: many sessions side by side, no cross-review, no extra test task, light effort. The user's own settings come back when they stop asking for speed.
+  applySpeed(run: Run, fast: boolean) {
+    const c = run.config
+    if (fast && c.speed !== 'fast') {
+      c.speedSaved = { review: c.review, finalReview: c.finalReview, testTask: c.testTask, securityReview: c.securityReview, maxParallelPerAgent: c.maxParallelPerAgent, claudeEffort: c.claudeEffort, codexEffort: c.codexEffort, budget: { ...c.budget } }
+      Object.assign(c, { speed: 'fast', review: 'off', finalReview: false, testTask: false, securityReview: 'off', maxParallelPerAgent: 6, claudeEffort: 'low', codexEffort: 'low', budget: { ...c.budget, maxTasks: Math.max(c.budget.maxTasks ?? 12, 20) } })
+    } else if (!fast && c.speed === 'fast') {
+      Object.assign(c, c.speedSaved ?? {}, { speed: 'normal' })
+      c.speedSaved = undefined
+    }
+    this.save(run)
+  }
+  setSpeed(runId: string, fast: boolean) {
+    const run = this.runOf(runId)
+    if (!run) return null
+    this.applySpeed(run, fast)
+    this.pump(run)
+    return run.config.speed ?? 'normal'
+  }
+
+  // A newer main request: the planner reads all of them with what is done so far and adds only what is missing. Nothing that is running stops.
+  private queueReplan(run: Run, live: Live, body: string) {
+    live.replans++
+    const step = live.replanChain.then(() => this.replan(run, live, body)).catch(() => {}).finally(() => { live.replans--; this.pump(run) })
+    live.replanChain = step
+    this.track(live, step)
+  }
+
+  private async replan(run: Run, live: Live, body: string) {
+    while (live.planning && !live.ctl.signal.aborted) await new Promise((r) => setTimeout(r, 400)) // the first plan is still being made
+    if (live.ctl.signal.aborted) return
+    const notes = this.d.projectNotes?.(run.project) ?? { brief: '', rules: '' }
+    const order: AgentName[] = run.config.planner === 'auto' ? PREFER : [run.config.planner, ...PREFER.filter((a) => a !== run.config.planner)]
+    const planners = order.filter((a) => live.available.includes(a) && !live.limited.has(a))
+    const fast = run.config.speed === 'fast'
+    const existing = run.tasks.map((t) => t.id)
+    const digest = run.tasks.slice(-40).map((t) => ({ id: t.id, title: t.title, status: t.status, agent: t.agent, summary: t.summary }))
+    const asked = (run.prompts ?? [{ id: 'p1', text: run.goal, at: run.createdAt }]).map((q) => q.text + (notes.rules ? '' : ''))
+    for (const agent of planners) {
+      let prompt = replanPrompt(asked, digest, notes.brief + (notes.rules ? `${notes.brief ? '\n' : ''}User's rules for this project:\n${notes.rules}` : ''), live.available, fast)
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const res = await this.agentRun(run, this.virtualTask(run, 'plan', 'Planning', agent), agent, 'plan', prompt, false, run.integrationWorktree)
+        if (live.ctl.signal.aborted) return
+        if (!res.ok) { if (['limit', 'auth', 'missing', 'model'].includes(res.error?.kind ?? '')) break; continue }
+        try {
+          const r = parseReplan(res.text, live.available, existing, fast ? 20 : run.config.budget.maxTasks ?? 12)
+          this.applyReplan(run, live, r)
+          return
+        } catch (e) {
+          prompt = `${prompt}\n\nYour previous reply was rejected: ${(e as Error).message}. Reply again with ONLY the JSON object.`
+        }
+      }
+    }
+    this.messageTask(run, live, body, 'all') // no planner could answer: the newest message still becomes one task
+  }
+
+  private applyReplan(run: Run, live: Live, r: ReturnType<typeof parseReplan>) {
+    for (const id of r.cancel) {
+      const t = run.tasks.find((x) => x.id === id)
+      if (t && t.status === 'queued') (t.status = 'cancelled'), (t.error = 'Replaced by your newer message.'), this.touch(run, t)
+    }
+    const made = new Map<string, string>()
+    const todo = [...r.tasks]
+    while (todo.length) {
+      const i = Math.max(0, todo.findIndex((q) => q.deps.every((d) => !/^n\d+$/.test(d) || made.has(d))))
+      const q = todo.splice(i, 1)[0]
+      const t = this.addTask(run, { title: q.title, goal: q.goal, agent: q.agent ?? strongest(live.available), kind: q.kind, deps: q.deps.map((d) => made.get(d) ?? d), acceptance: q.acceptance, proposedBy: 'user' })
+      made.set(q.id, t.id)
+    }
+    this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: r.tasks.length ? `${r.summary || 'Planned your new request'}: ${r.tasks.length} new task${r.tasks.length === 1 ? '' : 's'}${r.cancel.length ? `, ${r.cancel.length} replaced` : ''}.` : r.cancel.length ? `Replaced ${r.cancel.length} planned task${r.cancel.length === 1 ? '' : 's'} for your new request.` : 'Your new request is already covered by the work planned or done.' })
+    this.out(run, { type: 'plan', runId: run.id, summary: run.plan.summary, tasks: run.tasks })
   }
 
   private messageTask(run: Run, live: Live, body: string, to: AgentName | 'all') {
@@ -512,7 +594,7 @@ export class TeamOrchestrator {
   }
 
   // Change which models the agents use for the rest of the run. Work already running keeps its model; the next task each agent starts uses the new one.
-  setModels(runId: string, m: { claudeModel?: string; codexModel?: string; localModel?: string; claudeEffort?: string; codexEffort?: string }) {
+  setModels(runId: string, m: { claudeModel?: string; codexModel?: string; localModel?: string; claudeEffort?: string; codexEffort?: string; bypassPermissions?: boolean }) {
     const run = this.runOf(runId)
     if (!run) return null
     const name = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, 120) : undefined)
@@ -522,8 +604,9 @@ export class TeamOrchestrator {
     if (m.localModel !== undefined) c.localModel = name(m.localModel) || undefined
     if (['low', 'medium', 'high', 'xhigh', 'max'].includes(m.claudeEffort ?? '')) c.claudeEffort = m.claudeEffort as TeamConfig['claudeEffort']
     if (['low', 'medium', 'high', 'xhigh'].includes(m.codexEffort ?? '')) c.codexEffort = m.codexEffort as TeamConfig['codexEffort']
+    if (typeof m.bypassPermissions === 'boolean') c.bypassPermissions = m.bypassPermissions
     this.save(run)
-    return { claudeModel: c.claudeModel, codexModel: c.codexModel, localModel: c.localModel, claudeEffort: c.claudeEffort, codexEffort: c.codexEffort }
+    return { claudeModel: c.claudeModel, codexModel: c.codexModel, localModel: c.localModel, claudeEffort: c.claudeEffort, codexEffort: c.codexEffort, bypassPermissions: c.bypassPermissions !== false }
   }
 
   private raiseBudget(run: Run, factor = 1.5) {
@@ -702,7 +785,7 @@ export class TeamOrchestrator {
   }
 
   private newLive(available: AgentName[]): Live {
-    return { ctl: new AbortController(), stop: null, paused: false, running: new Map(), pending: new Map(), budgetAsk: false, git: new Mutex(), merge: new Mutex(), available, finishing: false, handles: new Map(), planning: false, late: [], limited: new Map(), bg: new Set() }
+    return { ctl: new AbortController(), stop: null, paused: false, running: new Map(), pending: new Map(), budgetAsk: false, git: new Mutex(), merge: new Mutex(), available, finishing: false, handles: new Map(), planning: false, replans: 0, replanChain: Promise.resolve(), late: [], limited: new Map(), bg: new Set() }
   }
   private liveOf(run: Run): Live {
     let l = this.live.get(run.id)
@@ -1067,6 +1150,7 @@ export class TeamOrchestrator {
     }
 
     if (live.running.size) return
+    if (live.replans > 0) return // a newer request is being planned: more work may come
     const open = run.tasks.filter((t) => !settled(t))
     if (!open.length && this.addTestTask(run, live)) return void this.pump(run)
     if (!open.length && run.tasks.some((t) => t.status === 'done')) return this.track(live, this.finish(run).catch(() => {}))

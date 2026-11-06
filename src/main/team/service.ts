@@ -35,7 +35,7 @@ export function sanitizeConfig(raw: unknown): Partial<TeamConfig> {
   if (typeof r.webResearch === 'boolean') out.webResearch = r.webResearch
   if (typeof r.askQuestions === 'boolean') out.askQuestions = r.askQuestions
   if (typeof r.claudeModel === 'string' && /^[\w.:\[\]-]{1,60}$/.test(r.claudeModel)) out.claudeModel = r.claudeModel
-  const par = num(r.maxParallelPerAgent, 1, 4)
+  const par = num(r.maxParallelPerAgent, 1, 8)
   if (par) out.maxParallelPerAgent = par
   const fix = num(r.maxFixRounds, 0, 5)
   if (fix !== undefined) out.maxFixRounds = fix
