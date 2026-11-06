@@ -30,7 +30,6 @@ export function renderCrewStats(runId: string): HTMLDetailsElement {
   let timer = 0
   let last = 0
   let busy = false
-  let seen = false
 
   function paint(s: CrewStats | null) {
     if (!s) return body.replaceChildren(h('p', 'cs-note', 'No numbers for this run yet.'))
@@ -77,7 +76,7 @@ export function renderCrewStats(runId: string): HTMLDetailsElement {
     if (!root.open) return
     last = 0
     void load()
-    timer = window.setInterval(() => { if (!root.isConnected) { if (seen) window.clearInterval(timer) } else { seen = true; void load() } }, REFRESH_MS)
+    timer = window.setInterval(() => { if (!root.isConnected) window.clearInterval(timer); else void load() }, REFRESH_MS)
   })
   return root
 }

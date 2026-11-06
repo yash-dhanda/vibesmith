@@ -245,6 +245,20 @@ export function buildStage(files: StageCode[], opts: { agents: StageAgentInfo[];
   return root
 }
 
+// The live editor is built once per run and kept across redraws (team.ts keep('stage')). This brings its header, idle line and chips up to date and adds code it missed.
+export function updateStage(root: HTMLElement, files: StageCode[], o: { agents: StageAgentInfo[]; running: boolean; status: string; live: string }) {
+  const s = stages.get(root); if (!s) return
+  s.live = o.running; root.classList.toggle('active', o.running)
+  const badge = root.querySelector('.stage-title .lane-live'); if (badge) { badge.classList.toggle('on', o.running); if (badge.textContent !== o.live) badge.textContent = o.live }
+  const idle = root.querySelector('.stage-idle'); idle?.classList.toggle('working', o.running)
+  const text = idle?.querySelector('.stage-idle-text'); if (text && text.textContent !== o.status) text.textContent = o.status
+  for (const a of o.agents) s.chips.get(a.agent)?.el.classList.toggle('working', a.running)
+  const last = new Map<string, StageCode>(); for (const e of files) last.set(e.id, e) // the log holds every snapshot of a file: only the newest counts
+  const earlier = new Set(s.earlier.map((e) => e.id)) // a phone's older files wait behind "Show earlier files": not added back
+  for (const ev of last.values()) { if (earlier.has(ev.id)) continue; const b = s.blocks.get(ev.id); if (!b || b.target !== ev.text || b.done !== ev.done) apply(s, ev, false) }
+  kick(s)
+}
+
 // One more piece of code from a running agent. Returns false when there is no editor to put it in (the caller redraws).
 export function pushCode(ev: StageCode): boolean {
   const root = document.querySelector<HTMLElement>('.stage-editor')

@@ -10,7 +10,7 @@ import { enabledSkillCount } from './skillsPanel'
 import { historyButton } from './projectHistory'
 import { AGENT_FULL, AGENT_NAME, N } from './names'
 import { RUN_GLYPH, STEP_GLYPH, TASK_GLYPH, TOOL_GLYPH } from './glyphs'
-import { buildStage, pushCode, type StageCode } from './teamStage'
+import { buildStage, pushCode, updateStage, type StageCode } from './teamStage'
 import { renderCrewPreview, visualCheckButton } from './crewPreview'
 import { renderGitPanel } from './gitPanel'
 import { openDiffReview } from './diffReview'
@@ -25,6 +25,7 @@ import type { TeamAttachment } from '../main/team/attach'
 import { cacheGet, cacheSet, isRemote, onResync, phone, toggleDrawer } from './phone'
 import { colorize, mountDiff } from './codeColor'
 import { normaliseTeamEventsAsync, reduceTeamView, type LoggedTeamEvent } from './teamReducer'
+import { forget, keep, morphChildren } from './morph'
 
 type Logged = LoggedTeamEvent
 type Summary = RunSummary
@@ -39,7 +40,9 @@ let currentProject = ''
 let pendingGoal: { goal: string; reviewPlan?: boolean } | null = null
 let replay = false
 let replayScenario = 'entry'
-let refreshTimer: ReturnType<typeof setTimeout> | null = null
+// Islands: built once per run, then moved into every redraw untouched (morph.ts keep()).
+let visual: HTMLElement | null = null, stats: HTMLDetailsElement | null = null, diffHost: HTMLElement | null = null, stageEl: HTMLElement | null = null, stageKey = ''
+const resetIslands = () => { forget(); visual = stats = diffHost = stageEl = null; stageKey = '' }
 let memoryTimer: ReturnType<typeof setTimeout> | null = null
 let sharedMemory: TeamMemory | null = null
 let memoryLoading = false
@@ -149,7 +152,7 @@ function folderFinder(goal: HTMLTextAreaElement, pill: HTMLButtonElement) {
 
 async function showEntry() {
   setActiveRun('')
-  run = null; log = []; liveFiles.clear(); sharedMemory = null; undoResult = ''; stopClock()
+  run = null; log = []; liveFiles.clear(); sharedMemory = null; undoResult = ''; stopClock(); resetIslands()
   root.replaceChildren(h('div', 'team-entry-skeleton skel'))
   const cachedRuns = isRemote() && !localStorage.getItem('forge.teamReplay') ? cacheGet<Summary[]>('runs') : null // the phone shows the runs it saw last while it asks
   if (cachedRuns?.length) { summaries = cachedRuns; const wait = h('div', 'team-entry'); wait.append(h('div', 'team-entry-skeleton skel'), renderRunList()); root.replaceChildren(wait) }
@@ -401,7 +404,7 @@ async function openRun(id: string, fixture?: { run: Run; events: Logged[]; memor
   setActiveRun(fixture ? '' : id)
   root.replaceChildren(h('div', 'team-run-loading skel'))
   const loaded = fixture ?? await (async () => { const [saved, events] = await Promise.all([window.forge.teamGet(id), window.forge.teamEvents(id)]); if (!saved) throw new Error('This run no longer exists.'); return { run: saved, events } })()
-  run = structuredClone(loaded.run); sharedMemory = fixture?.memory ?? null; undoResult = ''; crewOpen = false
+  run = structuredClone(loaded.run); sharedMemory = fixture?.memory ?? null; undoResult = ''; crewOpen = false; resetIslands()
   const normal = await normaliseTeamEventsAsync(loaded.events); log = normal.log; liveFiles = normal.liveFiles
   if (!['planning', 'running', 'paused', 'interrupted'].includes(run.status)) liveFiles.clear()
   renderRun(); startClock()
@@ -423,9 +426,9 @@ const taskState = (t: Task) => ({ done: 'Done', running: 'Working', queued: 'Wai
 
 function renderRun() {
   if (!run) return
-  const scrollTop = root.scrollTop
-  const atBottom = root.scrollHeight - root.scrollTop - root.clientHeight < 140
-  const page = h('div', 'team-run crew-claude')
+  const stick = root.scrollHeight - root.scrollTop - root.clientHeight < 24 // only a page already at its end follows new content (140 px exceeded the page's whole 37 px range)
+  const tails = [...root.querySelectorAll<HTMLElement>('.lane-body')].filter(b => b.scrollHeight - b.scrollTop - b.clientHeight < 36) // Details lanes that follow their newest line
+  const page = h('div', 'team-run crew-claude'); page.dataset.key = run.id // another run is another page and fades in (crew.css:11); the same run is patched in place
   page.append(renderRunHeader())
   const cols = h('div', 'crew-cols'); const main = h('div', 'crew-main')
   if ((run.pausedReason || run.status === 'interrupted') && !run.approvals.some(a => a.kind === 'plan' && a.status === 'pending')) main.append(renderPauseBanner())
@@ -435,18 +438,18 @@ function renderRun() {
   main.append(renderThread())
   if (run.status === 'awaiting_approval' && run.final) main.append(renderFinal())
   if (run.status === 'done' && run.applied) main.append(renderApplied())
-  const hadFocus = !!steerUi && document.activeElement === steerUi.text
-  main.append(renderSteer())
+  main.append(keep('steer', renderSteer())) // the message box never leaves the page: focus, caret, draft, uploads and an open picker survive
   cols.append(main, renderSidePanel()); page.append(cols)
-  root.replaceChildren(page); root.scrollTop = atBottom ? root.scrollHeight : scrollTop
-  if (hadFocus) steerUi?.text.focus({ preventScroll: true })
+  const next = h('div'); next.append(page); morphChildren(root, next)
+  if (stick) root.scrollTop = root.scrollHeight
+  for (const b of tails) b.scrollTop = b.scrollHeight
 }
 
 function renderThread() {
-  const thread = h('section', 'crew-thread'); thread.setAttribute('aria-label', 'Conversation')
+  const thread = h('section', 'crew-thread'); thread.setAttribute('aria-label', 'Conversation'); thread.dataset.key = 'thread'
   const list = promptsOf()
   list.forEach((p, i) => {
-    const me = h('article', 'crew-me'); me.append(h('p', '', p.text.length > 1800 ? `${p.text.slice(0, 1800)}…` : p.text))
+    const me = h('article', 'crew-me'); me.dataset.key = `me:${p.id}`; me.append(h('p', '', p.text.length > 1800 ? `${p.text.slice(0, 1800)}…` : p.text))
     const sent = i === 0 ? run!.config?.attachments ?? [] : []
     if (sent.length) me.append(sentChips(sent))
     thread.append(me, renderReply(p, i === list.length - 1))
@@ -460,7 +463,7 @@ function renderReply(p: { id: string }, last: boolean) {
   const mine = run!.tasks.filter(t => (t.promptId ?? first) === p.id && t.status !== 'cancelled' && !AUTO_TASK.test(t.title))
   const done = mine.filter(t => t.status === 'done').length
   const busy = last && isWorking()
-  const box = h('div', 'crew-reply')
+  const box = h('div', 'crew-reply'); box.dataset.key = `re:${p.id}`
   const head = h('div', `crew-reply-head${busy ? ' busy' : ''}`)
   if (busy) head.append(h('span', 'crew-dots'))
   const line = busy
@@ -473,7 +476,7 @@ function renderReply(p: { id: string }, last: boolean) {
   if (mine.length) {
     const steps = h('div', 'crew-steps')
     for (const t of mine) { const row = h('div', `crew-step ${t.status}`); row.append(h('span', `agent-orb ${t.agent}`), h('span', 'crew-step-title', oneLine(t.title, 110)), h('span', 'crew-step-state', taskState(t))); steps.append(row) }
-    box.append(fold(`Show the work (${mine.length})`, openSteps.has(p.id), o => { if (o) openSteps.add(p.id); else openSteps.delete(p.id) }, steps))
+    box.append(fold(`Show the work (${mine.length})`, openSteps.has(p.id), o => { if (o) openSteps.add(p.id); else openSteps.delete(p.id) }, () => [steps]))
   }
   const said = mine.filter(t => t.status === 'done' && t.summary?.trim()).slice(0, 5)
   if (said.length) { const ul = h('ul', 'crew-said'); for (const t of said) ul.append(h('li', '', oneLine(t.summary!, 280))); box.append(ul) }
@@ -491,7 +494,7 @@ function renderSidePanel() {
   for (const agent of ['claude', 'codex', 'local'] as const) {
     const u = run!.usage[agent]; const model = agent === 'claude' ? run!.config.claudeModel || 'default' : agent === 'codex' ? run!.config.codexModel : run!.config.localModel
     if (!u?.runs && !(agent === 'local' && run!.config.localModel)) continue
-    const r = h('div', 'crew-side-agent'); r.append(h('span', `agent-orb ${agent}`), h('strong', '', AGENT_NAME[agent]), h('span', 'crew-side-model', model || ''), h('span', 'crew-side-tokens', u ? `${formatTokens(u.input + u.output)}${u.costUsd > 0 ? ` · ~$${u.costUsd.toFixed(2)}` : ''}` : ''))
+    const r = h('div', 'crew-side-agent'); r.dataset.key = agent; r.append(h('span', `agent-orb ${agent}`), h('strong', '', AGENT_NAME[agent]), h('span', 'crew-side-model', model || ''), h('span', 'crew-side-tokens', u ? `${formatTokens(u.input + u.output)}${u.costUsd > 0 ? ` · ~$${u.costUsd.toFixed(2)}` : ''}` : ''))
     r.title = `${AGENT_NAME[agent]}${model ? ` (${model})` : ''}: ${((u?.input ?? 0) + (u?.output ?? 0)).toLocaleString()} tokens`
     agents.append(r)
   }
@@ -500,14 +503,17 @@ function renderSidePanel() {
   for (const t of run!.tasks) for (const f of t.changed ?? []) { const c = files.get(f.path) ?? { a: 0, r: 0 }; c.a += (f as { added?: number }).added ?? 0; c.r += (f as { removed?: number }).removed ?? 0; files.set(f.path, c) }
   const added = [...files.values()].reduce((n, f) => n + f.a, 0), removed = [...files.values()].reduce((n, f) => n + f.r, 0)
   const changes = h('div', 'crew-side-changes'); changes.append(h('div', 'crew-side-count', `${files.size} file${files.size === 1 ? '' : 's'}`), h('span', 'crew-add', `+${added}`), h('span', 'crew-del', `−${removed}`))
-  const list = h('div', 'crew-side-files'); for (const path of [...files.keys()].slice(0, 8)) { const f = h('div', 'crew-side-file', path.split('/').slice(-2).join('/')); f.title = path; list.append(f) }
+  const list = h('div', 'crew-side-files'); for (const path of [...files.keys()].slice(0, 8)) { const f = h('div', 'crew-side-file', path.split('/').slice(-2).join('/')); f.title = path; f.dataset.key = path; list.append(f) }
   if (files.size > 8) list.append(h('div', 'crew-side-more', `and ${files.size - 8} more`))
   side.append(sec('Changes', files.size ? changes : h('p', 'crew-side-none', 'Nothing yet'), list))
-  const inner = h('div', 'crew-activity')
-  if (!isRemote() && run!.tasks.some(t => t.status === 'done')) { const tools = h('div', 'team-tools-row'); tools.append(renderCrewPreview(run!.id), visualCheckButton(run!.id)); inner.append(tools) }
-  const aside = h('aside', 'team-side-story'); aside.append(renderLiveFiles(), renderFeed(), renderBackground(), renderDiffPanel())
-  inner.append(renderBoard(), fold('Live work', liveOpen, o => { liveOpen = o }, renderLanes()), fold('Team activity and changes', activityOpen, o => { activityOpen = o }, aside), renderCrewStats(run!.id))
-  side.append(fold('Crew activity', crewOpen, o => { crewOpen = o }, inner))
+  const activity = () => {
+    const inner = h('div', 'crew-activity')
+    // renderCrewPreview keeps one preview per run itself, and builds a new one after letting go of one that was off the page
+    if (!isRemote() && run!.tasks.some(t => t.status === 'done')) { const tools = h('div', 'team-tools-row'); tools.append(keep('preview', renderCrewPreview(run!.id)), keep('visual', visual ??= visualCheckButton(run!.id))); inner.append(tools) }
+    inner.append(renderBoard(), fold('Live work', liveOpen, o => { liveOpen = o }, () => [renderLanes()]), fold('Team activity and changes', activityOpen, o => { activityOpen = o }, () => { const aside = h('aside', 'team-side-story'); aside.append(renderLiveFiles(), renderFeed(), renderBackground(), renderDiffPanel()); return [aside] }), keep('stats', stats ??= renderCrewStats(run!.id)))
+    return [inner]
+  }
+  side.append(fold('Crew activity', crewOpen, o => { crewOpen = o }, activity))
   return side
 }
 
@@ -546,8 +552,8 @@ async function crewHealth() {
   return healthCache
 }
 function openPicker(anchor: HTMLElement, groups: { title: string; options: [string, string][]; current: string; pick: (v: string) => void }[]) {
-  const again = picker?.dataset.anchor === anchor.dataset.chip; closePicker(); if (again) return
-  const pop = h('div', 'cw-pop'); pop.dataset.anchor = anchor.dataset.chip ?? ''
+  const again = !!picker?.isConnected && picker.dataset.anchor === anchor.dataset.chip; closePicker(); if (again) return
+  const pop = h('div', 'cw-pop'); pop.dataset.anchor = anchor.dataset.chip ?? ''; pop.setAttribute('data-transient', '')
   for (const g of groups) {
     pop.append(h('div', 'cw-pop-title', g.title))
     for (const [v, label] of g.options) { const b = h('button', `cw-pop-item${v === g.current ? ' on' : ''}`, label) as HTMLButtonElement; b.type = 'button'; b.onclick = () => { closePicker(); g.pick(v) }; pop.append(b) }
@@ -561,9 +567,9 @@ function composerChips(): HTMLElement[] {
   if (typeof window.forge.teamSetModels !== 'function') return []
   const c = run!.config
   const chip = (key: string, label: string, title: string, on: (b: HTMLButtonElement) => void, cls = '', glyph?: IconName) => {
-    const b = h('button', `cw-chip ${cls}`) as HTMLButtonElement; b.type = 'button'; b.title = title; b.dataset.chip = key
+    const b = h('button', `cw-chip ${cls}`) as HTMLButtonElement; b.type = 'button'; b.title = title; b.dataset.chip = key; b.dataset.key = key
     if (glyph) b.append(icon(glyph, 'sm'))
-    b.append(document.createTextNode(label)); b.onclick = () => on(b); return b
+    b.append(document.createTextNode(label)); b.onclick = e => on(e.currentTarget as HTMLButtonElement); return b
   }
   const name = (m: string | undefined) => CLAUDE_MODEL_CHOICES.find(([v]) => v === (m ?? ''))?.[1] ?? m ?? 'Default'
   const effort = (e: string | undefined) => EFFORT_CHOICES.find(([v]) => v === (e ?? 'high'))?.[1] ?? 'High'
@@ -583,9 +589,9 @@ function composerChips(): HTMLElement[] {
 }
 
 // `compact` shows only that icon; the label moves to the tooltip and the accessible name.
-function actionButton(label: string, runAction: () => void, cls = '', compact?: IconName) { const button = h('button', `btn ${cls}${compact ? ' only' : ''}`); if (compact) { button.append(icon(compact, 'sm')); button.title = label; button.setAttribute('aria-label', label) } else button.append(document.createTextNode(label)); button.onclick = runAction; return button }
+function actionButton(label: string, runAction: (e: MouseEvent) => void, cls = '', compact?: IconName) { const button = h('button', `btn ${cls}${compact ? ' only' : ''}`); button.dataset.key = label; if (compact) { button.append(icon(compact, 'sm')); button.title = label; button.setAttribute('aria-label', label) } else button.append(document.createTextNode(label)); button.onclick = runAction; return button }
 function pauseButton() {
-  const button = actionButton('Pause', () => { button.disabled = true; button.replaceChildren(icon('stop', 'sm')); void teamAction(() => window.forge.teamPause(run!.id, true)) }, '', 'pause') as HTMLButtonElement
+  const button = actionButton('Pause', e => { const b = e.currentTarget as HTMLButtonElement; b.disabled = true; b.replaceChildren(icon('stop', 'sm')); void teamAction(() => window.forge.teamPause(run!.id, true)) }, '', 'pause') as HTMLButtonElement
   button.title = 'Stop the agents now. Resume continues where they left off. You can also type pause.'
   return button
 }
@@ -593,7 +599,7 @@ async function teamAction(fn: () => Promise<unknown>) { if (replay) { toast('Rep
 async function refreshRun() { if (!run || replay) return; const fresh = await window.forge.teamGet(run.id); if (fresh) { run = fresh; renderRun() } }
 
 function renderPauseBanner() {
-  const banner = h('section', 'team-pause-banner')
+  const banner = h('section', 'team-pause-banner'); banner.dataset.key = 'pause'
   banner.append(emo(RUN_GLYPH[['interrupted', 'failed', 'cancelled'].includes(run!.status) ? run!.status : 'paused']), h('div', '', run!.pausedReason || 'This run was interrupted when Forge closed. The agents will continue from their saved sessions.'))
   if (run!.status === 'done' || run!.status === 'cancelled') return banner
   if (run!.approvals.some(a => a.kind === 'plan' && a.status === 'pending')) return banner
@@ -606,11 +612,11 @@ function renderPauseBanner() {
 }
 
 function renderApprovals(items: Run['approvals']) {
-  const tray = h('section', 'approval-tray'); tray.setAttribute('role', 'alert'); tray.setAttribute('aria-live', 'assertive'); tray.append(sectionHead(N.waiting, `${items.length} blocking`))
+  const tray = h('section', 'approval-tray'); tray.dataset.key = 'approvals'; tray.setAttribute('role', 'alert'); tray.setAttribute('aria-live', 'assertive'); tray.append(sectionHead(N.waiting, `${items.length} blocking`))
   for (const approval of [...items].sort((a, b) => Number(b.kind === 'question') - Number(a.kind === 'question'))) {
     if (approval.kind === 'plan') { tray.append(renderPlanReview(approval)); continue }
     if (approval.kind === 'question') { tray.append(renderQuestion(approval)); continue }
-    const card = h('article', 'team-approval-card'); const copy = h('div', 'approval-copy')
+    const card = h('article', 'team-approval-card'); card.dataset.key = approval.id; card.dataset.sig = JSON.stringify([approval.status, approval.kind, approval.title, approval.detail]); const copy = h('div', 'approval-copy')
     const kind = h('span', 'approval-kind', approval.kind.replace('_', ' '))
     copy.append(kind, h('h3', '', approval.title), h('p', '', approval.detail))
     const note = input('text'); note.placeholder = 'Optional note to the crew'; note.setAttribute('aria-label', `Note for ${approval.title}`)
@@ -628,7 +634,7 @@ function renderApprovals(items: Run['approvals']) {
 // Keys: up/down move between rows, 1-4 pick, Enter sends.
 function renderQuestion(approval: Run['approvals'][number]) {
   const who = approval.agent ? AGENT_NAME[approval.agent] : 'The crew'
-  const card = h('article', 'question-card'); card.setAttribute('aria-label', `${who} asks: ${approval.title}`)
+  const card = h('article', 'question-card'); card.setAttribute('aria-label', `${who} asks: ${approval.title}`); card.dataset.key = approval.id; card.dataset.sig = JSON.stringify([approval.status, approval.title, approval.detail, approval.options, approval.multi])
   const top = h('div', 'q-who'); top.append(h('span', `agent-orb ${approval.agent ?? ''}`), h('strong', '', who), h('span', '', 'asks'))
   card.append(top, h('h3', 'q-title', approval.title))
   if (approval.detail && approval.detail !== approval.title) card.append(h('p', 'q-detail', approval.detail))
@@ -684,9 +690,9 @@ function renderQuestion(approval: Run['approvals'][number]) {
 // Questions already answered in this run, one line each.
 function renderAnswered() {
   const done = run!.approvals.filter(a => a.kind === 'question' && a.status !== 'pending')
-  const box = h('section', 'q-answered'); if (!done.length) return null
+  const box = h('section', 'q-answered'); box.dataset.key = 'answered'; if (!done.length) return null
   for (const a of done) {
-    const line = h('div', 'q-line'); line.append(h('span', `agent-orb ${a.agent ?? ''}`), h('span', 'q-asked', a.title))
+    const line = h('div', 'q-line'); line.dataset.key = a.id; line.append(h('span', `agent-orb ${a.agent ?? ''}`), h('span', 'q-asked', a.title))
     line.append(h('strong', '', a.status === 'allowed' && a.answer ? `You answered: ${a.answer}` : a.status === 'denied' ? 'You skipped this' : 'No longer needed'))
     box.append(line)
   }
@@ -694,7 +700,7 @@ function renderAnswered() {
 }
 
 function renderPlanReview(approval: Run['approvals'][number]) {
-  const card = h('article', 'team-plan-review')
+  const card = h('article', 'team-plan-review'); card.dataset.key = approval.id; card.dataset.sig = JSON.stringify([approval.status, run!.tasks.map(t => [t.id, t.title, t.agent, t.status, t.deps, t.acceptance])])
   const kind = h('span', 'approval-kind', 'plan')
   card.append(kind, h('h3', '', approval.title), h('p', '', approval.detail))
   const rows = run!.tasks.map((task, index) => {
@@ -744,11 +750,11 @@ function renderBoard() {
   const auto = h('div', 'team-board')
   for (const [index, task] of run!.tasks.entries()) (AUTO.test(task.title) ? auto : board).append(renderTask(task, index))
   section.append(board)
-  if (auto.childElementCount) section.append(fold(`Added by the crew: checks, fixes and tests (${auto.childElementCount})`, autoOpen, o => { autoOpen = o }, auto))
+  if (auto.childElementCount) section.append(fold(`Added by the crew: checks, fixes and tests (${auto.childElementCount})`, autoOpen, o => { autoOpen = o }, () => [auto]))
   return section
 }
 function renderTask(task: Task, index: number) {
-  const card = h('article', `task-card ${task.status}`); card.dataset.task = task.id; enter(card, `${run!.id}:${task.id}`, index)
+  const card = h('article', `task-card ${task.status}`); card.dataset.task = task.id; card.dataset.key = task.id; enter(card, `${run!.id}:${task.id}`, index)
   const state = h('span', `task-state ${task.status}`); state.append(emo(TASK_GLYPH[task.status] ?? TASK_GLYPH.queued)); if (task.status === 'running' && task.phase) state.append(PHASE_LABEL[task.phase] ?? task.phase); state.title = task.phase ? `${PHASE_LABEL[task.phase] ?? task.phase} · ${task.status}` : task.status; state.setAttribute('aria-label', state.title)
   const top = h('div', 'task-top'); top.append(h('span', 'task-number', String(index + 1).padStart(2, '0')), h('span', `agent-badge ${task.agent}`, AGENT_NAME[task.agent]), state)
   const title = h('h3', '', task.title); title.title = task.title
@@ -776,7 +782,7 @@ function renderBackground() {
   const d = h('details', 'team-background') as HTMLDetailsElement; d.open = backgroundOpen
   const failed = run!.approvals.length === 0 && log.some(x => x.ev.type === 'verify' && !x.ev.ok) && run!.status !== 'done'
   const sum = h('summary', '', 'Background'); if (failed) sum.append(h('span', 'bg-dot')); d.append(sum, renderMemory(), renderVerify())
-  d.ontoggle = () => { backgroundOpen = d.open }
+  d.ontoggle = e => { backgroundOpen = (e.currentTarget as HTMLDetailsElement).open }
   return d
 }
 // The run page shows what matters: the answer (logins, URLs, commands the user asked for) and what the user sent. Live coding and the team's own
@@ -799,22 +805,17 @@ function renderYours(): HTMLElement | null {
   }
   return section
 }
-function fold(title: string, open: boolean, set: (o: boolean) => void, ...kids: HTMLElement[]) {
+// A fold builds its content only while open, so a closed one costs nothing on a live redraw; opening it redraws once.
+function fold(title: string, open: boolean, set: (o: boolean) => void, build: () => HTMLElement[]) {
   const d = h('details', 'team-fold') as HTMLDetailsElement; d.open = open
-  d.append(h('summary', '', title), ...kids); d.ontoggle = () => set(d.open)
+  d.append(h('summary', '', title)); if (open) d.append(...build())
+  d.ontoggle = e => { const now = (e.currentTarget as HTMLDetailsElement).open; if (now !== open) { set(now); renderRun() } }
   return d
-}
-function renderStory() {
-  const area = h('section', 'team-story')
-  area.append(keyCard(liveKeys()))
-  const yours = renderYours(); if (yours) area.append(yours)
-  const side = h('aside', 'team-side-story'); side.append(renderLiveFiles(), renderFeed(), renderBackground(), renderDiffPanel())
-  area.append(fold('Live work', liveOpen, o => { liveOpen = o }, renderLanes()), fold('Team activity and changes', activityOpen, o => { activityOpen = o }, side)); return area
 }
 const usedAgents = () => (['claude', 'codex', 'local'] as const).filter(a => run!.tasks.some(t => t.agent === a) || log.some(x => x.ev.type === 'agent' && x.ev.ev.agent === a))
 function makeDetailsToggle() {
   const toggle = h('button', `lane-details ${laneDetails ? 'on' : ''}`, laneDetails ? 'Live' : 'Details'); toggle.prepend(icon(laneDetails ? 'code' : 'list', 'sm')); toggle.title = laneDetails ? 'Back to the live coding view' : 'Show commands, step results, prompts and reasoning'; toggle.setAttribute('aria-pressed', String(laneDetails))
-  toggle.onclick = () => { laneDetails = !laneDetails; try { localStorage.setItem('forge.teamLaneDetails', laneDetails ? '1' : '0') } catch {} document.querySelector('.team-lanes')?.replaceWith(renderLanes()) }
+  toggle.onclick = () => { laneDetails = !laneDetails; try { localStorage.setItem('forge.teamLaneDetails', laneDetails ? '1' : '0') } catch {} renderRun() }
   return toggle
 }
 // What the agents are doing while no code is being typed (a fix that edits files with tools, a long command, the project check): the latest
@@ -837,11 +838,14 @@ function renderLanes() {
   const working = run!.tasks.some(t => t.status === 'running')
   const status = run!.status === 'planning' ? 'Planning the work' : working ? latestActivity() ?? 'Reading the project' : run!.status === 'verifying' ? 'Running the project check' : ['done', 'awaiting_approval'].includes(run!.status) ? 'Finished' : run!.status === 'paused' ? 'Paused' : 'Waiting'
   const agents = (usedAgents().length ? usedAgents() : (['claude'] as const)).map(a => ({ agent: a, name: AGENT_NAME[a], running: run!.tasks.some(t => t.agent === a && t.status === 'running') || run!.status === 'planning' }))
-  lanes.append(buildStage(files, { agents, running: working || run!.status === 'planning', status, details: makeDetailsToggle(), live: ['planning', 'running', 'verifying'].includes(run!.status) ? 'Live' : 'History' }))
+  const opts = { agents, running: working || run!.status === 'planning', status, details: makeDetailsToggle(), live: ['planning', 'running', 'verifying'].includes(run!.status) ? 'Live' : 'History' }
+  const key = `${run!.id}:${agents.map(a => a.agent).join()}`
+  if (!stageEl || stageKey !== key) { stageEl = buildStage(files, opts); stageKey = key } else updateStage(stageEl, files, opts) // built once per run and agent set: no rebuilt editor, no re-coloured code, no text typed twice
+  lanes.append(keep('stage', stageEl))
   return lanes
 }
 function renderLane(agent: 'claude' | 'codex' | 'local') {
-  const lane = h('section', `agent-lane ${agent}`); const header = h('header'); header.append(h('span', `agent-orb ${agent}${run!.tasks.some(t => t.agent === agent && t.status === 'running') ? ' busy' : ''}`), h('div', '', AGENT_FULL[agent]), h('span', `lane-live${['planning', 'running', 'verifying'].includes(run!.status) ? ' on' : ''}`, ['planning', 'running', 'verifying'].includes(run!.status) ? 'Live' : 'History')); header.append(makeDetailsToggle()); lane.append(header)
+  const lane = h('section', `agent-lane ${agent}`); lane.dataset.key = agent; const header = h('header'); header.append(h('span', `agent-orb ${agent}${run!.tasks.some(t => t.agent === agent && t.status === 'running') ? ' busy' : ''}`), h('div', '', AGENT_FULL[agent]), h('span', `lane-live${['planning', 'running', 'verifying'].includes(run!.status) ? ' on' : ''}`, ['planning', 'running', 'verifying'].includes(run!.status) ? 'Live' : 'History')); header.append(makeDetailsToggle()); lane.append(header)
   const events = log.filter(x => x.ev.type === 'agent' && x.ev.ev.agent === agent && laneVisible(x.ev))
   const body = h('div', 'lane-body')
   if (!events.length) { const working = run!.tasks.some(t => t.agent === agent && t.status === 'running'); body.append(h('p', `lane-status ${run!.status === 'planning' || working ? 'active' : ''}`, run!.status === 'planning' ? 'Planning the work' : working ? 'Reading the project' : run!.tasks.some(t => t.agent === agent && t.status === 'queued') ? 'Waiting for its turn' : run!.status === 'done' || run!.status === 'awaiting_approval' ? 'Finished' : 'Idle')) }
@@ -849,8 +853,9 @@ function renderLane(agent: 'claude' | 'codex' | 'local') {
   const shown = events.slice(-40), lastCode = shown.map(x => x.ev.type === 'agent' && x.ev.ev.type === 'code').lastIndexOf(true)
   for (const [shownIndex, { t, ev }] of shown.entries()) if (ev.type === 'agent') {
     const row = h('article', `activity-row ${ev.ev.type}`); const task = run!.tasks.find(x => x.id === ev.taskId)
+    const x = ev.ev; row.dataset.key = x.type === 'delta' ? `d:${ev.taskId}:${ev.phase}:${x.channel}:${x.id}` : x.type === 'code' ? `c:${x.id}` : x.type === 'prompt' ? `p:${ev.taskId}:${ev.phase}` : `${t}:${x.type}:${(x as { id?: string }).id ?? ''}`
     const key = `${ev.taskId}:${ev.phase}`
-    if (key !== lastKey) { lastKey = key; const divider = h('div', 'lane-divider'); divider.append(h('strong', '', task?.title ?? ev.taskId), h('span', '', `${PHASE_LABEL[ev.phase] ?? ev.phase} · ${new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`)); body.append(divider) }
+    if (key !== lastKey) { lastKey = key; const divider = h('div', 'lane-divider'); divider.dataset.key = `div:${key}:${t}`; divider.append(h('strong', '', task?.title ?? ev.taskId), h('span', '', `${PHASE_LABEL[ev.phase] ?? ev.phase} · ${new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`)); body.append(divider) }
     row.title = new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     const event = ev.ev
     if (event.type === 'text') row.append(h('p', '', event.text))
@@ -886,7 +891,7 @@ function renderLiveCode(event: Extract<RunEvent, { type: 'agent' }>['ev'] & { ty
   const card = h('details', `live-code ${event.kind} ${event.done ? 'done' : 'writing'}`) as HTMLDetailsElement; card.open = open
   const head = h('summary', 'live-code-head')
   head.append(h('span', 'tool-path', event.path), h('span', 'live-code-state', event.done ? 'Saved' : 'Writing'))
-  const pre = h('pre', `live-code-body ${event.kind}`)
+  const pre = h('pre', `live-code-body ${event.kind}`); pre.dataset.sig = `${event.id}:${event.text.length}:${event.done}` // same data: the coloured pre stays; new data: it is swapped, so colorize and the scroll reach the live node
   if (event.kind === 'diff') {
     for (const line of event.text.slice(-30000).split('\n')) {
       const part = h('span', line.startsWith('+') && !line.startsWith('+++') ? 'diff-add' : line.startsWith('-') && !line.startsWith('---') ? 'diff-remove' : line.startsWith('@@') ? 'diff-hunk' : '', line + '\n')
@@ -901,10 +906,11 @@ function renderLiveCode(event: Extract<RunEvent, { type: 'agent' }>['ev'] & { ty
   card.append(head, pre); return card
 }
 
+const openFeed = new Set<string>() // feed messages the person expanded
 function renderFeed() {
   const section = h('section', 'team-feed'); section.append(sectionHead(N.feed, `${run!.messages.length}`))
   if (!run!.messages.length) section.append(h('p', 'team-empty', 'Handoffs, reviews and decisions appear here.'))
-  for (const msg of run!.messages.slice(-12)) { const item = h('article', `feed-item ${msg.kind}`); const top = h('div'); const kindTag = h('span', '', msg.kind.replace('_', ' ')); top.append(h('strong', '', msg.from === 'user' ? 'You' : msg.from === 'orchestrator' ? 'Forge' : AGENT_NAME[msg.from]), kindTag); const body = h('p', 'feed-body', msg.body); item.append(top, body); if (msg.body.length > 260) { item.classList.add('clamped'); item.title = 'Click to read all'; item.onclick = () => item.classList.toggle('clamped') } section.append(item) }
+  for (const msg of run!.messages.slice(-12)) { const item = h('article', `feed-item ${msg.kind}`); item.dataset.key = msg.id; const top = h('div'); const kindTag = h('span', '', msg.kind.replace('_', ' ')); top.append(h('strong', '', msg.from === 'user' ? 'You' : msg.from === 'orchestrator' ? 'Forge' : AGENT_NAME[msg.from]), kindTag); const body = h('p', 'feed-body', msg.body); item.append(top, body); if (msg.body.length > 260) { item.classList.toggle('clamped', !openFeed.has(msg.id)); item.title = 'Click to read all'; item.onclick = () => { if (!openFeed.delete(msg.id)) openFeed.add(msg.id); renderRun() } } section.append(item) }
   return section
 }
 
@@ -914,10 +920,10 @@ function renderLiveFiles() {
   section.append(sectionHead(N.changing, count ? `${count} live` : 'Quiet'))
   if (!count) { section.append(h('p', 'team-empty', 'Files appear here while an agent is writing them.')); return section }
   for (const [taskId, files] of liveFiles) {
-    const group = h('div', 'live-file-group'); const task = run!.tasks.find(item => item.id === taskId)
+    const group = h('div', 'live-file-group'); group.dataset.key = taskId; const task = run!.tasks.find(item => item.id === taskId)
     group.append(h('div', 'live-file-task', task?.title ?? taskId))
     for (const file of files) {
-      const button = h('button', 'live-file-row')
+      const button = h('button', 'live-file-row'); button.dataset.key = file.path
       button.append(fileStatus(file.status), h('span', 'tool-path', file.path), h('span', 'team-diff-count', `+${file.added} −${file.removed}`))
       button.onclick = () => void openDiff(taskId, file.path, true); group.append(button)
     }
@@ -955,7 +961,7 @@ async function refreshMemory() {
   const id = run.id; memoryLoading = true
   try { const next = await window.forge.teamMemory(id); if (run?.id === id) sharedMemory = next }
   catch { /* The run remains usable when memory refresh fails. */ }
-  finally { if (run?.id === id) { memoryLoading = false; if (isRemote()) queueDraw('run'); else renderRun() } }
+  finally { if (run?.id === id) { memoryLoading = false; scheduleRun() } }
 }
 
 function scheduleMemoryRefresh() {
@@ -965,7 +971,7 @@ function scheduleMemoryRefresh() {
 function renderVerify() {
   const events = log.filter(x => x.ev.type === 'verify')
   const section = h('section', 'team-verify'); section.append(sectionHead(N.checks, events.length ? `${events.length}` : 'Waiting'))
-  for (const item of events.slice(-3)) if (item.ev.type === 'verify') { const details = h('details', `verify-card ${item.ev.ok ? 'ok' : 'bad'}`) as HTMLDetailsElement; details.open = !item.ev.ok; details.append(h('summary', '', `${item.ev.ok ? `${STEP_GLYPH.ok} Passed` : `${STEP_GLYPH.bad} Failed`} · ${item.ev.command}`), h('pre', '', item.ev.output.slice(-8000))); section.append(details) }
+  for (const item of events.slice(-3)) if (item.ev.type === 'verify') { const details = h('details', `verify-card ${item.ev.ok ? 'ok' : 'bad'}`) as HTMLDetailsElement; details.dataset.key = String(item.t); details.open = !item.ev.ok; details.append(h('summary', '', `${item.ev.ok ? `${STEP_GLYPH.ok} Passed` : `${STEP_GLYPH.bad} Failed`} · ${item.ev.command}`), h('pre', '', item.ev.output.slice(-8000))); section.append(details) }
   return section
 }
 // One chat box for the whole run, pinned at the bottom in every state. While the crew works the message steers it; after it finishes, the same
@@ -1007,7 +1013,7 @@ function renderSteer() {
   if (!steerUi || steerUi.runId !== run!.id) steerUi = buildSteer(run!.id)
   steerUi.text.placeholder = over ? 'Keep going: ask for more, add pictures or files, or something new…' : ['paused', 'interrupted'].includes(run!.status) ? 'Paused. Type resume to continue, or add a note first…' : 'Message the crew, add pictures or files, or type pause to stop it…'
   steerUi.sync()
-  steerUi.bar.replaceChildren(...composerChips())
+  const chips = h('div'); chips.append(...composerChips()); morphChildren(steerUi.bar, chips) // unchanged chips keep focus and hover; an open picker (data-transient) stays
   return steerUi.form
 }
 function renderDiffPanel() {
@@ -1017,7 +1023,7 @@ function renderDiffPanel() {
   if (changed.length) {
     const files = h('div', 'team-diff-files')
     for (const { task, file } of changed.slice(0, 12)) {
-      const row = h('button', 'team-diff-file')
+      const row = h('button', 'team-diff-file'); row.dataset.key = `${task.id}:${file.path}`
       row.append(fileStatus(file.status), h('span', 'tool-path', file.path), h('span', 'team-diff-count', `+${file.added} −${file.removed}`))
       row.onclick = () => void openDiff(task.id); files.append(row)
     }
@@ -1025,10 +1031,12 @@ function renderDiffPanel() {
   }
   const button = h('button', 'btn', 'Review all changes'); button.onclick = () => void openDiff()
   const comments = h('button', 'btn', 'Review with comments'); comments.title = 'Comment on lines; the comments go to the crew as one message'; comments.onclick = () => void openDiffReview({ runId: run!.id })
-  section.append(button, ...(run!.applied ? [] : [comments]), h('div', 'team-diff-host')); return section // after landing the crew's copy is gone, so there is no diff to comment on
+  section.append(button, ...(run!.applied ? [] : [comments]), keep('diffhost', diffHost ??= h('div', 'team-diff-host'))); return section // after landing the crew's copy is gone, so there is no diff to comment on
 }
 async function openDiff(taskId?: string, path?: string, live = false) {
+  if (!document.querySelector('.team-diff-host') && run) { crewOpen = activityOpen = true; renderRun() } // the diff host lives in a fold that is built only when open
   const host = document.querySelector<HTMLElement>('.team-diff-host'); if (!host || !run) return
+  for (let d = host.closest('details'); d; d = d.parentElement?.closest('details') ?? null) d.open = true // the morph leaves a fold as the person left it, so the folds around the diff are opened here
   host.classList.add('open'); host.replaceChildren(h('div', 'team-diff-loading skel')); host.scrollIntoView({ behavior: 'smooth', block: 'center' })
   try { const diff = replay ? `diff --git a/${path ?? 'src/team.ts'} b/${path ?? 'src/team.ts'}\n--- a/${path ?? 'src/team.ts'}\n+++ b/${path ?? 'src/team.ts'}\n@@ -1,2 +1,3 @@\n export const team = true\n+export const calm = true` : live && taskId && typeof window.forge.teamLiveDiff === 'function' ? await window.forge.teamLiveDiff(run.id, taskId, path) : await window.forge.teamDiff(run.id, taskId); host.replaceChildren(); await mountDiff(host, diff || 'No changes are available yet.') }
   catch (e) { host.replaceChildren(h('div', 'errcard', cleanErr(e))) }
@@ -1038,7 +1046,7 @@ async function openDiff(taskId?: string, path?: string, live = false) {
 let landPanel: { key: string; el: HTMLElement } | null = null
 function landPanelFor() { const key = `${run!.id}:${(run!.landedFiles ?? []).length}:${run!.final!.files.length}`; if (!landPanel || landPanel.key !== key) landPanel = { key, el: renderLandPanel(run!, () => void refreshRun()) }; return landPanel.el }
 function renderFinal() {
-  const section = h('section', 'team-final')
+  const section = h('section', 'team-final'); section.dataset.key = 'final'
   const done = h('div', 'eyebrow', 'Crew finished'); done.prepend(emo(STEP_GLYPH.done))
   section.append(done, h('h2', '', N.reviewHead))
   const split = splitKeyAnswer(run!.final!.report); if (split.key.length) section.append(keyCard(split.key)); const report = h('div', 'team-final-report'); report.innerHTML = md(split.rest); section.append(report)
@@ -1051,7 +1059,7 @@ function renderFinal() {
   const verify = h('div', `final-verify ${run!.final!.verifyOk ? 'ok' : run!.final!.verifyOk === false ? 'bad' : ''}`); verify.append(emo(run!.final!.verifyOk ? STEP_GLYPH.ok : run!.final!.verifyOk === false ? STEP_GLYPH.bad : STEP_GLYPH.none), h('span', '', run!.final!.verifyOk ? 'Project check passed' : run!.final!.verifyOk === false ? 'Project check failed' : 'No project check configured')); section.append(verify)
   if (run!.final!.reviewNotes.length) { const notes = h('details', 'final-review-notes'); notes.append(h('summary', '', `Final review notes · ${run!.final!.reviewNotes.length}`), ...run!.final!.reviewNotes.map(item => h('p', '', item))); section.append(notes) }
   if (undoResult) section.append(h('div', 'errcard final-action-result', undoResult))
-  if (!replay && !isRemote() && typeof window.forge.teamLandings === 'function' && run!.final!.files.length > 1) section.append(landPanelFor())
+  if (!replay && !isRemote() && typeof window.forge.teamLandings === 'function' && run!.final!.files.length > 1) section.append(keep('land', landPanelFor()))
   const note = h('p', 'team-final-note', 'Nothing has changed in your project yet. If you don’t land this result, Forge keeps a saved crew copy that you can reopen later.'); section.append(note)
   const actions = h('div', 'team-final-actions')
   const apply = actionButton(N.land, async () => { if (replay) { if (replayScenario === 'applyfail') { undoResult = 'Could not land: your project changed while the crew was working. Review the project and try again.'; renderRun(); return } run!.status = 'done'; run!.applied = true; run!.appliedCheckpoint = 'replay-checkpoint'; toast('Landed · Undo is ready'); renderRun(); return } await call(async () => { let result = await window.forge.teamApply(run!.id); if (!result.ok && /apply without Undo/.test(result.message) && window.confirm(`${result.message}\n\nApply anyway, without Undo?`)) result = await window.forge.teamApply(run!.id, true); if (!result.ok) { undoResult = result.message; renderRun(); return } toast(result.checkpoint ? `${result.message} · Undo is ready` : result.message, 5000); await refreshRun() }) }, 'primary')
@@ -1063,14 +1071,14 @@ function renderFinal() {
 let gitPanel: { key: string; el: HTMLElement } | null = null
 function gitPanelFor() { const key = `${run!.id}:${run!.applied}:${run!.undone}`; if (!gitPanel || gitPanel.key !== key) gitPanel = { key, el: renderGitPanel(run!) }; return gitPanel.el }
 function renderApplied() {
-  const section = h('section', `team-applied ${run!.undone ? 'undone' : ''}`)
+  const section = h('section', `team-applied ${run!.undone ? 'undone' : ''}`); section.dataset.key = 'applied'
   const tag = h('div', 'eyebrow', run!.undone ? 'Changes undone' : 'Landed in your project'); tag.prepend(emo(run!.undone ? STEP_GLYPH.undone : STEP_GLYPH.done))
   section.append(tag, h('h2', '', run!.undone ? 'Your project is back where it was.' : 'The crew’s work is now in your project.'))
   const copy = run!.undone ? 'The landed files were restored to how they were before the crew.' : 'You can keep working, or undo the whole landing. Undo also removes hand edits made after it.'
   section.append(h('p', '', copy))
   if (undoResult) section.append(h('div', 'team-undo-result', undoResult))
   if (!run!.undone && run!.appliedCheckpoint && typeof window.forge.teamUndo === 'function') section.append(actionButton('Undo the landing', () => void undoApplied()))
-  if (!run!.undone && !isRemote() && typeof window.forge.teamGitState === 'function') section.append(gitPanelFor())
+  if (!run!.undone && !isRemote() && typeof window.forge.teamGitState === 'function') section.append(keep('git', gitPanelFor()))
   return section
 }
 
@@ -1089,39 +1097,27 @@ async function undoApplied() {
 function reduceEvent(event: RunEvent, t = Date.now()) {
   if (!run || event.runId !== run.id) return
   const state = reduceTeamView({ run, log, liveFiles }, event, t); run = state.run; log = state.log; liveFiles = state.liveFiles
-  if (event.type === 'agent' && !laneDetails) {
+  if (event.type === 'agent') {
     const e = event.ev
     if (event.phase !== 'plan') { const line = activityOf(e.agent, e as never); const idle = line && document.querySelector('.stage-idle-text'); if (idle) idle.textContent = line } // keep the empty live view honest
-    if (e.type === 'code' && event.phase !== 'plan') { if (pushCode({ id: e.id, agent: e.agent, path: e.path, text: e.text, kind: e.kind, done: e.done })) return }
-    else if (e.type !== 'error' && !(e.type === 'done' && !e.ok)) return // talk, commands and planning stay out of the live view
+    if (!document.querySelector('.team-lanes')) return // agent events only change Live work: while it is closed nothing is redrawn
+    if (!laneDetails) {
+      if (e.type === 'code' && event.phase !== 'plan') { if (pushCode({ id: e.id, agent: e.agent, path: e.path, text: e.text, kind: e.kind, done: e.done })) return }
+      else if (e.type !== 'error' && !(e.type === 'done' && !e.ok)) return // talk, commands and planning stay out of the live view
+    }
   }
+  if (event.type === 'live' && !document.querySelector('.team-live-files')) return // changed files show only inside the open activity fold
   if (event.type === 'task' || event.type === 'message') scheduleMemoryRefresh()
-  if (isRemote()) { queueDraw(event.type === 'agent' ? event.ev.agent : event.type === 'live' ? 'live' : 'run'); return }
-  if (refreshTimer) clearTimeout(refreshTimer)
-  refreshTimer = setTimeout(() => {
-    if (event.type === 'agent') redrawLane(event.ev.agent)
-    else if (event.type === 'live') redrawLiveFiles()
-    else renderRun()
-  }, event.type === 'agent' || event.type === 'live' ? 80 : 0)
+  scheduleRun()
 }
-function redrawLane(agent: 'claude' | 'codex' | 'local') {
-  const old = document.querySelector(`.agent-lane.${agent}`); const body = old?.querySelector<HTMLElement>('.lane-body'); const top = body?.scrollTop ?? 0; const follow = body ? body.scrollHeight - body.scrollTop - body.clientHeight < 36 : true
-  if (!old) { renderRun(); return }
-  const next = renderLane(agent); old.replaceWith(next); const nextBody = next.querySelector<HTMLElement>('.lane-body'); if (nextBody) nextBody.scrollTop = follow ? nextBody.scrollHeight : top
-}
-const redrawLiveFiles = () => document.querySelector('.team-live-files')?.replaceWith(renderLiveFiles())
-// A phone redraws at most every 100 ms, whatever the event rate: everything that changed in between is drawn once.
-const drawQueue = new Set<string>()
-let drawTimer: ReturnType<typeof setTimeout> | null = null, drawnAt = 0
-function queueDraw(what: string) {
-  drawQueue.add(what)
-  drawTimer ??= setTimeout(() => {
-    drawTimer = null; drawnAt = performance.now()
-    const todo = [...drawQueue]; drawQueue.clear()
-    if (!run) return
-    if (todo.includes('run')) return renderRun()
-    for (const w of todo) if (w === 'live') redrawLiveFiles(); else redrawLane(w as 'claude' | 'codex' | 'local')
-  }, Math.max(0, 100 - (performance.now() - drawnAt)))
+// One redraw per frame, whatever the event rate (a phone: at most one every 100 ms). Everything that changed in between is drawn once, and nothing is cancelled.
+let drawPending = false, drawnAt = 0
+function scheduleRun() {
+  if (drawPending) return
+  drawPending = true
+  const draw = () => { drawPending = false; drawnAt = performance.now(); renderRun() }
+  const wait = isRemote() ? 100 - (performance.now() - drawnAt) : 0
+  if (wait > 0) setTimeout(() => requestAnimationFrame(draw), wait); else requestAnimationFrame(draw)
 }
 
 // After the phone was offline or asleep: the open run (or the run list) is read again, keeping the scroll position.
