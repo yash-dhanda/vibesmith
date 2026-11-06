@@ -1,0 +1,64 @@
+/* Crew run page, built like a chat: a thread, a message box with the model switches under it, and a side panel. */
+.crew-claude { max-width: 1240px; margin: 0 auto; padding: 0 20px 0; display: flex; flex-direction: column; min-height: 100%; }
+.crew-head { display: flex; align-items: center; gap: 12px; padding: 12px 0; position: sticky; top: 0; z-index: 5; background: var(--bg, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--hair); }
+.crew-head-main { flex: 1; min-width: 0; }
+.crew-title { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crew-head-meta { display: flex; align-items: center; gap: 10px; margin-top: 2px; font-size: 12px; color: var(--faint); }
+.crew-where { display: inline-flex; align-items: center; gap: 5px; }
+.crew-cols { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 28px; align-items: start; flex: 1; }
+.crew-main { display: flex; flex-direction: column; min-height: calc(100vh - 80px); min-width: 0; }
+.crew-thread { display: flex; flex-direction: column; gap: 18px; padding: 22px 0 18px; max-width: 820px; width: 100%; margin: 0 auto; flex: 1; }
+.crew-me { align-self: flex-end; max-width: 86%; padding: 10px 14px; border-radius: 16px; background: var(--hover, rgba(127, 127, 127, 0.14)); font-size: 14px; line-height: 1.5; }
+.crew-me p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.crew-reply { display: flex; flex-direction: column; gap: 8px; max-width: 94%; }
+.crew-reply-head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.crew-reply-line { color: var(--muted); }
+.crew-reply-head.busy .crew-reply-line { color: var(--text); }
+.crew-dots { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--hair); border-top-color: var(--accent, currentColor); animation: crew-spin 0.9s linear infinite; flex: none; }
+@keyframes crew-spin { to { transform: rotate(360deg); } }
+.crew-steps { display: flex; flex-direction: column; gap: 2px; padding: 4px 0; }
+.crew-step { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 12.5px; }
+.crew-step-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crew-step-state { color: var(--faint); font-size: 11.5px; }
+.crew-step.running .crew-step-state { color: var(--accent, currentColor); }
+.crew-step.failed .crew-step-state, .crew-step.blocked .crew-step-state { color: #e5484d; }
+.crew-said { margin: 0; padding-left: 18px; font-size: 14px; line-height: 1.55; }
+.crew-said li { margin: 2px 0; user-select: text; }
+.crew-claude .team-fold { border: 0; }
+.crew-claude .team-fold > summary { padding: 2px 0; }
+
+/* the message box, with the switches under it */
+.crew-main .team-composer { position: sticky; bottom: 0; margin: 0 auto 14px; width: 100%; max-width: 820px; padding: 10px 12px 8px; border: 1px solid var(--hair); border-radius: 18px; background: var(--panel, var(--bg, #1b1b1b)); box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25); }
+.crew-bar { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding-top: 6px; }
+.crew-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border: 1px solid transparent; border-radius: 999px; background: transparent; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.crew-chip:hover { background: var(--hover, rgba(127, 127, 127, 0.14)); color: var(--text); }
+.crew-chip.on { color: var(--accent, currentColor); border-color: currentColor; }
+.crew-chip.warn { color: #d98a2b; }
+.crew-pop { position: absolute; bottom: calc(100% + 6px); min-width: 200px; max-height: 320px; overflow: auto; padding: 6px; border: 1px solid var(--hair); border-radius: 12px; background: var(--panel, var(--bg, #1b1b1b)); box-shadow: 0 12px 36px rgba(0, 0, 0, 0.4); z-index: 20; }
+.crew-pop-title { padding: 6px 8px 3px; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--faint); }
+.crew-pop-item { display: block; width: 100%; padding: 6px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--text); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.crew-pop-item:hover { background: var(--hover, rgba(127, 127, 127, 0.14)); }
+.crew-pop-item.on::after { content: '✓'; float: right; color: var(--accent, currentColor); }
+
+/* the side panel */
+.crew-side { position: sticky; top: 64px; display: flex; flex-direction: column; gap: 4px; padding-top: 16px; max-height: calc(100vh - 80px); overflow: auto; }
+.crew-side-sec { padding: 10px 0; border-bottom: 1px solid var(--hair); }
+.crew-side-sec h3 { margin: 0 0 6px; font-size: 12px; font-weight: 500; color: var(--faint); }
+.crew-side-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; font-size: 13px; overflow: hidden; }
+.crew-side-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crew-side-agent { display: grid; grid-template-columns: auto auto 1fr; gap: 2px 8px; align-items: center; padding: 3px 0; font-size: 12.5px; }
+.crew-side-model { grid-column: 3; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 11.5px; }
+.crew-side-tokens { grid-column: 2 / 4; color: var(--faint); font-family: var(--mono); font-size: 11.5px; }
+.crew-side-changes { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+.crew-add { color: #3fb950; font-family: var(--mono); }
+.crew-del { color: #e5484d; font-family: var(--mono); }
+.crew-side-files { margin-top: 4px; }
+.crew-side-file, .crew-side-more, .crew-side-none { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
+.crew-side-none { font-family: inherit; margin: 0; }
+.crew-side > .team-fold { margin-top: 8px; }
+.crew-activity { display: flex; flex-direction: column; gap: 10px; padding-top: 8px; }
+
+@media (max-width: 1100px) {
+  .crew-cols { grid-template-columns: minmax(0, 1fr); }
+  .crew-side { position: static; max-height: none; padding-top: 0; }
+}

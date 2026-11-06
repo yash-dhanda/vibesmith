@@ -379,7 +379,7 @@ export class TeamOrchestrator {
       const finishing = run.status === 'verifying' || (['paused', 'interrupted'].includes(run.status) && run.tasks.length > 0 && run.tasks.every((t) => ['done', 'cancelled'].includes(t.status)))
       if (finishing) this.liveOf(run).late.push({ body, to })
       this.steer(runId, body, to) // agents that are working read it at the start of their next turn
-      if (!finishing && to === 'all' && !asksForLocal(body)) this.queueReplan(run, this.liveOf(run), body) // and the planner adds what the new request needs, without stopping anyone
+      if (!finishing && to === 'all' && !asksForLocal(body)) this.queueReplan(run, this.liveOf(run), body, run.prompts?.at(-1)?.id) // and the planner adds what the new request needs, without stopping anyone
       return
     }
     const { agents: available, skipped } = await this.usable(run.config.maxLimitPercent) // also after a restart, when nothing yet says who is signed in
@@ -409,8 +409,8 @@ export class TeamOrchestrator {
     run.landedFiles = undefined // the next result is a new diff: files landed from the old one are applied again (a three-way apply copes with identical changes)
     const live = this.liveOf(run)
     this.post(run, { from: 'user', to, kind: 'steer', body })
-    if (to === 'all' && !asksForLocal(body)) this.queueReplan(run, live, body)
-    else this.messageTask(run, live, body, to)
+    if (to === 'all' && !asksForLocal(body)) this.queueReplan(run, live, body, run.prompts?.at(-1)?.id)
+    else this.messageTask(run, live, body, to, run.prompts?.at(-1)?.id)
     live.paused = false
     this.setStatus(run, 'running')
     this.pump(run)
@@ -437,14 +437,14 @@ export class TeamOrchestrator {
   }
 
   // A newer main request: the planner reads all of them with what is done so far and adds only what is missing. Nothing that is running stops.
-  private queueReplan(run: Run, live: Live, body: string) {
+  private queueReplan(run: Run, live: Live, body: string, promptId?: string) {
     live.replans++
-    const step = live.replanChain.then(() => this.replan(run, live, body)).catch(() => {}).finally(() => { live.replans--; this.pump(run) })
+    const step = live.replanChain.then(() => this.replan(run, live, body, promptId)).catch(() => {}).finally(() => { live.replans--; this.pump(run) })
     live.replanChain = step
     this.track(live, step)
   }
 
-  private async replan(run: Run, live: Live, body: string) {
+  private async replan(run: Run, live: Live, body: string, promptId?: string) {
     while (live.planning && !live.ctl.signal.aborted) await new Promise((r) => setTimeout(r, 400)) // the first plan is still being made
     if (live.ctl.signal.aborted) return
     const notes = this.d.projectNotes?.(run.project) ?? { brief: '', rules: '' }
@@ -462,17 +462,17 @@ export class TeamOrchestrator {
         if (!res.ok) { if (['limit', 'auth', 'missing', 'model'].includes(res.error?.kind ?? '')) break; continue }
         try {
           const r = parseReplan(res.text, live.available, existing, fast ? 20 : run.config.budget.maxTasks ?? 12)
-          this.applyReplan(run, live, r)
+          this.applyReplan(run, live, r, promptId)
           return
         } catch (e) {
           prompt = `${prompt}\n\nYour previous reply was rejected: ${(e as Error).message}. Reply again with ONLY the JSON object.`
         }
       }
     }
-    this.messageTask(run, live, body, 'all') // no planner could answer: the newest message still becomes one task
+    this.messageTask(run, live, body, 'all', promptId) // no planner could answer: the newest message still becomes one task
   }
 
-  private applyReplan(run: Run, live: Live, r: ReturnType<typeof parseReplan>) {
+  private applyReplan(run: Run, live: Live, r: ReturnType<typeof parseReplan>, promptId?: string) {
     for (const id of r.cancel) {
       const t = run.tasks.find((x) => x.id === id)
       if (t && t.status === 'queued') (t.status = 'cancelled'), (t.error = 'Replaced by your newer message.'), this.touch(run, t)
@@ -482,18 +482,18 @@ export class TeamOrchestrator {
     while (todo.length) {
       const i = Math.max(0, todo.findIndex((q) => q.deps.every((d) => !/^n\d+$/.test(d) || made.has(d))))
       const q = todo.splice(i, 1)[0]
-      const t = this.addTask(run, { title: q.title, goal: q.goal, agent: q.agent ?? strongest(live.available), kind: q.kind, deps: q.deps.map((d) => made.get(d) ?? d), acceptance: q.acceptance, proposedBy: 'user' })
+      const t = this.addTask(run, { title: q.title, goal: q.goal, agent: q.agent ?? strongest(live.available), kind: q.kind, deps: q.deps.map((d) => made.get(d) ?? d), acceptance: q.acceptance, proposedBy: 'user', promptId })
       made.set(q.id, t.id)
     }
     this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: r.tasks.length ? `${r.summary || 'Planned your new request'}: ${r.tasks.length} new task${r.tasks.length === 1 ? '' : 's'}${r.cancel.length ? `, ${r.cancel.length} replaced` : ''}.` : r.cancel.length ? `Replaced ${r.cancel.length} planned task${r.cancel.length === 1 ? '' : 's'} for your new request.` : 'Your new request is already covered by the work planned or done.' })
     this.out(run, { type: 'plan', runId: run.id, summary: run.plan.summary, tasks: run.tasks })
   }
 
-  private messageTask(run: Run, live: Live, body: string, to: AgentName | 'all') {
+  private messageTask(run: Run, live: Live, body: string, to: AgentName | 'all', promptId?: string) {
     // "let local fix this", "use the local model": the words count as much as the recipient box when it says Everyone.
     const named: AgentName | null = to === 'all' && asksForLocal(body) && live.available.includes('local') ? 'local' : null
     const agent = named ?? (to !== 'all' && live.available.includes(to) ? to : strongest(this.pool(live)))
-    return this.addTask(run, { title: body.replace(/\s+/g, ' ').slice(0, 70), goal: body, agent, kind: 'build', proposedBy: 'user' })
+    return this.addTask(run, { title: body.replace(/\s+/g, ' ').slice(0, 70), goal: body, agent, kind: 'build', proposedBy: 'user', promptId })
   }
 
   retryTask(runId: string, taskId: string) {
@@ -1102,6 +1102,7 @@ export class TeamOrchestrator {
           run.plan = { summary: plan.summary, plannedBy: agent }
           const cheap = run.config.effortMode === 'cheap'
           run.tasks = plan.tasks.map((p) => ({ id: p.id, title: p.title, goal: p.goal, acceptance: p.acceptance, deps: p.deps, agent: cheap && p.kind !== 'research' && p.agent === 'claude' && live.available.includes('codex') ? 'codex' : p.agent ?? routeAgent(p.kind, live.available, mem.stats, cheap), kind: p.kind, files: p.files, status: 'queued', phase: null, attempts: 0, fixRounds: 0, reviews: [], sessions: {}, branch: null, worktree: null, summary: '', handoff: '', changed: [], usage: emptyUsage() }))
+          for (const t of run.tasks) t.promptId = 'p1'
           if (!live.paused) this.setStatus(run, 'running') // a soft pause during planning stays a pause
           this.out(run, { type: 'plan', runId: run.id, summary: plan.summary, tasks: run.tasks })
           return
@@ -1655,9 +1656,9 @@ export class TeamOrchestrator {
   private virtualTask(run: Run, tid: string, title: string, agent: AgentName): Task {
     return { id: tid, title, goal: run.goal, acceptance: [], deps: [], agent, kind: 'research', files: [], status: 'running', phase: null, attempts: 0, fixRounds: 0, reviews: [], sessions: {}, branch: null, worktree: null, summary: '', handoff: '', changed: [], usage: emptyUsage() }
   }
-  private addTask(run: Run, p: { title: string; goal: string; agent: AgentName; kind: Task['kind']; deps?: string[]; acceptance?: string[]; proposedBy?: string; lastStep?: boolean }): Task {
+  private addTask(run: Run, p: { title: string; goal: string; agent: AgentName; kind: Task['kind']; deps?: string[]; acceptance?: string[]; proposedBy?: string; lastStep?: boolean; promptId?: string }): Task {
     const n = run.tasks.reduce((m, t) => Math.max(m, Number(t.id.replace(/\D/g, '')) || 0), 0) + 1
-    const t: Task = { ...this.virtualTask(run, `t${n}`, p.title, p.agent), goal: p.goal, kind: p.kind, deps: p.deps ?? [], acceptance: p.acceptance ?? [], status: 'queued', proposedBy: p.proposedBy, lastStep: p.lastStep }
+    const t: Task = { ...this.virtualTask(run, `t${n}`, p.title, p.agent), goal: p.goal, kind: p.kind, deps: p.deps ?? [], acceptance: p.acceptance ?? [], status: 'queued', proposedBy: p.proposedBy, lastStep: p.lastStep, promptId: p.promptId }
     run.tasks.push(t)
     this.touch(run, t)
     return t
