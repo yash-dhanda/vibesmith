@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest'
-import { morph, morphChildren } from './morph'
+import { forget, keep, morph, morphChildren } from './morph'
 
 const el = (html: string) => { const d = document.createElement('div'); d.innerHTML = html.trim(); return d.firstElementChild as HTMLElement }
 const host = (html: string) => { const d = document.createElement('div'); d.innerHTML = html.trim(); document.body.replaceChildren(d); return d }
@@ -46,19 +46,16 @@ describe('morph', () => {
     expect(calls).toEqual(['new'])
   })
 
-  it('a node marked data-keep is moved in as it is and never patched', () => {
+  it('an island from keep() goes in as it is, and the next render keeps it untouched', () => {
     const live = host('<main><p>a</p></main>')
-    const kept = document.createElement('form'); kept.setAttribute('data-keep', ''); kept.innerHTML = '<textarea></textarea>'
-    const area = kept.querySelector('textarea')!; area.value = 'half-written'
-    const next = el('<div><main><p>a</p></main></div>'); next.querySelector('main')!.append(kept)
+    const form = document.createElement('form'); form.innerHTML = '<textarea></textarea>'; form.querySelector('textarea')!.value = 'half-written'
+    const next = el('<div><main><p>a</p></main></div>'); next.querySelector('main')!.append(keep('steer', form))
     morphChildren(live, next)
-    expect(live.querySelector('form')).toBe(kept)
-    expect(live.querySelector('textarea')!.value).toBe('half-written')
-    // the next render takes the same node again: it stays, with its content
-    const again = el('<div><main><p>b</p></main></div>'); again.querySelector('main')!.append(kept)
+    expect(live.querySelector('form')).toBe(form); expect(live.querySelector('x-keep')).toBeNull()
+    const again = el('<div><main><p>b</p></main></div>'); again.querySelector('main')!.append(keep('steer', form))
     morphChildren(live, again)
-    expect(live.querySelector('form')).toBe(kept)
-    expect(live.querySelector('p')!.textContent).toBe('b')
+    expect(live.querySelector('form')).toBe(form); expect(form.querySelector('textarea')!.value).toBe('half-written'); expect(live.querySelector('p')!.textContent).toBe('b')
+    forget()
   })
 
   it('leaves the value of the focused field alone, and updates the others', () => {
@@ -69,14 +66,12 @@ describe('morph', () => {
     expect(live.querySelector<HTMLInputElement>('#g')!.value).toBe('new')
   })
 
-  it('keeps a <details> state from the new tree and does not swap the element', () => {
+  it('leaves an existing <details> as the person left it; a new one comes in as built', () => {
     const live = host('<details><summary>s</summary><p>x</p></details>')
     const d = live.querySelector('details')!
-    const next = el('<div><details open><summary>s</summary><p>y</p></details></div>')
-    morphChildren(live, next)
-    expect(live.querySelector('details')).toBe(d)
-    expect(d.open).toBe(true)
-    expect(d.querySelector('p')!.textContent).toBe('y')
+    morphChildren(live, el('<div><details open><summary>s</summary><p>y</p></details><details open data-key="n"><summary>n</summary></details></div>'))
+    expect(live.querySelector('details')).toBe(d); expect(d.open).toBe(false); expect(d.querySelector('p')!.textContent).toBe('y')
+    expect(live.querySelector<HTMLDetailsElement>('[data-key="n"]')!.open).toBe(true)
   })
 
   it('swaps an element for one of another kind', () => {
@@ -94,5 +89,49 @@ describe('morph', () => {
     next.querySelector('select')!.value = 'b'
     morphChildren(live, next)
     expect(live.querySelector('select')!.value).toBe('b')
+  })
+
+  it('keeps a data-sig widget whole while its signature holds, and swaps it when it changes', () => {
+    const live = host('<article data-key="q" data-sig="1"><button>a</button></article>')
+    const card = live.firstElementChild!, calls: string[] = []
+    card.querySelector('button')!.onclick = () => calls.push('old')
+    const same = el('<div><article data-key="q" data-sig="1"><button>b</button></article></div>'); same.querySelector('button')!.onclick = () => calls.push('new')
+    morphChildren(live, same)
+    expect(live.firstElementChild).toBe(card); card.querySelector('button')!.click(); expect(calls).toEqual(['old']); expect(card.textContent).toBe('a')
+    morphChildren(live, el('<div><article data-key="q" data-sig="2"><button>c</button></article></div>'))
+    expect(live.firstElementChild).not.toBe(card); expect(live.textContent).toBe('c')
+  })
+
+  it('leaves a data-hold node alone and never removes a data-transient one', () => {
+    const live = host('<div data-key="r" data-hold><input class="edit"></div><div data-transient class="pop"></div>')
+    const input = live.querySelector('input')!
+    morphChildren(live, el('<div><div data-key="r"><span>title</span></div></div>'))
+    expect(live.querySelector('input')).toBe(input); expect(live.querySelector('.pop')).not.toBeNull()
+  })
+
+  it('keeps typed values while the data is unchanged and takes new data when it changes', () => {
+    const live = host('')
+    morphChildren(live, el('<div><input value="Title"><input type="checkbox"></div>'))
+    const [text, box] = Array.from(live.querySelectorAll('input'))
+    text.value = 'Edited'; box.checked = true
+    morphChildren(live, el('<div><input value="Title"><input type="checkbox"></div>'))
+    expect(text.value).toBe('Edited'); expect(box.checked).toBe(true)
+    morphChildren(live, el('<div><input value="Renamed"><input type="checkbox"></div>'))
+    expect(text.value).toBe('Renamed')
+  })
+
+  it('keeps .enter and its style on a live node and never adds it to a node already there', () => {
+    const live = host('<p class="row enter" style="--i: 2">a</p><p class="row">b</p>')
+    const [a, b] = Array.from(live.querySelectorAll('p'))
+    morphChildren(live, el('<div><p class="row">a</p><p class="row enter">b</p></div>'))
+    expect(a.classList.contains('enter')).toBe(true); expect(a.getAttribute('style')).toContain('--i'); expect(b.classList.contains('enter')).toBe(false)
+  })
+
+  it('drops a keyed row first, so the rows that stay are not moved', () => {
+    const live = host('<ol><li data-key="1">1</li><li data-key="2">2</li><li data-key="3">3</li></ol>')
+    const [, two, three] = Array.from(live.querySelectorAll('li'))
+    morphChildren(live, el('<div><ol><li data-key="2">2</li><li data-key="3">3</li><li data-key="4">4</li></ol></div>'))
+    const after = Array.from(live.querySelectorAll('li'))
+    expect(after[0]).toBe(two); expect(after[1]).toBe(three); expect(after.map((x) => x.textContent)).toEqual(['2', '3', '4'])
   })
 })
