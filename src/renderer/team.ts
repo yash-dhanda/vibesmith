@@ -178,9 +178,9 @@ async function showEntry() {
   const [health, list, defaults] = loaded
   summaries = list
   if (isRemote() && !replay) cacheSet('runs', list.slice(0, 30))
-  const page = h('div', 'team-entry')
+  const page = h('div', 'team-entry crew-new')
   const intro = h('section', 'team-intro')
-  intro.append(h('h1', '', 'Build with a crew: a second set of eyes.'), h('p', 'team-lede', 'Claude Code, Codex and a local model split the work and review each other. Nothing touches your project until you land it.'))
+  intro.append(h('h1', '', 'What should the crew build?'))
   const form = h('form', 'team-start-card') as HTMLFormElement
   form.noValidate = true // readConfig checks the numbers itself: it opens More options and focuses the field, which the browser cannot do while it is hidden
   const handed = pendingGoal; pendingGoal = null
@@ -270,7 +270,11 @@ async function showEntry() {
   const diagnostics = h('button', 'icon-btn') as HTMLButtonElement; diagnostics.type = 'button'; diagnostics.append(icon('info')); diagnostics.setAttribute('aria-label', 'Copy diagnostics'); diagnostics.title = 'Copy diagnostics: versions, agent status and recent runs for a bug report. No secrets or file contents.'
   diagnostics.onclick = () => void call(async () => { const text = replay ? 'Forge replay diagnostics' : await window.forge.teamDiagnostics(); await writeClipboard(text); toast('Diagnostics copied') })
   const actions = h('div', 'team-start-actions'); const queueBtn = h('button', 'pill') as HTMLButtonElement; queueBtn.type = 'button'; queueBtn.append(icon('list', 'sm'), document.createTextNode('Queue')); queueBtn.title = 'Line up several goals and run them one after another, for example overnight'; queueBtn.onclick = () => void openQueue(); queueBtn.hidden = isRemote() || replay
-  actions.append(project, att.button, att.input, attachVoice(goal, form), diagnostics, historyButton(), queueBtn, h('span', 'grow'), start)
+  const toolbarGrow = h('span', 'grow')
+  const moreTools = h('div', 'crew-more-tools')
+  moreTools.append(ask.row, web.row, diagnostics, historyButton(), queueBtn)
+  advanced.prepend(moreTools)
+  actions.append(att.button, att.input, attachVoice(goal, form), project, toolbarGrow, start)
   // The agents as one row of chips ("Claude · Default · High"); a chip opens its model and effort selects in a popover.
   // The popover closes on Escape (focus goes back to its chip) or a click outside.
   const agentsBox = h('div', 'crew-agents'); agentsBox.setAttribute('role', 'group'); agentsBox.setAttribute('aria-label', 'Models and effort')
@@ -302,8 +306,10 @@ async function showEntry() {
     const open = agentsBox.querySelector<HTMLElement>('.crew-pop:popover-open'); if (e.key !== 'Escape' || !open) return
     e.preventDefault(); e.stopPropagation(); open.hidePopover(); agentsBox.querySelector<HTMLElement>(`[popovertarget="${open.id}"]`)?.focus()
   })
-  const options = h('div', 'crew-options'); options.append(ask.row, web.row, h('span', 'grow'), more)
-  form.append(goal, att.strip, folderFinder(goal, project), agentsBox, options, advanced, actions)
+  more.classList.add('crew-options-btn')
+  actions.insertBefore(agentsBox, toolbarGrow); actions.insertBefore(more, toolbarGrow)
+  form.classList.toggle('has-folder', !!currentProject)
+  form.append(goal, att.strip, folderFinder(goal, project), actions, advanced)
   form.onsubmit = async e => {
     e.preventDefault(); const text = goal.value.trim(); if (!text || start.disabled || att.busy()) return
     const config = readConfig(); if (!config) return
@@ -313,8 +319,17 @@ async function showEntry() {
     try { if (typeof window.forge.teamSettingsSet === 'function') await window.forge.teamSettingsSet(config); const started = await window.forge.teamStart(text, files.length ? { ...config, attachments: files } : config); await openRun(started.id) }
     catch (err) { start.disabled = false; start.replaceChildren(startLabel); toast(cleanErr(err), 6000) }
   }
+  const allReady = health.agents.every(a => a.ok) && !(allowance && Math.max(allowance.primaryPct, allowance.secondaryPct ?? 0) >= 80)
+  healthBox.hidden = allReady
   intro.append(form, healthBox); page.append(intro)
-  page.append(renderRunList())
+  // Earlier runs live in the sidebar; this page is for a new one. The full list is one click away, closed by default.
+  if (isRemote() || !list.length) page.append(renderRunList())
+  else {
+    const all = h('button', 'link-btn crew-allruns', `All runs (${list.length})`) as HTMLButtonElement; all.type = 'button'
+    const wrap = h('div', 'team-runs-wrap'); wrap.hidden = true
+    all.onclick = () => { if (wrap.hidden) wrap.replaceChildren(renderRunList()); wrap.hidden = !wrap.hidden; all.setAttribute('aria-expanded', String(!wrap.hidden)) }
+    page.append(all, wrap)
+  }
   root.replaceChildren(page); goal.focus()
   if (replay && !['entry', 'unavailable'].includes(replayState)) await openRun('replay-team-run', replayRun(replayState))
 }

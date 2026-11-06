@@ -27,6 +27,7 @@
     "electron": "^45.2.1",
     "electron-builder": "^26.18.0",
     "electron-vite": "^6.0.0",
+    "happy-dom": "^21.0.4",
     "monaco-editor": "^0.57.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",

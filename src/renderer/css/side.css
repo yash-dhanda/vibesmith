@@ -1,0 +1,58 @@
+/* Sidebar: Active first, then one group per project folder, one quiet line per chat or run. */
+.side-nav { gap: 1px; margin-bottom: 4px; }
+.side-btn { height: 32px; }
+.side-btn.new-chat { color: var(--text); font-weight: 500; }
+.side-btn.new-chat i, .side-btn.new-chat svg { color: var(--accent); }
+.side-label { display: none; } /* "Chats +" repeated New Solo chat; the button is still in the DOM for the code that listens to it */
+#chat-search { margin: 6px 0 4px; height: 30px; padding: 0 10px; border-color: var(--hair); background: color-mix(in srgb, var(--side-hover) 40%, transparent); }
+#chat-list { padding-bottom: 8px; }
+
+.proj-head { display: flex; align-items: center; gap: 6px; width: 100%; margin-top: 10px; padding: 4px 8px 3px; border: 0; border-radius: var(--r-sm); background: none; color: var(--side-faint); font-size: 11.5px; font-weight: 500; text-align: left; cursor: pointer; }
+.proj-head:hover { color: var(--text); background: var(--side-hover); }
+.proj-head:first-child { margin-top: 2px; }
+.proj-chev { flex: none; transform: rotate(90deg); transition: transform var(--t1); } /* the chevron points right; open groups point it down */
+.proj-head.folded .proj-chev { transform: none; }
+.proj-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: 0.01em; }
+.proj-count { font-size: 11px; opacity: 0.55; font-variant-numeric: tabular-nums; }
+.proj-head:not([aria-expanded]) { cursor: default; color: var(--accent); }
+.proj-head:not([aria-expanded]):hover { background: none; color: var(--accent); }
+
+/* one line per item: [status] title ........ time */
+.chat-item .s { display: none; }
+.chat-open { padding: 6px 8px; }
+.chat-item .row1 { gap: 8px; }
+.chat-item .run-icon { color: var(--side-faint); flex: none; }
+.chat-item .when { flex: none; margin-left: 6px; font-size: 11px; color: var(--side-faint); font-variant-numeric: tabular-nums; transition: opacity var(--t1); }
+.chat-item:hover .when, .chat-item:focus-within .when { opacity: 0; } /* the delete cross takes its place */
+.chat-item .x { top: 6px; }
+.chat-item.active { background: color-mix(in srgb, var(--accent) 12%, var(--side-hover)); }
+.chat-item.active .t { font-weight: 500; }
+.chat-item .t { color: var(--side-text); }
+.chat-item .st.waiting { box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 22%, transparent); }
+.run-item .x { display: none; }
+.run-item:hover .when { opacity: 1; }
+
+/* the bottom: usage as a quiet chip, settings beside it */
+.side-foot { padding-top: 10px; }
+.usage-badge { padding: 3px 10px 3px 4px; border: 1px solid var(--hair); }
+
+/* ---- new chat, Crew: a greeting and one message box, like Claude or ChatGPT ---- */
+.team-entry.crew-new { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; padding: 0 20px 7vh; }
+.crew-new .team-intro { width: 100%; max-width: 760px; }
+.crew-new .team-intro h1 { margin: 0 0 22px; text-align: center; font-size: 28px; font-weight: 500; letter-spacing: -0.02em; }
+.crew-new .team-lede { display: none; }
+.crew-new .team-start-card { margin: 0 auto; padding: 14px 14px 10px; border-radius: 22px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.18); }
+.crew-new .team-start-card > textarea { min-height: 92px; padding: 4px 6px; border: 0; background: transparent; resize: none; font-size: 15px; line-height: 1.55; outline: 0; box-shadow: none; }
+.crew-new .team-start-card.has-folder .team-folder { display: none; }
+.crew-new .team-start-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; margin-top: 8px; }
+.crew-new .crew-agents { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; }
+.crew-new .crew-options-btn { color: var(--faint); }
+.crew-more-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; width: 100%; padding: 10px 2px; margin-top: 6px; border-top: 1px solid var(--hair); }
+.crew-new .team-health { margin-top: 14px; font-size: 12px; opacity: 0.85; }
+.crew-allruns { display: block; margin: 26px auto 0; color: var(--faint); font-size: 12.5px; }
+.team-runs-wrap { width: 100%; max-width: 980px; margin: 14px auto 0; }
+
+/* Solo's new chat: the Solo/Crew switch loses its emoji and the greeting sits in the middle */
+.composer-mode .emo { display: none; }
+#thread .empty { margin-top: 12vh; }
+#thread .empty h2 { font-size: 28px; font-weight: 500; letter-spacing: -0.02em; }
