@@ -163,7 +163,8 @@ export async function applyResult(root: string, baseCommit: string, branch: stri
         await applyThreeWay(root, f)
         message = 'Applied with a three-way merge because your files changed since the run started.'
       } catch (e) {
-        return { ok: false, message: `Could not apply cleanly: ${(e as Error).message.slice(0, 300)}. Nothing in your folder was changed. The result is still on branch ${branch}.` }
+        const why = (e as Error).message.split('\n').map((l) => l.trim()).filter((l) => l && !/ cleanly\.?$/.test(l)).join(' ') // git lists every file it applied fine first: only the lines that name a problem matter
+        return { ok: false, message: `Could not apply cleanly: ${why.slice(0, 300)}. Nothing in your folder was changed. The result is still on branch ${branch}.` }
       }
     }
     if (checkpointId) await savePaths(root, checkpointId, paths).catch(() => undefined)
