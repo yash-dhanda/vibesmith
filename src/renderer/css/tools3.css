@@ -37,7 +37,7 @@ a.ref-sub { color: var(--muted); text-decoration: underline; text-underline-offs
 .ref-card .att-x { position: absolute; top: 6px; right: 6px; background: color-mix(in srgb, var(--panel) 82%, transparent); }
 
 /* voice */
-.voice-btn { position: relative; width: auto; min-width: 30px; gap: 5px; padding: 0 6px; }
+.voice-btn { position: relative; width: auto; min-width: 32px; gap: 5px; padding: 0 6px; }
 .voice-btn.off { color: var(--faint); }
 .voice-btn.busy { opacity: .6; cursor: progress; }
 .voice-btn.recording { color: var(--err); }

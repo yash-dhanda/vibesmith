@@ -1,25 +1,24 @@
 /* ---- page headers: title left, a compact control cluster right, the primary action last ---- */
-.page-head { display: flex; align-items: center; gap: 12px; min-height: 30px; margin-bottom: 14px; flex-wrap: wrap; }
+.page-head { display: flex; align-items: center; gap: 12px; min-height: 32px; margin-bottom: 14px; flex-wrap: wrap; }
 .page-title { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 20px; font-weight: 500; line-height: 1.2; color: var(--text); }
 h2.page-title { font-size: 16px; }
 .page-count { color: var(--faint); font: 400 12px var(--mono); margin-left: 2px; }
 .head-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .view-toggle { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--hair); border-radius: var(--r-md); background: var(--panel); }
-.view-toggle .icon-btn { width: 24px; height: 24px; border-radius: 6px; color: var(--faint); }
+.view-toggle .icon-btn { width: 26px; height: 26px; border-radius: 6px; color: var(--faint); } /* the toggle is 32px tall, like the rest of the row */
 .view-toggle .icon-btn.on { background: var(--panel-2); color: var(--text); }
-.select-btn { position: relative; display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 8px 0 10px; border: 1px solid var(--border); border-radius: var(--r-md); color: var(--muted); font-size: 12px; cursor: pointer; transition: background-color var(--t1), border-color var(--t1); }
+.select-btn { position: relative; display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 8px 0 10px; border: 1px solid var(--border); border-radius: var(--r-md); color: var(--muted); font-size: 12px; cursor: pointer; transition: background-color var(--t1), border-color var(--t1); }
 .select-btn:hover { background: var(--panel); color: var(--text); }
 .select-btn:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
 .select-btn select { appearance: none; border: 0; background: transparent; color: inherit; font-size: 12px; padding: 0; outline: 0; cursor: pointer; }
 .select-btn select option { background: var(--panel); color: var(--text); }
 .select-btn .chev { color: var(--faint); }
-.head-search { display: inline-flex; align-items: center; height: 30px; border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; transition: border-color var(--t1); }
-.head-search > .icon-btn { width: 28px; height: 28px; border-radius: 0; }
+.head-search { display: inline-flex; align-items: center; height: 32px; border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; transition: border-color var(--t1); }
+.head-search > .icon-btn { width: 30px; height: 30px; border-radius: 0; }
 .head-search input { display: none; width: 180px; padding: 0 10px 0 0; border: 0; background: transparent; outline: 0; font-size: 12px; }
 .head-search.open input { display: block; animation: slide-right var(--t2) var(--ease); }
 .head-search:focus-within { border-color: var(--focus); }
 .head-search input:focus-visible { outline: 0; animation: none; }
-.page-head .btn, .head-tools .btn { height: 30px; border-radius: var(--r-md); font-size: 13px; }
 /* centred empty state: a line glyph, a bold line, two muted lines and one white button */
 .empty-state { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 48px 16px 40px; text-align: center; color: var(--faint); animation: rise var(--t3) var(--ease) both; }
 .empty-glyph { display: grid; place-items: center; width: 52px; height: 52px; color: var(--faint); opacity: .7; }
@@ -66,7 +65,6 @@ dialog[open]::backdrop { background: var(--scrim); }
 /* modal anatomy: icon + title + close, a divider, the body, then a footer with a muted hint left and actions right */
 .modal-foot { display: flex; align-items: center; gap: 9px; padding: 12px 18px; border-top: 1px solid var(--hair); }
 .modal-hint { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--faint); font-size: 12px; }
-.modal-foot .btn { height: 30px; }
 
 /* command palette */
 #palette { width: min(620px, 90vw); margin-top: min(16vh, 150px); overflow: hidden; }

@@ -38,7 +38,6 @@
 .goal-edit { width: 100%; min-height: 180px; resize: vertical; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-md); color: var(--text); font: 12px/1.6 var(--mono); }
 .goal-edit:focus-visible { border-color: var(--focus); outline: 0; }
 .gi-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; }
-.gi-actions .btn { height: 30px; }
 .gi { border-top: 1px solid var(--hair); }
 .gi:first-of-type { border-top: 0; }
 .gi-head { display: flex; align-items: center; gap: 10px; }
@@ -63,7 +62,6 @@
 .im-tabs { align-self: flex-start; }
 .im-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .im-bar:empty { display: none; }
-.im-bar .btn { height: 30px; }
 .im-list { display: flex; flex-direction: column; gap: 14px; }
 .im-list .empty-state { padding: 36px 16px; }
 .im-group { display: flex; flex-direction: column; }

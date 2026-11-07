@@ -3,8 +3,8 @@
 .git-head { display: flex; align-items: center; gap: 8px; color: var(--muted); }
 .git-head strong { font-size: 13px; font-weight: 500; color: var(--text); }
 .git-line { margin: 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
-.git-step { display: flex; align-items: center; gap: 12px; min-height: 30px; }
-.git-step .btn { flex: none; min-width: 150px; justify-content: center; height: 30px; }
+.git-step { display: flex; align-items: center; gap: 12px; min-height: 32px; }
+.git-step .btn { flex: none; min-width: 150px; justify-content: center; }
 .git-note { min-width: 0; color: var(--faint); font-size: 12px; overflow-wrap: anywhere; }
 .git-note.ok { color: var(--ok); }
 .git-note.err { color: var(--err); }

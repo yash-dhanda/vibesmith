@@ -14,14 +14,11 @@ button, a, summary, select, label { touch-action: manipulation; }
   .chat-item .x { top: 50%; translate: 0 -50%; width: 44px; height: 44px; right: 0; }
   .side-btn kbd, .set-search kbd, #commands kbd, .palette-search kbd, .palette-foot, .composer-note > span:last-child, .q-opt kbd { display: none; }
   .task-card[data-task]:hover, .suggest button:hover, #send:hover:not(:disabled) { transform: none; }
-  .icon-btn, .head-btn, .icon-btn.sm, .view-toggle .icon-btn, .copy, .msg-actions button, .att-x, .toast-x { min-width: 44px; min-height: 44px; }
+  .icon-btn, .head-btn, .icon-btn.sm, .view-toggle .icon-btn, .btn.only, .copy, .msg-actions button, .att-x, .toast-x { min-width: 44px; min-height: 44px; } /* .btn.only: the run header's icon buttons are a finger wide too */
   .btn, .link-btn, .pill, .bar select, .seg button, .side-btn, .set-nav button, .chat-open, .composer-mode, .att-act, .lane-details, .steps-head, .tool-head, .file-row, .undo, .approve button, .q-opt, .menu button, .command { min-height: 44px; }
   #send { width: 44px; height: 44px; }
-  #chat-title, .suggest button, .usage-badge, .skill-chip, .team-field input, .team-field select, .team-folder-chip, .team-folder-row-item, .team-steer select, .team-approval-card > input, .plan-edit-row input[type='text'], .plan-edit-row select, #chat-search, .q-other, .team-folder-panel input, summary { min-height: 44px; }
+  #chat-title, .suggest button, .usage-badge, .skill-chip, .select-btn, .head-search, .team-field input, .team-field select, .team-folder-chip, .team-folder-row-item, .team-steer select, .team-approval-card > input, .plan-edit-row input[type='text'], .plan-edit-row select, #chat-search, .q-other, .team-folder-panel input, summary { min-height: 44px; }
   .icon-btn.xs { width: 36px; height: 36px; }
-  /* the run goal's "Show all" stays one line tall over the clamp's last line; its finger-sized hit area reaches above and below */
-  .team-goal:not(.open) + .team-goal-more { min-height: 0; }
-  .team-goal:not(.open) + .team-goal-more::before { content: ''; position: absolute; inset: -11px 0; }
 }
 @media (max-width: 800px) {
   :root { --gut-phone: 12px; } /* one side margin for Solo's thread and composer and the Crew pages */
@@ -42,7 +39,6 @@ button, a, summary, select, label { touch-action: manipulation; }
   #app #history, #app.no-hist #history, #app:not(.no-hist) #history, #app.team-mode #history, #app.ws-open #history { display: flex; position: fixed; inset: 0 auto 0 0; width: min(300px, 86vw); z-index: 30; box-shadow: 18px 0 50px -24px rgba(0, 0, 0, .55); padding: calc(10px + var(--safe-t)) 8px calc(8px + var(--safe-b)) calc(8px + var(--safe-l)); transform: translateX(-105%); visibility: hidden; animation: none; transition: transform var(--t2) var(--ease), visibility 0s linear var(--t2); }
   #app.drawer #history { transform: none; visibility: visible; transition: transform var(--t2) var(--ease), visibility 0s; }
   #app:not(.no-hist) #chat, #app.ws-open #chat { margin-left: 0; }
-  .group-label { position: sticky; top: 0; z-index: 1; background: var(--side); } /* headers that stay while their list scrolls */
   /* headers: 52px under the status bar on every screen; side insets keep landscape notches clear */
   #chat { grid-template-columns: minmax(0, 1fr); grid-template-rows: calc(52px + var(--safe-t)) minmax(0, 1fr) auto; }
   #app.ws-open #chat, #app.brief-open #chat { display: grid; grid-template-columns: minmax(0, 1fr); }
@@ -116,7 +112,6 @@ button, a, summary, select, label { touch-action: manipulation; }
   /* Crew */
   .team-entry { width: calc(100% - 2 * var(--gut-phone) - var(--safe-l) - var(--safe-r)); padding-top: 18px; }
   .team-intro h1 { font-size: 21px; text-wrap: balance; }
-  .team-lede { font-size: 13px; text-wrap: pretty; }
   .crew-pop { margin-bottom: calc(60px + var(--safe-b)); } /* an agent's popover flips above its chip rather than cover the bottom bar */
   .team-start-card { margin-top: 16px; padding: 10px; }
   .team-folder-row { flex-wrap: wrap; }
@@ -130,8 +125,6 @@ button, a, summary, select, label { touch-action: manipulation; }
   .team-runs .view-toggle { display: none; }
   .head-search input { width: 40vw; }
   .run-row .run-acts .icon-btn { opacity: 1; }
-  .team-run-header { box-shadow: none; }
-  .team-run-identity h1 { font-size: 15.5px; }
   .team-side-story, .team-lanes { grid-template-columns: minmax(0, 1fr); }
   .stage-editor { height: 62vh; height: 62dvh; min-height: 320px; }
   .stage-doc { padding-right: 16px; }
