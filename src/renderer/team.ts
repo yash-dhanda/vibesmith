@@ -438,11 +438,11 @@ function renderRun() {
   const page = h('div', 'team-run crew-claude'); page.dataset.key = run.id // another run is another page and fades in (crew.css:11); the same run is patched in place
   page.append(renderRunHeader())
   const cols = h('div', 'crew-cols'); const main = h('div', 'crew-main')
+  main.append(renderThread()) // newest last: the page lands at the bottom, so what waits for you sits right above the message box
+  const answered = renderAnswered(); if (answered) main.append(answered)
   if ((run.pausedReason || run.status === 'interrupted') && !run.approvals.some(a => a.kind === 'plan' && a.status === 'pending')) main.append(renderPauseBanner())
   const pending = run.approvals.filter(a => a.status === 'pending')
   if (pending.length) main.append(renderApprovals(pending))
-  const answered = renderAnswered(); if (answered) main.append(answered)
-  main.append(renderThread())
   if (run.status === 'awaiting_approval' && run.final) main.append(renderFinal())
   if (run.status === 'done' && run.applied) main.append(renderApplied())
   main.append(keep('steer', renderSteer())) // the message box never leaves the page: focus, caret, draft, uploads and an open picker survive
@@ -547,7 +547,9 @@ function renderRunHeader() {
   else if (['planning', 'running', 'verifying'].includes(run!.status)) controls.append(pauseButton())
   if (isActive(run!.status) && run!.status !== 'awaiting_approval') controls.append(actionButton('Cancel run', () => teamAction(() => window.forge.teamCancel(run!.id)), 'danger', 'x'))
   if (run!.final && typeof window.forge.teamExportReport === 'function' && !isRemote()) controls.append(actionButton('Export report', () => call(() => window.forge.teamExportReport(run!.id)), '', 'download'))
-  header.append(back, main, controls)
+  // this bar stands in for the Crew page head on a desktop run page (crew3.css), so it carries that head's sidebar button
+  const side = h('button', 'icon-btn no-phone'); side.append(icon('sidebar')); side.title = 'Show or hide the sidebar (Ctrl B)'; side.setAttribute('aria-label', 'Toggle navigation'); side.onclick = () => $('team-hist-toggle').click()
+  header.append(side, back, main, controls)
   return header
 }
 

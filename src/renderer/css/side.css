@@ -47,15 +47,21 @@
 .crew-new .team-start-card > textarea { field-sizing: content; min-height: 80px; max-height: 320px; padding: 4px; border: 0; background: transparent; resize: none; font-size: 15px; line-height: 24px; outline: 0; box-shadow: none; }
 .crew-new .team-start-card.has-folder .team-folder { display: none; }
 .crew-new .team-start-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
-.crew-new .crew-agents { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; }
-.crew-new .crew-options-btn { color: var(--faint); }
+.crew-new .crew-agents { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; order: -2; }
+.crew-new .crew-options-btn { color: var(--faint); order: -2; }
+.crew-new .team-start-actions > .grow { order: -1; flex: 0 0 100%; height: 0; } /* row 1: agents and More options; row 2: attach, voice, folder … Send */
+.crew-new .team-start { margin-left: auto; }
 .crew-more-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; width: 100%; padding: 8px 0; margin-top: 8px; border-top: 0; }
 .crew-new .team-health { margin-top: 12px; font-size: 12px; opacity: 0.85; }
 .crew-allruns { display: block; margin: 24px auto 0; color: var(--faint); font-size: 13px; }
 .team-runs-wrap { width: 100%; max-width: 980px; margin: 16px auto 0; }
 
-/* Solo's new chat: the greeting sits in the middle */
-#thread .empty { margin-top: 12vh; }
+/* Solo's new chat: the greeting and the composer sit together in the middle (2fr above, 1fr below), as in Claude */
+#thread > .empty { margin: auto auto 0; padding: 0; }
+@media (min-width: 801px) {
+  #chat:has(#thread > .empty) { grid-template-rows: 52px minmax(0, 2fr) auto minmax(0, 1fr); }
+  #thread:has(> .empty) { padding-bottom: 24px; }
+}
 #thread .empty h2 { font-size: 28px; line-height: 36px; font-weight: 500; letter-spacing: -0.01em; }
 @media (max-width: 800px) {
   .team-entry.crew-new { padding: 16px 12px 24px; }

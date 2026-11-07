@@ -26,6 +26,10 @@
 .crew-said p { margin: 0; user-select: text; overflow-wrap: anywhere; }
 .crew-claude .team-fold { border: 0; }
 .crew-claude .team-fold > summary { padding: 4px 0; line-height: 16px; }
+/* newest last: questions, approvals, the pause banner and the final and landed cards follow the thread in its 760px column */
+.crew-main > :not(.crew-thread):not(.team-composer) { width: 100%; max-width: 760px; margin: 0 auto 24px; }
+.crew-main > .approval-tray { border: 0; padding: 0; background: none; } /* the question and approval cards are the only boxes */
+.crew-main > .approval-tray .team-approval-card { margin-top: 8px; padding: 12px 16px; border: 1px solid var(--border); border-radius: var(--r-lg); } /* an approval is a card, like a question */
 
 /* the message box, with the switches under it: one box, not a box in a box */
 .crew-main .team-composer { position: sticky; bottom: 12px; margin: auto auto 12px; width: 100%; max-width: 760px; padding: 8px; border: 1px solid var(--border); border-radius: 16px; background: var(--panel); box-shadow: none; transition: border-color var(--t1); }
@@ -62,9 +66,15 @@
 .crew-side > .team-fold { margin-top: 12px; }
 .crew-activity { display: flex; flex-direction: column; gap: 12px; padding-top: 8px; }
 
+/* one title bar on a run: the run's own header stands in for the Crew page head, from the loading skeleton on, so nothing jumps */
+@media (min-width: 801px) {
+  #team-screen:has(> #team-root > :is(.crew-claude, .team-run-loading)) { grid-template-rows: minmax(0, 1fr); }
+  #team-screen:has(> #team-root > :is(.crew-claude, .team-run-loading)) > .team-head { display: none; }
+}
+
 @media (max-width: 1100px) {
-  .crew-cols { grid-template-columns: minmax(0, 1fr); }
-  .crew-side { position: static; max-height: none; padding-top: 0; }
+  .crew-cols { grid-template-columns: minmax(0, 1fr); row-gap: 0; }
+  .crew-side { position: static; max-height: none; padding-top: 0; order: -1; } /* above the thread: the message box stays at the bottom */
 }
 
 @media (max-width: 800px) {
@@ -74,7 +84,7 @@
   .cw-bar::-webkit-scrollbar { display: none; }
   .cw-chip { flex: none; height: 32px; padding: 0 12px; }
   .cw-pop { position: fixed; left: 12px !important; right: 12px; bottom: calc(150px + var(--safe-b, 0px)); }
-  .crew-head { gap: 8px; flex-wrap: wrap; height: auto; padding: 8px 0; } /* it wraps here: the 52px height is for one line */
+  .crew-head { gap: 8px; flex-wrap: wrap; position: static; height: auto; padding: 8px 0; } /* it wraps here and scrolls away: the 52px sticky bar is for one line */
   .crew-head .team-controls { order: 3; flex: 1 1 100%; justify-content: flex-end; }
   .crew-head-meta { flex-wrap: wrap; }
   .crew-main .team-steer-row { flex-wrap: wrap; }
