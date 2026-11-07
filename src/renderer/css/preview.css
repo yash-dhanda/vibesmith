@@ -9,7 +9,7 @@
 .crew-preview-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .crew-preview-url { flex: 1 1 120px; min-width: 0; color: var(--muted); font-size: 12px; font-family: var(--mono, ui-monospace, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .crew-preview-stage { display: flex; justify-content: center; }
-.crew-preview-box { display: grid; place-items: center; width: 100%; height: min(60vh, 560px); min-height: 240px; border: 1px dashed var(--border); border-radius: var(--r-md); background: var(--panel); transition: width var(--t2) var(--ease); }
+.crew-preview-box { display: grid; place-items: center; width: 100%; height: min(60vh, 560px); min-height: 240px; border: 1px dashed var(--border); border-radius: var(--r-md); background: var(--panel); }
 .crew-preview-box.phone { width: min(390px, 100%); }
 .crew-preview-msg { margin: 0; padding: 16px; max-width: 46ch; color: var(--muted); font-size: 13px; line-height: 1.6; text-align: center; overflow-wrap: anywhere; }
 .visual-check { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; min-width: 0; }

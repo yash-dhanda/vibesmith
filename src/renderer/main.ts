@@ -10,6 +10,11 @@ import '@fontsource-variable/geist-mono/index.css'
 
 declare global { interface Window { forge: ForgeApi } }
 
+// One-shot motion goes from its element when it ends or is cut, so a redraw, a move, a fold or a view shown again never replays it:
+// .enter (motion.css) with its rise, and .just (a live editor file that finished while you watched, crew.css) with its check and its colours.
+const ONCE: Record<string, string> = { rise: 'enter', 'check-pop': 'just', 'settle-in': 'just' }
+for (const type of ['animationend', 'animationcancel']) document.addEventListener(type, e => { const { animationName, target } = e as AnimationEvent; if (ONCE[animationName]) (target as Element).classList?.remove(ONCE[animationName]) })
+
 // Chat is interactive before the optional editor/terminal bundle is even fetched.
 let root: string | null = null
 let workspace: typeof import('./workspace') | null = null

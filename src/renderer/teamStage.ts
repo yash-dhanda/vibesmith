@@ -3,6 +3,8 @@
 // queued and revealed a few characters per frame, so even a whole file that arrives at once is typed out instead of popping in.
 import { N } from './names'
 import { colorize } from './codeColor'
+import { mark } from './glyphs'
+import { reduced } from './ui'
 
 export type StageAgent = 'claude' | 'codex' | 'local'
 export type StageCode = { id: string; agent: StageAgent; path: string; text: string; kind: 'content' | 'diff'; done: boolean }
@@ -18,7 +20,6 @@ const stages = new WeakMap<HTMLElement, Stage>()
 const remote = (window as { __forgeRemote?: boolean }).__forgeRemote === true
 const MAX_FRESH = remote ? 12 : 90 // fading fragments alive in one block before they are folded back into plain text
 const MAX_BLOCKS = 12 // files kept in the phone's document; older finished ones wait behind "Show earlier files"
-const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e }
 const NAMES: Record<StageAgent, string> = { claude: 'Claude', codex: 'Codex', local: 'Local' }
 const countLines = (t: string) => (t ? t.split('\n').length : 1)
@@ -136,7 +137,7 @@ function scrollToLive(stage: Stage): boolean {
   const to = Math.max(0, Math.min(want, stage.scroll.scrollHeight - stage.scroll.clientHeight))
   const from = stage.scroll.scrollTop, d = to - from
   if (Math.abs(d) <= 1) return false
-  stage.scroll.scrollTop += d * 0.25
+  stage.scroll.scrollTop += reduced() ? d : d * 0.25 // eases a quarter of the way each frame, or jumps for reduced motion
   return stage.scroll.scrollTop !== from
 }
 
@@ -161,7 +162,7 @@ function tick(stage: Stage) {
       if (b.lines !== before) relined = true
       placeCaret(stage, b, stage.chips.get(b.agent)?.el.dataset.name ?? NAMES[b.agent])
       pending = true
-    } else if (b.done && !b.settled) settle(b)
+    } else if (b.done && !b.settled) { settle(b); b.state.classList.add('just'); b.code.classList.add('just') } // a file that finishes while you watch pops its check and fades in its colours, once (main.ts)
   }
   if (relined) numberLines(stage)
   if (remote && stage.capped && stage.order.length > MAX_BLOCKS) trim(stage) // files that just finished can leave now
@@ -198,7 +199,7 @@ function apply(stage: Stage, ev: StageCode, animate: boolean) {
   b.target = ev.text; b.done = ev.done; b.touched = Date.now()
   if (!animate || reduced()) { resetCode(b); b.base.data = b.target; b.shown = b.target.length; b.lines = countLines(b.target); if (ev.done) settle(b) }
   placeCaret(stage, b, name)
-  if (fresh && animate && !reduced()) b.root.classList.add('arriving')
+  if (fresh && animate && !reduced()) b.root.classList.add('enter') // the one-shot entrance (motion.css): it never replays when the editor is shown again
   numberLines(stage)
   summary(stage)
   if (animate) { typing(stage, ev.agent); kick(stage) }
@@ -236,8 +237,7 @@ export function buildStage(files: StageCode[], opts: { agents: StageAgentInfo[];
   const list = [...last.values()]
   if (!list.length) {
     const idle = el('div', `stage-idle${opts.running ? ' working' : ''}`)
-    const orbit = el('div', 'stage-orbit'); for (const a of opts.agents) orbit.append(el('i', a.agent))
-    idle.append(orbit, el('span', 'stage-idle-text', opts.status)); view.append(idle)
+    idle.append(mark(opts.running ? 'active' : 'pending'), el('span', 'stage-idle-text', opts.status)); view.append(idle)
     where.textContent = opts.agents.map((a) => a.name).join(' · ')
   }
   for (const ev of list) apply(stage, ev, false)
@@ -250,7 +250,7 @@ export function updateStage(root: HTMLElement, files: StageCode[], o: { agents: 
   const s = stages.get(root); if (!s) return
   s.live = o.running; root.classList.toggle('active', o.running)
   const badge = root.querySelector('.stage-title .lane-live'); if (badge) { badge.classList.toggle('on', o.running); if (badge.textContent !== o.live) badge.textContent = o.live }
-  const idle = root.querySelector('.stage-idle'); idle?.classList.toggle('working', o.running)
+  const idle = root.querySelector('.stage-idle'); idle?.classList.toggle('working', o.running); idle?.querySelector('.ck-mark')?.setAttribute('data-state', o.running ? 'active' : 'pending')
   const text = idle?.querySelector('.stage-idle-text'); if (text && text.textContent !== o.status) text.textContent = o.status
   for (const a of o.agents) s.chips.get(a.agent)?.el.classList.toggle('working', a.running)
   const last = new Map<string, StageCode>(); for (const e of files) last.set(e.id, e) // the log holds every snapshot of a file: only the newest counts

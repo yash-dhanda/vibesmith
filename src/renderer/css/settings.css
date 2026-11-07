@@ -30,11 +30,11 @@
 .set-head h3 { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 20px; line-height: 28px; font-weight: 500; }
 .set-head h3 .ic { width: 18px; height: 18px; color: var(--muted); }
 .set-body { padding-top: 4px; }
-.set-body.turn { animation: fade var(--t2) ease-out; }
+.set-body.turn { animation: fade var(--t2) var(--ease); }
 @media (max-width: 1100px) { .set-inner { padding-inline: 32px; } }
 
 /* General: who this is */
-.set-card { display: flex; align-items: center; gap: 16px; margin: 12px 0 20px; padding: 18px 20px; border: 1px solid var(--hair); border-radius: var(--r-lg); background: var(--panel); animation: rise var(--t2) var(--ease) both; }
+.set-card { display: flex; align-items: center; gap: 16px; margin: 12px 0 20px; padding: 18px 20px; border: 1px solid var(--hair); border-radius: var(--r-lg); background: var(--panel); }
 .set-card .brand-mark { width: 40px; height: 40px; flex: none; border-radius: 11px; font-size: 24px; }
 .set-card .srl { flex: 1; min-width: 0; }
 .set-card .st-t { font-size: 15px; font-weight: 500; }
@@ -53,7 +53,7 @@
 .set-none { color: var(--muted); padding: 32px 0; margin: 0; font-size: 13.5px; }
 
 /* sections and rows (the generic look is the model library's: rows in a hairline box) */
-.sgroup { margin-top: 18px; animation: rise var(--t2) var(--ease) both; }
+.sgroup { margin-top: 18px; }
 .sgroup > .gt { color: var(--text); font-size: 13px; font-weight: 500; margin: 0 2px 8px; }
 .sgroup > .gd { color: var(--muted); font-size: 12.5px; margin: -4px 2px 10px; }
 .sbox { border: 1px solid var(--hair); border-radius: var(--r-lg); }
@@ -72,10 +72,6 @@
 /* inside the settings page rows have no boxes: sections are split by hairlines and air */
 #settings .sgroup { margin: 0; padding: 24px 0 4px; border-top: 1px solid var(--hair); }
 #settings .set-body > .sgroup:first-child, #settings .set-body > .note + .sgroup, #settings .set-card + .sgroup, #settings .skills > .sgroup:first-child { border-top: 0; padding-top: 8px; }
-#settings .set-body > .sgroup:nth-child(2), #settings .skills > .sgroup:nth-child(2) { animation-delay: 30ms; }
-#settings .set-body > .sgroup:nth-child(3), #settings .skills > .sgroup:nth-child(3) { animation-delay: 60ms; }
-#settings .set-body > .sgroup:nth-child(4) { animation-delay: 90ms; }
-#settings .set-body > .sgroup:nth-child(n+5) { animation-delay: 120ms; }
 #settings .sgroup > .gt { margin: 0; font-size: 16px; line-height: 22px; font-weight: 500; }
 #settings .sgroup > .gd { margin: 4px 0 0; font-size: 13px; line-height: 20px; }
 #settings .sbox { border: 0; border-radius: 0; margin-top: 4px; }
@@ -103,7 +99,7 @@
 /* a page's save status ("Saved for this project.") sits in the sticky head, right of the title */
 .set-head-note { margin-left: auto; min-width: 0; padding-left: 16px; }
 #settings .set-head-note .set-status { padding: 0; color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#settings .set-status:not(:empty) { animation: fade var(--t2) ease-out; }
+#settings .set-status:not(:empty) { animation: fade var(--t2) var(--ease); }
 .mlist { display: flex; flex-wrap: wrap; gap: 6px; }
 .mlist span { font: 12px var(--mono); border: 1px solid var(--hair); border-radius: var(--r-xs); padding: 2px 8px; color: var(--muted); background: var(--panel); }
 
@@ -138,7 +134,7 @@
 .remote-state.ok { color: var(--text); } .remote-state.ok::before { background: var(--ok); }
 .remote-state.bad { color: var(--err); } .remote-state.bad::before { background: var(--err); }
 .remote-hint { margin-top: 8px; color: var(--warn); font-size: 13px; line-height: 1.55; }
-.pair-card { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; margin-top: 16px; animation: rise var(--t2) var(--ease) both; }
+.pair-card { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; margin-top: 16px; }
 .pair-card img { width: 280px; height: auto; max-width: 100%; aspect-ratio: 1; padding: 14px; background: #fff; border-radius: var(--r-lg); box-shadow: 0 0 0 1px var(--hair); image-rendering: pixelated; }
 .pair-link { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; max-width: 100%; }
 .pair-link code { overflow-wrap: anywhere; padding: 7px 10px; font-size: 12.5px; }
@@ -156,7 +152,7 @@
 .skill-add .btn { height: 34px; padding: 0 18px; font-size: 13px; }
 .skill-add .st.running, .skill-repo .st.running { border-color: currentColor; border-top-color: transparent; }
 .skill-err { min-height: 18px; padding-top: 6px; }
-.skill-repo { border-top: 1px solid var(--hair); animation: rise var(--t2) var(--ease) both; }
+.skill-repo { border-top: 1px solid var(--hair); }
 .skill-repo:first-of-type { border-top: 0; }
 .skill-repo.off .st-t { color: var(--muted); }
 .skill-items { margin: -6px 0 14px; }
@@ -165,7 +161,7 @@
 .skill-items summary::before { content: ''; width: 5px; height: 5px; margin: 0 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; rotate: -45deg; transition: rotate var(--t2) var(--ease); }
 .skill-items[open] summary::before { rotate: 45deg; }
 .skill-items summary:hover { color: var(--text); }
-.skill-items ul { list-style: none; margin: 8px 0 0; padding: 0 0 0 14px; border-left: 1px solid var(--hair); display: flex; flex-direction: column; gap: 8px; animation: fade var(--t2) ease-out; }
+.skill-items ul { list-style: none; margin: 8px 0 0; padding: 0 0 0 14px; border-left: 1px solid var(--hair); display: flex; flex-direction: column; gap: 8px; }
 .skill-items li { display: flex; flex-direction: column; min-width: 0; font-size: 13px; }
 .skill-items li strong { font-weight: 500; }
 .skill-items li span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -175,9 +171,8 @@
 .skill-chip:hover { background: var(--panel-2); color: var(--text); }
 .team-skills { font-family: var(--sans); flex: none; }
 .skill-packs { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin: 16px 0; }
-.skill-pack { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 14px 16px 12px; border: 1px solid var(--hair); border-radius: var(--r-lg); background: var(--panel); animation: rise var(--t2) var(--ease) both; transition: border-color var(--t1); }
+.skill-pack { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 14px 16px 12px; border: 1px solid var(--hair); border-radius: var(--r-lg); background: var(--panel); transition: border-color var(--t1); }
 .skill-pack:hover { border-color: var(--border); }
-.skill-pack:nth-child(2) { animation-delay: 40ms; } .skill-pack:nth-child(3) { animation-delay: 80ms; }
 .skill-pack .st-t { font-size: 14px; font-weight: 500; }
 .skill-pack .st-d { color: var(--muted); font-size: 13px; line-height: 1.5; }
 .skill-pack-repos { color: var(--faint); font-size: 12px; line-height: 1.55; margin-bottom: 12px; }
@@ -196,7 +191,6 @@
 .skill-group > summary::before { content: ''; width: 6px; height: 6px; margin: 0 2px; border-right: 1.5px solid var(--faint); border-bottom: 1.5px solid var(--faint); rotate: -45deg; transition: rotate var(--t2) var(--ease); }
 .skill-group[open] > summary::before { rotate: 45deg; }
 .skill-group > summary:hover::before { border-color: var(--text); }
-.skill-group[open] > .skill-rec { animation: rise var(--t2) var(--ease) both; }
 #settings .skill-group > .skill-rec { padding: 12px 0 12px 20px; }
 #settings .skill-group > .skill-rec:last-child { padding-bottom: 18px; }
 .skill-repo-id { margin-left: 8px; color: var(--faint); font: 12px var(--mono); overflow-wrap: anywhere; }
@@ -229,8 +223,7 @@
 /* cards share one hairline frame; each draws the line on its left and top, so any column count has clean dividers */
 .cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--hair); border-radius: var(--r-lg); margin-top: 20px; overflow: hidden; }
 .cards.agents { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 16px; }
-.card { min-width: 0; padding: 14px 16px 16px; box-shadow: -1px 0 0 var(--hair), 0 -1px 0 var(--hair); animation: rise var(--t2) var(--ease) both; }
-.card:nth-child(2) { animation-delay: 40ms; } .card:nth-child(3) { animation-delay: 80ms; } .card:nth-child(4) { animation-delay: 120ms; }
+.card { min-width: 0; padding: 14px 16px 16px; box-shadow: -1px 0 0 var(--hair), 0 -1px 0 var(--hair); }
 .card .k { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12.5px; }
 .card .v { font-size: 20px; font-weight: 500; letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin-top: 4px; }
 .card .note { margin-top: 6px; color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
@@ -271,7 +264,7 @@ table.models + .note { margin-top: 12px; }
 .lib-head h3 { display: flex; align-items: center; gap: 10px; margin: 0 0 3px; font-size: 15px; font-weight: 500; letter-spacing: -.01em; }
 .lib-head h3 .ic { color: var(--muted); }
 .lib-head .muted { font-size: 13px; padding-left: 26px; }
-.engine { border: 1px solid var(--hair); border-radius: var(--r-lg); padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; animation: fade var(--t2) ease-out; }
+.engine { border: 1px solid var(--hair); border-radius: var(--r-lg); padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
 .engine.need { border-color: var(--border); background: color-mix(in srgb, var(--panel-2) 45%, transparent); }
 .engine-title { font-weight: 500; }
 .engine-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -288,15 +281,14 @@ table.models + .note { margin-top: 12px; }
 .lib-tabs button.on { color: var(--text); font-weight: 500; }
 .lib-tabs button.on::after { transform: scaleX(1); }
 .lib-body { flex: 1; overflow-y: auto; min-height: 0; margin-top: -4px; padding: 4px 4px 16px 0; }
-.lib-body > * { animation: fade var(--t2) ease-out both; }
+.lib-body > * { animation: fade var(--t2) var(--ease) both; }
 .lib-body .sgroup { margin-top: 22px; }
 .lib-body .sgroup:first-child { margin-top: 6px; }
 .lib-body .sgroup > .gt { margin: 0 2px 10px; font-size: 13.5px; }
 .lib-body .sbox { overflow: hidden; }
-.mrow { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(140px, auto); gap: 16px; align-items: center; padding: 12px 16px; transition: background-color var(--t1); animation: rise var(--t2) var(--ease) both; }
+.mrow { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(140px, auto); gap: 16px; align-items: center; padding: 12px 16px; transition: background-color var(--t1); }
 .mrow:hover { background: color-mix(in srgb, var(--panel-2) 50%, transparent); }
 .mrow + .mrow { border-top: 1px solid var(--hair); }
-.mrow:nth-child(2) { animation-delay: 25ms; } .mrow:nth-child(3) { animation-delay: 50ms; } .mrow:nth-child(4) { animation-delay: 75ms; } .mrow:nth-child(5) { animation-delay: 100ms; } .mrow:nth-child(n+6) { animation-delay: 125ms; }
 .minfo { min-width: 0; }
 .mt { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ms { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
@@ -308,11 +300,11 @@ table.models + .note { margin-top: 12px; }
 .act { display: flex; justify-content: flex-end; }
 .act .btn, .btns .btn { height: 32px; }
 .btns { display: flex; gap: 6px; align-items: center; }
-.pull { display: flex; align-items: center; gap: 10px; min-width: 240px; animation: fade var(--t2) ease-out; }
+.pull { display: flex; align-items: center; gap: 10px; min-width: 240px; }
 .pbar { position: relative; flex: 1; height: 4px; border-radius: 2px; background: var(--panel-2); overflow: hidden; min-width: 70px; }
 .pbar.wide { height: 6px; border-radius: 3px; }
 .pbar i { display: block; width: 100%; height: 100%; background: var(--accent); border-radius: inherit; transform-origin: left; transform: scaleX(0); transition: transform var(--t3) ease-out; }
-.pbar::after, .team-progress-bar::after { content: ''; position: absolute; inset: 0; translate: -100% 0; background: linear-gradient(90deg, transparent, color-mix(in srgb, white 28%, transparent), transparent); animation: sheen 1.6s ease-in-out infinite; }
+.pbar::after { content: ''; position: absolute; inset: 0; translate: -100% 0; background: linear-gradient(90deg, transparent, color-mix(in srgb, white 28%, transparent), transparent); animation: sheen 1.6s ease-in-out infinite; }
 .ptxt { font: 11.5px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .custom { display: flex; gap: 8px; }
 .custom input { flex: 1; height: 34px; background: transparent; border: 1px solid var(--border); border-radius: var(--r-md); padding: 0 12px; color: var(--text); font-size: 13px; min-width: 0; outline: 0; transition: border-color var(--t1); }
@@ -322,10 +314,10 @@ table.models + .note { margin-top: 12px; }
 .custom.wide { margin: 6px 0 8px; }
 .custom + .note, .lib .note { margin-top: 8px; font-size: 12.5px; }
 .lib-body .errtext { margin-top: 10px; }
-.empty-box { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; padding: 32px 4px; animation: rise var(--t3) var(--ease) both; }
+.empty-box { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; padding: 32px 4px; }
 .empty-box .et { font-size: 16px; font-weight: 500; letter-spacing: -.015em; }
 .empty-box .btn { margin-top: 6px; height: 32px; }
-.downloads { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--hair); border-radius: var(--r-lg); padding: 10px 16px; animation: rise var(--t2) var(--ease); }
+.downloads { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--hair); border-radius: var(--r-lg); padding: 10px 16px; }
 .dl-row { display: grid; grid-template-columns: minmax(0, 200px) minmax(0, 1fr); align-items: center; gap: 16px; }
 .dl-name { font: 12.5px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dl-row .pull { min-width: 0; }

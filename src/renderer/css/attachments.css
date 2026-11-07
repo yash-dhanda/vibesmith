@@ -1,10 +1,10 @@
 /* ---- attachments: paperclip, paste, drop, and a row of chips ---- */
 .att-host { position: relative; }
 .att-drop { position: absolute; inset: 0; z-index: 3; display: none; place-items: center; border: 1.5px dashed var(--focus); border-radius: inherit; background: color-mix(in srgb, var(--panel) 94%, transparent); color: var(--text); font-size: 14px; font-weight: 500; pointer-events: none; }
-.att-host.dropping > .att-drop { display: grid; animation: fade var(--t1) ease-out; }
+.att-host.dropping > .att-drop { display: grid; animation: fade var(--t1) var(--ease); }
 .att-strip { margin: 2px 0 8px; }
 .att-chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
-.att-chip { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-width: 0; padding: 4px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg); font-size: 12px; animation: rise var(--t2) var(--ease) both; }
+.att-chip { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-width: 0; padding: 4px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg); font-size: 12px; } /* a chip just added to a message box rises in once (.enter, attachments.ts) */
 .att-chip.error { border-color: var(--errborder); background: var(--errbg); }
 .att-thumb { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 6px; background: var(--panel-2); color: var(--muted); overflow: hidden; }
 .att-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
@@ -14,7 +14,7 @@
 .att-text strong { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .att-sub { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .att-sub.busy { color: var(--muted); }
-.att-sub.busy::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 5px; vertical-align: -1px; border: 1.5px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+.att-sub.busy::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 5px; vertical-align: -1px; border: 1.5px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin var(--spin) linear infinite; }
 .att-sub.bad, .att-note .bad { color: var(--err); }
 .att-warn { color: var(--warn); font-size: 12px; overflow-wrap: anywhere; }
 .att-act { flex: none; border: 0; background: none; color: var(--muted); font-size: 12px; padding: 4px 6px; border-radius: var(--r-xs); white-space: nowrap; }

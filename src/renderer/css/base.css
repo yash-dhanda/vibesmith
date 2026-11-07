@@ -13,7 +13,7 @@
   --float: 0 12px 34px rgba(0, 0, 0, .55), 0 0 0 1px var(--border);
   --r-lg: 12px; --r-md: 8px; --r-sm: 7px; --r-xs: 5px;
   --z-menu: 20; --z-toast: 40;
-  --ease: cubic-bezier(.2, .8, .2, 1); --t1: 150ms; --t2: 220ms; --t3: 320ms; --spin: 800ms;
+  --ease: cubic-bezier(.2, .8, .2, 1); --t1: 150ms; --t2: 220ms; --t3: 320ms; --spin: 800ms; --stagger: 40ms;
   --sans: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif, 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji';
   --mono: 'Geist Mono Variable', ui-monospace, 'SF Mono', Menlo, Consolas, monospace, 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji';
   --a-claude: #e08a62; --a-codex: #7fb592; --a-local: #86a9de; --on-agent: #0b0b0b;
@@ -98,7 +98,7 @@ kbd { font: 11px var(--mono); color: var(--faint); border: 1px solid var(--hair)
 .note { color: var(--muted); font-size: 12px; }
 .hint { color: var(--muted); font-size: 12px; padding: 0 14px 12px; }
 code.k { font: 12px var(--mono); background: var(--panel-2); border-radius: var(--r-xs); padding: 1px 6px; }
-.menu { position: fixed; z-index: var(--z-menu); min-width: 200px; background: var(--panel); border-radius: var(--r-md); padding: 4px; box-shadow: var(--float); transform-origin: top right; animation: pop-in var(--t1) var(--ease); }
+.menu { position: fixed; z-index: var(--z-menu); min-width: 200px; background: var(--panel); border-radius: var(--r-md); padding: 4px; box-shadow: var(--float); transform-origin: top right; animation: pop-in var(--t2) var(--ease); }
 .menu button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: none; border: 0; border-radius: 6px; padding: 6px 9px; }
 .menu button:hover { background: var(--panel-2); }
 .menu button.danger { color: var(--err); }
@@ -113,7 +113,7 @@ code.k { font: 12px var(--mono); background: var(--panel-2); border-radius: var(
 #app.ws-open #workspace { display: grid; animation: slide-right var(--t3) var(--ease); }
 
 /* ---- sidebar: wordmark, nav rows, chats under a quiet label, user row at the bottom ---- */
-#history { background: var(--side); color: var(--side-text); display: flex; flex-direction: column; min-height: 0; padding: 10px 8px 8px; gap: 2px; animation: slide-left var(--t2) var(--ease); }
+#history { background: var(--side); color: var(--side-text); display: flex; flex-direction: column; min-height: 0; padding: 10px 8px 8px; gap: 2px; }
 :root[data-theme='light'] #history { border-right: 1px solid var(--hair); }
 .brand { display: flex; align-items: center; gap: 8px; padding: 4px 4px 8px 8px; }
 .brand-mark { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; background: var(--accent); color: var(--accent-ink); font: italic 700 14px/1 Georgia, serif; }
@@ -135,7 +135,6 @@ code.k { font: 12px var(--mono); background: var(--panel-2); border-radius: var(
 .chat-item { position: relative; display: block; width: 100%; padding: 0 28px 0 0; border-radius: var(--r-md); transition: background-color var(--t1); }
 .chat-item:hover, .chat-item.active { background: var(--side-hover); }
 .chat-item.active .t { color: var(--text); }
-.chat-item.enter { animation: rise var(--t3) var(--ease) both; animation-delay: calc(var(--i, 0) * 24ms); }
 .chat-open { display: block; width: 100%; min-width: 0; background: transparent; border: 0; text-align: left; padding: 5px 8px; border-radius: var(--r-md); font-size: 13px; }
 .chat-open:active:not(:disabled) { transform: none; }
 .chat-item .row1 { display: flex; align-items: center; gap: 7px; }
@@ -149,7 +148,7 @@ code.k { font: 12px var(--mono); background: var(--panel-2); border-radius: var(
 .chat-item .edit { width: 100%; margin: 4px 0; background: var(--bg); border: 1px solid var(--focus); border-radius: 6px; padding: 3px 7px; outline: 0; }
 .chat-item:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .st { width: 7px; height: 7px; border-radius: 50%; flex: none; }
-.st.running { width: 10px; height: 10px; border: 2px solid var(--text); border-top-color: transparent; animation: spin .8s linear infinite; }
+.st.running { width: 10px; height: 10px; border: 2px solid var(--text); border-top-color: transparent; animation: spin var(--spin) linear infinite; }
 .st.waiting { background: var(--warn); }
 .empty-list { color: var(--side-faint); padding: 10px 8px; font-size: 12px; }
 .side-foot { display: flex; align-items: center; gap: 2px; padding-top: 8px; margin-top: 4px; border-top: 1px solid var(--hair); }

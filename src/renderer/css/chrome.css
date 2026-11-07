@@ -31,7 +31,7 @@ h2.page-title { font-size: 16px; }
 #toasts { position: fixed; right: 20px; bottom: 20px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; z-index: var(--z-toast); pointer-events: none; }
 .toast { pointer-events: auto; display: flex; align-items: flex-start; gap: 12px; width: min(360px, calc(100vw - 40px)); padding: 14px 10px 14px 14px; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: 0 12px 34px rgba(0, 0, 0, .45); animation: toast-in var(--t2) var(--ease) both; }
 :root[data-theme='light'] .toast { background: var(--bg); box-shadow: 0 12px 34px rgba(0, 0, 0, .12); }
-.toast.out { animation: toast-out var(--t1) ease-in both; }
+.toast.out { animation: toast-out var(--t1) var(--ease) both; }
 .toast-icon { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: var(--r-md); background: var(--panel-2); color: var(--muted); }
 .toast-copy { flex: 1; min-width: 0; padding-top: 1px; overflow-wrap: anywhere; }
 .toast-copy strong { display: block; font-size: 13px; font-weight: 500; line-height: 18px; }

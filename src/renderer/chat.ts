@@ -16,7 +16,7 @@ import { openImprove } from './improve'
 import { initLibrary, openLibrary } from './library'
 import { initModels, noModels, selectedModel } from './models'
 import type { Page } from './settings'
-import { $, agentLimits, cleanErr, copy, h, numCtxPref, showMenu, toast, uuid } from './ui'
+import { $, agentLimits, cleanErr, copy, h, numCtxPref, reduced, showMenu, toast, uuid } from './ui'
 import { initUsage, setUsage } from './usage'
 import { initBrief, resetBrief, projectBrief, briefGoal, briefEvent, briefUndone, withPriorities } from './brief'
 import { initPalette } from './palette'
@@ -131,6 +131,7 @@ function settleEnd(frames = 8) {
   requestAnimationFrame(step)
 }
 const add = (el: HTMLElement) => {
+  el.classList.add('enter') // rises in once (motion.css); replay() draws a reopened chat still
   const stick = nearBottom()
   thread.insertBefore(el, thinkingEl) // the "thinking" dots always stay last
   if (stick) toEnd()
@@ -226,6 +227,7 @@ function showEmpty() {
     b.append(open)
     emptyEl.append(b)
   }
+  ;[...emptyEl.children].forEach((n, i) => { n.classList.add('enter'); (n as HTMLElement).style.setProperty('--i', String(i)) }) // the greeting, then the starters, one after another
   thread.append(emptyEl)
   setProject(project)
 }
@@ -458,9 +460,18 @@ function changesCard(ev: Extract<AgentEvent, { type: 'changes' }>, replace?: HTM
   else add(card)
 }
 
-function addUser(text: string, files: { id: string; name: string; kind: Kind }[] = []) {
-  emptyEl?.remove()
+// The first message ends the new-chat layout (side.css): the composer glides down from the middle, on the one curve, instead of jumping.
+function leaveEmpty() {
+  if (!emptyEl) return
+  const wrap = $('composer-wrap'), from = wrap.getBoundingClientRect().top
+  emptyEl.remove()
   emptyEl = null
+  const dy = from - wrap.getBoundingClientRect().top, css = getComputedStyle(wrap)
+  if (dy && !reduced()) wrap.animate({ translate: [`0 ${dy}px`, '0 0'] }, { duration: parseFloat(css.getPropertyValue('--t3')), easing: css.getPropertyValue('--ease') })
+}
+
+function addUser(text: string, files: { id: string; name: string; kind: Kind }[] = []) {
+  leaveEmpty()
   hasMessages = true
   runUsage = { input: 0, output: 0, genSec: 0, calls: 0 }
   planEl = null // a new turn gets its own checklist
@@ -734,6 +745,7 @@ function replay(items: TranscriptItem[], liveRun: boolean, all = !isRemote()) {
     setRunning(true) // still working in the background: keep following it live
     showThinking()
   }
+  for (const n of thread.querySelectorAll('.enter')) n.classList.remove('enter') // a reopened chat is drawn still
   toEnd()
 }
 
@@ -918,8 +930,8 @@ export async function initChat(opts: {
   window.addEventListener('forge-open-chat-now', (e) => { const id = (e as CustomEvent<string>).detail; if (id) void openChat(id) }) // a search hit
   if (typeof window.forge.onTeamEvent === 'function') window.forge.onTeamEvent((ev) => { if (ev.type === 'run' || ev.type === 'task' || ev.type === 'approval' || ev.type === 'final') refreshRunsSoon() })
   window.forge.onChatsFocus((id) => openChat(id))
-  window.addEventListener('forge-models', () => {
-    if (emptyEl && !hasMessages) {
+  window.addEventListener('forge-models', () => { // fires at start and on every focus of the model menu: the greeting is drawn again only when its "No AI model found" banner comes or goes
+    if (emptyEl && !hasMessages && !!emptyEl.querySelector('.banner') !== noModels) {
       emptyEl.remove()
       emptyEl = null
       showEmpty()

@@ -4,7 +4,7 @@ import { icon } from './icons'
 import { CATEGORIES, IDEAS, type Idea } from './ideasData'
 import { filterIdeas, loadIds, saveIds, type IdeaFilter } from './ideasLogic'
 import { toolDialog } from './rulesPanel'
-import { h } from './ui'
+import { h, smooth } from './ui'
 
 // "What to build": browse project ideas, filter them, and hand one to the Crew as a ready-made goal.
 const SAVED = 'forge.savedIdeas'
@@ -42,7 +42,7 @@ export async function openIdeas(project?: string | null) {
     if (!pool.includes(pick)) { Object.assign(f, { category: 'all', level: 'any', time: 'any', query: '' }); search.value = ''; level.value = time.value = 'any' }
     open = pick.id
     render()
-    list.querySelector(`[data-id="${pick.id}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    list.querySelector(`[data-id="${pick.id}"]`)?.scrollIntoView({ block: 'nearest', behavior: smooth() })
   })
   search.oninput = () => { f.query = search.value; render() }
   const bar = h('div', 'id-bar')

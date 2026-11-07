@@ -2,31 +2,35 @@
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
 @keyframes fade { from { opacity: 0; } }
 @keyframes page-in { from { opacity: 0; transform: translateY(4px); } }
-@keyframes pop-in { from { opacity: 0; transform: scale(.97); } }
-@keyframes slide-left { from { opacity: 0; transform: translateX(-12px); } }
+@keyframes pop-in { from { opacity: 0; transform: translateY(var(--pop-y, -4px)) scale(.98); } }
+@keyframes pop-out { to { opacity: 0; transform: translateY(var(--pop-y, -4px)) scale(.98); } }
 @keyframes slide-right { from { opacity: 0; transform: translateX(16px); } }
 @keyframes toast-in { from { opacity: 0; transform: translateY(10px) scale(.98); } }
 @keyframes toast-out { to { opacity: 0; transform: translateY(6px) scale(.98); } }
-@keyframes bump { 40% { transform: scale(1.08); } }
+@keyframes bump { 40% { transform: scale(1.04); } }
 @keyframes grow-up { from { transform: scaleY(0); } }
-@keyframes sheen { to { translate: 100% 0; } }
-@keyframes sweep { 0% { transform: scaleX(0); opacity: 1; } 70% { transform: scaleX(1); opacity: 1; } 100% { transform: scaleX(1); opacity: 0; } }
-@keyframes pulse { 50% { opacity: .35; } }
-@keyframes spin { to { transform: rotate(360deg); } }
-@keyframes blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
-@keyframes team-blink { 50% { opacity: .15; } }
-@keyframes cursor-blink { to { visibility: hidden; } }
-@keyframes dots { 0% { width: 0; } 100% { width: 1.4em; } }
-@keyframes dot-pulse { 50% { opacity: .25; transform: scale(.7); } }
-@keyframes block-in { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: none; } }
-@keyframes tag-in { from { opacity: 0; transform: translateY(4px) scale(.9); } to { opacity: 1; transform: none; } }
-@keyframes typed { 0% { background: color-mix(in srgb, var(--agent) 42%, transparent); color: var(--agent); } 100% { background: transparent; color: inherit; } }
+@keyframes check-pop { from { opacity: 0; transform: scale(.6); } }
 @keyframes settle-in { from { opacity: .4; } }
-@keyframes orbit-spin { to { transform: rotate(360deg); } }
-@keyframes check-pop { from { transform: scale(0) rotate(-40deg); } to { transform: none; } }
+@keyframes typed { 0% { background: color-mix(in srgb, var(--agent) 42%, transparent); color: var(--agent); } 100% { background: transparent; color: inherit; } }
+/* loops, only for work that is live */
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes sheen { to { translate: 100% 0; } }
+@keyframes blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+@keyframes cursor-blink { to { visibility: hidden; } }
+
+/* one curve for every transition: the shorthands elsewhere name only properties and durations */
+*, ::before, ::after, ::backdrop { transition-timing-function: var(--ease) !important; }
+/* the one entrance, on nodes the person has not seen (team.ts enter(), history.ts, chat.ts add(), attachment chips, live editor files). main.ts
+   drops the class when it ends or is cut and morph.ts never adds or removes it on a live node, so a redraw, a move or a view shown again never replays it */
+.enter { animation: rise var(--t3) var(--ease) both; animation-delay: calc(min(var(--i, 0), 5) * var(--stagger)); }
+/* folds fade their content in when opened and out when closed; a fold drawn already open does not move (checked in Chromium 154).
+   The curve is named here: the rule above does not reach this pseudo-element */
+details::details-content { transition: opacity var(--t1) var(--ease), content-visibility var(--t1) allow-discrete; }
+details:not([open])::details-content { opacity: 0; }
 
 /* everything above moves; nothing moves for people who asked for less motion */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after, ::backdrop { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  details::details-content { transition: none !important; }
   dialog, dialog[open] { scale: 1; }
 }

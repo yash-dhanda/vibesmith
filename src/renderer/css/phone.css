@@ -6,7 +6,7 @@ button, a, summary, select, label { touch-action: manipulation; }
 #thread-scroll, #chat-list, #team-root, .set-main, .set-nav, .lib-body, #command-results, .history-body, #build-brief { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .phone-only { display: none !important; }
 #tabbar { display: none; }
-#scrim { position: fixed; inset: 0; z-index: 29; background: var(--scrim); animation: fade var(--t2) ease-out; }
+#scrim { position: fixed; inset: 0; z-index: 29; background: var(--scrim); animation: fade var(--t2) var(--ease); }
 /* touch screens have no hover: everything a pointer would reveal is shown, and controls are a finger wide */
 @media (hover: none) {
   .chat-item .x, .msg-actions, .run-acts .icon-btn { opacity: 1; }
@@ -173,10 +173,9 @@ html.remote :is(input, textarea, select) { font-size: 16px !important; }
 html.remote #app #history { box-shadow: none; border-right: 1px solid var(--hair); }
 /* only the working indicators keep moving; every other loop plays once */
 html.remote *, html.remote *::before, html.remote *::after { animation-iteration-count: 1 !important; }
-html.remote .thinking i, html.remote .stage-cursor, html.remote .netbar-spin, html.remote .ck-spin, html.remote .st.running { animation-iteration-count: infinite !important; }
+html.remote .thinking i, html.remote .stage-cursor, html.remote .netbar-spin, html.remote .ck-spin, html.remote .st.running, html.remote .att-sub.busy::before { animation-iteration-count: infinite !important; }
 html.remote #thread > * { animation: none; }
 html.remote .fresh { animation-duration: .6s; }
-html.remote .stage-block.arriving { animation-duration: .25s; }
 /* off-screen rows are not laid out or painted; panels that change often do not relayout the page */
 html.remote #chat-list .chat-item { content-visibility: auto; contain-intrinsic-size: auto 50px; }
 html.remote .run-row { content-visibility: auto; contain-intrinsic-size: auto 120px; }
@@ -191,8 +190,8 @@ html.remote .stage-bhead::before { left: 0; }
 html.remote .stage-code code { display: block; }
 html.remote :is(.agent-lane, .team-feed, .team-verify, .team-live-files, .team-memory, .team-diff-panel) { contain: layout paint; }
 /* "Reconnecting…": a slim pill under the status bar while the link is down */
-.netbar { position: fixed; z-index: 50; top: calc(8px + var(--safe-t)); left: 50%; translate: -50% 0; display: flex; align-items: center; gap: 8px; padding: 6px 14px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel); color: var(--muted); font-size: 13px; animation: fade var(--t2) ease-out; }
-.netbar-spin { width: 12px; height: 12px; border: 1.5px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+.netbar { position: fixed; z-index: 50; top: calc(8px + var(--safe-t)); left: 50%; translate: -50% 0; display: flex; align-items: center; gap: 8px; padding: 6px 14px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel); color: var(--muted); font-size: 13px; animation: fade var(--t2) var(--ease); }
+.netbar-spin { width: 12px; height: 12px; border: 1.5px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin var(--spin) linear infinite; }
 /* the phone link sideways (wider than 800px) keeps the desktop layout, clear of the notch, the rounded corners and the home indicator */
 @media (min-width: 801px) {
   html.remote #app { position: relative; margin-inline: var(--safe-l) var(--safe-r); }
