@@ -132,7 +132,7 @@ button, a, summary, select, label { touch-action: manipulation; }
   .run-row .run-acts .icon-btn { opacity: 1; }
   .team-run-header { box-shadow: none; }
   .team-run-identity h1 { font-size: 15.5px; }
-  .team-story, .team-side-story, .team-lanes { grid-template-columns: minmax(0, 1fr); }
+  .team-side-story, .team-lanes { grid-template-columns: minmax(0, 1fr); }
   .stage-editor { height: 62vh; height: 62dvh; min-height: 320px; }
   .stage-doc { padding-right: 16px; }
   .stage-scroll, .live-code-body, .lane-body, .assistant pre, .tool-body { -webkit-overflow-scrolling: touch; }

@@ -322,7 +322,7 @@ async function team(into: HTMLElement) {
   const put = <K extends keyof TeamConfig>(key: K, value: TeamConfig[K] | undefined) => {
     if (value === undefined) delete cfg[key]
     else cfg[key] = value
-    window.forge.teamSettingsSet(cfg).then(() => (status.textContent = 'Saved for this project.'), (e) => (status.textContent = cleanErr(e)))
+    window.forge.teamSettingsSet(cfg).then(() => (status.textContent = 'Saved for this project'), (e) => (status.textContent = cleanErr(e)))
   }
   const budget = (key: 'maxMinutes' | 'maxTokens' | 'maxAgentRuns' | 'maxTasks', raw: string) => {
     const n = Number(raw)
@@ -401,7 +401,7 @@ async function team(into: HTMLElement) {
   hist.box.append(row('What happened', 'Forge keeps a history of everything that happens in a project in .forge/what-happened.txt and shows it to every agent.', action('Show history', 'list', () => void openProjectHistory())))
   into.append(hist.g)
   into.append(perm.g)
-  headNote?.replaceChildren(status) // "Saved for this project." shows in the sticky head, in sight wherever the page is scrolled
+  headNote?.replaceChildren(status) // "Saved for this project" shows in the sticky head, in sight wherever the page is scrolled
 }
 
 // Every key Forge listens for (chat.ts and palette.ts own the handlers), as key caps.

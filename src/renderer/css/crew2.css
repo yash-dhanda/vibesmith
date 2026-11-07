@@ -57,10 +57,6 @@
 .key-row { display: flex; align-items: center; gap: 8px; justify-content: space-between; font-size: 12px; line-height: 1.5; }
 .key-text { font-family: var(--mono, ui-monospace, monospace); overflow-wrap: anywhere; user-select: text; }
 .key-empty { margin: 0; font-size: 12px; color: var(--faint); }
-.team-yours { padding: 8px 12px; border: 1px solid var(--hair); border-radius: 8px; }
-.yours-item + .yours-item { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--hair); }
-.yours-text { margin: 0; font-size: 13px; user-select: text; overflow-wrap: anywhere; }
-.yours-reply { margin: 2px 0 0; font-size: 11px; color: var(--muted); }
 .team-fold { border: 1px solid var(--hair); border-radius: 8px; }
 .team-fold > summary { padding: 8px 12px; cursor: pointer; font-size: 12px; color: var(--muted); }
 .team-fold[open] > summary { border-bottom: 1px solid var(--hair); }

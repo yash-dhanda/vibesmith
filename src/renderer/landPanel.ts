@@ -116,7 +116,7 @@ export function renderLandPanel(run: TeamRun, onDone: () => void): HTMLElement {
         const u = h('button', 'link-btn', 'Undo') as HTMLButtonElement
         u.type = 'button'
         u.disabled = busy
-        u.title = `Put back only these files: ${l.files.slice(0, 6).join(', ')}${l.files.length > 6 ? ', ...' : ''}`
+        u.title = `Put back only these files: ${l.files.slice(0, 6).join(', ')}${l.files.length > 6 ? ', …' : ''}`
         u.prepend(icon('undo', 'sm'))
         u.onclick = () => void undo(l.checkpoint!)
         row.append(u)

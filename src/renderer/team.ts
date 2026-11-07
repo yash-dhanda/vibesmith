@@ -1,5 +1,5 @@
-import { keyCard } from './keyCard'
-import { keyLines, splitKeyAnswer } from '../main/keyAnswer'
+import { splitKeyAnswer } from '../main/keyAnswer'
+import { describeCommand, plainLine } from '../main/agent/narrate'
 import type { Run, RunEvent, Task, TeamConfig } from '../main/team/types'
 import type { RunSummary, TeamMemory } from '../main/team/service'
 import { md, folderName, formatTokens, timeAgo } from './format'
@@ -142,7 +142,7 @@ function folderFinder(goal: HTMLTextAreaElement, pill: HTMLButtonElement) {
     }).catch(() => {}) }
   goal.addEventListener('input', () => { if (timer) clearTimeout(timer); timer = setTimeout(suggest, 350) })
   let all: { path: string; name: string; markers: string[]; mtime: number }[] = []
-  const draw = () => { const q = filter.value.trim().toLowerCase(); const shown = all.filter(x => !q || x.path.toLowerCase().includes(q)).slice(0, 60); list.replaceChildren(...(shown.length ? shown.map(x => item(x, 'team-folder-row-item')) : [h('p', 'team-empty', all.length ? 'No folder matches.' : 'No project folders found.')])) }
+  const draw = () => { const q = filter.value.trim().toLowerCase(); const shown = all.filter(x => !q || x.path.toLowerCase().includes(q)).slice(0, 60); list.replaceChildren(...(shown.length ? shown.map(x => item(x, 'team-folder-row-item')) : [h('p', 'team-empty', all.length ? 'No folder matches' : 'No project folders found')])) }
   filter.oninput = draw
   scan.onclick = async () => {
     if (!apiOk) return
@@ -180,7 +180,7 @@ async function showEntry() {
   ]).catch(error => { loadError = error; return null })
   if (!loaded) {
     const failure = h('section', 'team-entry team-load-error')
-    failure.append(emptyState('info', `${N.crew} could not open.`, cleanErr(loadError), ['Try again', () => void showEntry()]))
+    failure.append(emptyState('info', `${N.crew} could not open`, cleanErr(loadError), ['Try again', () => void showEntry()]))
     root.replaceChildren(failure); return
   }
   const [health, list, defaults] = loaded
@@ -219,7 +219,7 @@ async function showEntry() {
   const permissions = select([['bypass', 'Never ask me (bypass)'], ['ask', 'Ask before risky actions']], defaults.bypassPermissions === false ? 'ask' : 'bypass')
   const reviewPlan = select([['false', 'Start right away'], ['true', 'Let me review the plan first']], String(handed?.reviewPlan ?? defaults.reviewPlan ?? false))
   const fixRounds = input('number', String(defaults.maxFixRounds ?? 3)); fixRounds.min = '0'; fixRounds.max = '5'
-  const codexMode = select([['app-server', 'Live Codex session'], ['exec', 'Simple Codex run']], defaults.codexMode ?? 'app-server')
+  const codexMode = select([['app-server', 'Live session'], ['exec', 'Simple run']], defaults.codexMode ?? 'app-server')
   const verify = input('text', defaults.verify === null ? '' : defaults.verify ?? ''); verify.placeholder = 'Detect from project'
   const codexModel = select(health.codexModels.map(m => [m, m] as [string, string]), defaults.codexModel ?? health.codexModels[0] ?? ''); codexModel.setAttribute('aria-label', 'Codex model')
   const localModel = select(health.localModels.map(m => [m, m] as [string, string]), defaults.localModel ?? health.localModels[0] ?? ''); localModel.setAttribute('aria-label', `${AGENT_NAME.local} model`)
@@ -240,7 +240,7 @@ async function showEntry() {
     const row = h('div', 'crew-toggle'); row.title = hint; row.append(h('span', '', label), pair)
     return { row, on: () => value, set: (v: boolean) => (pair.children[v ? 1 : 0] as HTMLButtonElement).click() }
   }
-  const ask = toggle('Ask me when unsure', defaults.askQuestions !== false, 'Questions: agents can stop and ask you when they are really unsure.')
+  const ask = toggle('Questions', defaults.askQuestions !== false, 'Questions: agents can stop and ask you when they are really unsure.')
   const web = toggle('Web research', defaults.webResearch !== false, 'Agents may search the web and read pages for docs, APIs and versions.')
   const grid = h('div', 'team-config-grid')
   grid.append(field('Planner', planner, 'Chooses who splits the goal into tasks.'), field('Parallel tasks per agent', parallel, 'More tasks can finish sooner, but use more allowance.'), field('Task review', review, `Work by ${AGENT_NAME.local} is always checked by another agent.`), field('Final review', finalReview, 'Automatic checks the whole result only for runs of 3 or more tasks, which saves plan usage.'), field('Permissions', permissions, 'Bypass lets the agents run commands and read files without asking. They still cannot push to git, use sudo, or write outside their own task folder.'), field('Plan approval', reviewPlan, 'Stops after planning so you can edit, reassign or skip tasks before any agent works.'), field('Fix attempts per task', fixRounds), field('Project check', verify, 'Leave blank to detect it from the project.'), field('Codex connection', codexMode, 'Live sessions support streaming and immediate steering.'), field('Time limit (minutes)', minutes, 'Empty means no limit.'), field('Token limit', tokens, 'Empty means no limit.'), field('Agent runs limit', runs, 'Empty means no limit.'), field('Maximum tasks', maxTasks), field('Pause at plan usage %', limit, '0 disables this limit.'))
@@ -252,7 +252,7 @@ async function showEntry() {
     return { askQuestions: ask.on(), webResearch: web.on(), planner: planner.value as TeamConfig['planner'], maxParallelPerAgent: Number(parallel.value), review: review.value as TeamConfig['review'], finalReview: finalReview.value === 'auto' ? 'auto' : finalReview.value === 'true', reviewPlan: reviewPlan.value === 'true', bypassPermissions: permissions.value === 'bypass', maxFixRounds: Number(fixRounds.value), codexMode: codexMode.value as TeamConfig['codexMode'], verify: verify.value.trim() || undefined, codexModel: codexModel.value, localModel: localModel.value || undefined, claudeModel: claudeModel.value.trim() || undefined, claudeEffort: effort.value as TeamConfig['claudeEffort'], codexEffort: codexEffort.value as TeamConfig['codexEffort'], maxLimitPercent: Number(limit.value), budget: { maxMinutes: Number(minutes.value) || undefined, maxTokens: Number(tokens.value) || undefined, maxAgentRuns: Number(runs.value) || undefined, maxTasks: Number(maxTasks.value) } }
   }
   const reset = h('button', 'btn', 'Reset defaults') as HTMLButtonElement; reset.type = 'button'; reset.onclick = () => { ask.set(true); web.set(true); planner.value = 'auto'; parallel.value = '2'; review.value = 'cross'; finalReview.value = 'auto'; reviewPlan.value = 'false'; permissions.value = 'bypass'; fixRounds.value = '3'; verify.value = ''; codexMode.value = 'app-server'; claudeModel.value = ''; effort.value = 'high'; codexEffort.value = 'high'; minutes.value = ''; tokens.value = ''; runs.value = ''; maxTasks.value = '12'; limit.value = '0'; paintChips(); validation.textContent = 'Defaults restored. They will save when you start a run.' }
-  const saveDefaults = h('button', 'btn', 'Save defaults') as HTMLButtonElement; saveDefaults.type = 'button'; saveDefaults.onclick = () => void call(async () => { const config = readConfig(); if (!config || typeof window.forge.teamSettingsSet !== 'function') return; await window.forge.teamSettingsSet(config); validation.textContent = 'Crew defaults saved for this project.' })
+  const saveDefaults = h('button', 'btn', 'Save defaults') as HTMLButtonElement; saveDefaults.type = 'button'; saveDefaults.onclick = () => void call(async () => { const config = readConfig(); if (!config || typeof window.forge.teamSettingsSet !== 'function') return; await window.forge.teamSettingsSet(config); validation.textContent = 'Crew defaults saved for this project' })
   const settingActions = h('div', 'team-setting-actions'); settingActions.append(reset, saveDefaults)
   advanced.append(grid, validation, settingActions)
   // Readiness and the plan allowance: one muted line under the card. A missing agent shows its fix command.
@@ -410,8 +410,9 @@ async function openRun(id: string, fixture?: { run: Run; events: Logged[]; memor
   setActiveRun(fixture ? '' : id)
   root.replaceChildren(h('div', 'team-run-loading skel'))
   const loaded = fixture ?? await (async () => { const [saved, events] = await Promise.all([window.forge.teamGet(id), window.forge.teamEvents(id)]); if (!saved) throw new Error('This run no longer exists.'); return { run: saved, events } })()
-  run = structuredClone(loaded.run); sharedMemory = fixture?.memory ?? null; undoResult = ''; crewOpen = false; resetIslands()
+  run = structuredClone(loaded.run); sharedMemory = fixture?.memory ?? null; undoResult = ''; crewOpen = false; reportOpen = false; resetIslands()
   const normal = await normaliseTeamEventsAsync(loaded.events); log = normal.log; liveFiles = normal.liveFiles
+  stepNow.clear(); log.forEach(noteStep)
   if (!['planning', 'running', 'paused', 'interrupted'].includes(run.status)) liveFiles.clear()
   renderRun(); startClock()
   if (!fixture) void refreshMemory()
@@ -451,19 +452,24 @@ function renderRun() {
   for (const b of tails) b.scrollTop = b.scrollHeight
 }
 
+const ATTACHED = /\n\nAttached files \(open and look at them\):\n([\s\S]*)$/ // orchestrator.ts adds this to a message for the agents
+// Your words only, each message with its own files.
 function renderThread() {
   const thread = h('section', 'crew-thread'); thread.setAttribute('aria-label', 'Conversation'); thread.dataset.key = 'thread'
-  const list = promptsOf()
+  const list = promptsOf(), files = run!.config?.attachments ?? []
+  const named = list.map(p => ATTACHED.exec(p.text)?.[1] ?? '')
   list.forEach((p, i) => {
-    const me = h('article', 'crew-me'); me.dataset.key = `me:${p.id}`; me.append(h('p', '', p.text.length > 1800 ? `${p.text.slice(0, 1800)}…` : p.text))
-    const sent = i === 0 ? run!.config?.attachments ?? [] : []
+    const said = p.text.replace(ATTACHED, '').trim()
+    const me = h('article', 'crew-me'); me.dataset.key = `me:${p.id}`
+    if (said) me.append(h('p', '', said.length > 1800 ? `${said.slice(0, 1800)}…` : said))
+    const sent = files.filter(f => (i === 0 ? !named.some(n => n.includes(f.path)) : named[i].includes(f.path))) // the run keeps every file ever sent
     if (sent.length) me.append(sentChips(sent))
     thread.append(me, renderReply(p, i === list.length - 1))
   })
   return thread
 }
 
-// One reply per request: a single line of what is going on, the plain results, and the work itself behind a closed fold.
+// One reply per request: a single line of what is going on, the plain results (newest three, each once), and the work itself behind a closed fold.
 function renderReply(p: { id: string }, last: boolean) {
   const first = promptsOf()[0].id
   const mine = run!.tasks.filter(t => (t.promptId ?? first) === p.id && t.status !== 'cancelled' && !AUTO_TASK.test(t.title))
@@ -481,13 +487,11 @@ function renderReply(p: { id: string }, last: boolean) {
   box.append(head)
   if (mine.length) {
     const steps = h('div', 'crew-steps')
-    for (const t of mine) { const row = h('div', `crew-step ${t.status}`); row.append(h('span', `agent-orb ${t.agent}`), h('span', 'crew-step-title', oneLine(t.title, 110)), h('span', 'crew-step-state', taskState(t))); steps.append(row) }
+    for (const t of mine) { const row = h('div', `crew-step ${t.status}`); row.append(h('span', `agent-orb ${t.agent}`), h('span', 'crew-step-title', taskTitle(t)), h('span', 'crew-step-state', taskState(t))); steps.append(row) }
     box.append(fold(`Show the work (${mine.length})`, openSteps.has(p.id), o => { if (o) openSteps.add(p.id); else openSteps.delete(p.id) }, () => [steps]))
   }
-  const said = mine.filter(t => t.status === 'done' && t.summary?.trim()).slice(0, 5)
-  if (said.length) { const ul = h('ul', 'crew-said'); for (const t of said) ul.append(h('li', '', oneLine(t.summary!, 280))); box.append(ul) }
-  const keys = last ? liveKeys() : []
-  if (keys.length) box.append(keyCard(keys))
+  const results = [...new Set(mine.filter(t => t.status === 'done').sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0)).map(t => plainLine(t.summary ?? '')).filter(Boolean))].slice(0, 3)
+  if (results.length) { const said = h('div', 'crew-said'); for (const line of results) said.append(h('p', '', line)); box.append(said) }
   return box
 }
 
@@ -495,10 +499,10 @@ function renderSidePanel() {
   const side = h('aside', 'crew-side'); side.setAttribute('aria-label', 'Run details')
   const sec = (title: string, ...kids: HTMLElement[]) => { const el = h('section', 'crew-side-sec'); el.append(h('h3', '', title), ...kids); return el }
   const row = (glyph: IconName, text: string, title = '') => { const r = h('div', 'crew-side-row'); r.append(icon(glyph, 'sm'), h('span', '', text)); if (title) r.title = title; return r }
-  side.append(sec('Project', row('folder', folderName(run!.project), run!.project), row('code', run!.integrationBranch.replace(/^forge\//, 'forge/').slice(0, 42), run!.integrationBranch)))
+  side.append(sec('Project', row('folder', folderName(run!.project), run!.project), row('code', run!.integrationBranch, run!.integrationBranch)))
   const agents = h('div', 'crew-side-agents')
   for (const agent of ['claude', 'codex', 'local'] as const) {
-    const u = run!.usage[agent]; const model = agent === 'claude' ? run!.config.claudeModel || 'default' : agent === 'codex' ? run!.config.codexModel : run!.config.localModel
+    const u = run!.usage[agent]; const model = agent === 'claude' ? run!.config.claudeModel || 'Default' : agent === 'codex' ? run!.config.codexModel : run!.config.localModel
     if (!u?.runs && !(agent === 'local' && run!.config.localModel)) continue
     const r = h('div', 'crew-side-agent'); r.dataset.key = agent; r.append(h('span', `agent-orb ${agent}`), h('strong', '', AGENT_NAME[agent]), h('span', 'crew-side-model', model || ''), h('span', 'crew-side-tokens', u ? `${formatTokens(u.input + u.output)}${u.costUsd > 0 ? ` · ~$${u.costUsd.toFixed(2)}` : ''}` : ''))
     r.title = `${AGENT_NAME[agent]}${model ? ` (${model})` : ''}: ${((u?.input ?? 0) + (u?.output ?? 0)).toLocaleString()} tokens`
@@ -510,13 +514,13 @@ function renderSidePanel() {
   const added = [...files.values()].reduce((n, f) => n + f.a, 0), removed = [...files.values()].reduce((n, f) => n + f.r, 0)
   const changes = h('div', 'crew-side-changes'); changes.append(h('div', 'crew-side-count', `${files.size} file${files.size === 1 ? '' : 's'}`), h('span', 'crew-add', `+${added}`), h('span', 'crew-del', `−${removed}`))
   const list = h('div', 'crew-side-files'); for (const path of [...files.keys()].slice(0, 8)) { const f = h('div', 'crew-side-file', path.split('/').slice(-2).join('/')); f.title = path; f.dataset.key = path; list.append(f) }
-  if (files.size > 8) list.append(h('div', 'crew-side-more', `and ${files.size - 8} more`))
-  side.append(sec('Changes', files.size ? changes : h('p', 'crew-side-none', 'Nothing yet'), list))
+  if (files.size > 8) list.append(h('div', 'crew-side-more', `${files.size - 8} more files`))
+  side.append(sec('Changes', files.size ? changes : h('p', 'crew-side-none', 'No changes yet'), list))
   const activity = () => {
     const inner = h('div', 'crew-activity')
     // renderCrewPreview keeps one preview per run itself, and builds a new one after letting go of one that was off the page
     if (!isRemote() && run!.tasks.some(t => t.status === 'done')) { const tools = h('div', 'team-tools-row'); tools.append(keep('preview', renderCrewPreview(run!.id)), keep('visual', visual ??= visualCheckButton(run!.id))); inner.append(tools) }
-    inner.append(renderBoard(), fold('Live work', liveOpen, o => { liveOpen = o }, () => [renderLanes()]), fold('Team activity and changes', activityOpen, o => { activityOpen = o }, () => { const aside = h('aside', 'team-side-story'); aside.append(renderLiveFiles(), renderFeed(), renderBackground(), renderDiffPanel()); return [aside] }), keep('stats', stats ??= renderCrewStats(run!.id)))
+    inner.append(renderBoard(), fold('Live work', liveOpen, o => { liveOpen = o }, () => [renderLanes()]), fold('Crew feed and changes', activityOpen, o => { activityOpen = o }, () => { const aside = h('aside', 'team-side-story'); aside.append(renderLiveFiles(), renderFeed(), renderBackground(), renderDiffPanel()); return [aside] }), keep('stats', stats ??= renderCrewStats(run!.id)))
     return [inner]
   }
   side.append(fold('Crew activity', crewOpen, o => { crewOpen = o }, activity))
@@ -527,10 +531,10 @@ function renderSidePanel() {
 function renderRunHeader() {
   const header = h('header', 'crew-head')
   const back = h('button', 'icon-btn back'); back.append(icon('arrowleft')); back.title = `All ${N.crewRuns.toLowerCase()}`; back.setAttribute('aria-label', back.title); back.onclick = () => void showEntry()
-  const asking = run!.approvals.some(a => a.kind === 'question' && a.status === 'pending')
+  const asking = run!.approvals.some(a => a.status === 'pending' && a.kind !== 'final')
   const status = asking ? h('span', 'status-pill awaiting_approval asking') : statusTag(run!.status); if (asking) status.append(mark('ask'), N.waiting); status.setAttribute('role', 'status')
   const elapsed = h('span', 'team-elapsed', fmtTime(Math.floor((Date.now() - run!.createdAt) / 1000))); elapsed.id = 'team-elapsed'
-  const title = h('h1', 'crew-title', oneLine(run!.goal, 100)); title.title = run!.goal
+  const title = h('h1', 'crew-title', run!.goal.replace(/\s+/g, ' ')); title.title = run!.goal
   const where = h('span', 'crew-where', folderName(run!.project)); where.prepend(icon('folder', 'sm')); where.title = run!.project
   const meta = h('div', 'crew-head-meta'); meta.append(where, status, elapsed)
   const main = h('div', 'crew-head-main'); main.append(title, meta)
@@ -584,11 +588,11 @@ function composerChips(): HTMLElement[] {
     { title: 'Claude model', options: CLAUDE_MODEL_CHOICES, current: c.claudeModel ?? '', pick: v => setCfg({ claudeModel: v }) },
     { title: 'Effort', options: EFFORT_CHOICES, current: c.claudeEffort ?? 'high', pick: v => setCfg({ claudeEffort: v }) },
   ])))
-  out.push(chip('codex', `Codex ${c.codexModel || 'default'} · ${effort(c.codexEffort)}`, 'Codex model and effort', b => void crewHealth().then(hl => openPicker(b, [
+  out.push(chip('codex', `Codex ${c.codexModel || 'Default'} · ${effort(c.codexEffort)}`, 'Codex model and effort', b => void crewHealth().then(hl => openPicker(b, [
     { title: 'Codex model', options: hl.codexModels.map(m => [m, m] as [string, string]), current: c.codexModel ?? '', pick: v => setCfg({ codexModel: v }) },
     { title: 'Effort', options: EFFORT_CHOICES.filter(([v]) => v !== 'max'), current: c.codexEffort ?? 'high', pick: v => setCfg({ codexEffort: v }) },
   ]))))
-  if (c.localModel || run!.usage.local?.runs) out.push(chip('local', `${AGENT_NAME.local} ${c.localModel || 'auto'}`, `${AGENT_NAME.local} model`, b => void crewHealth().then(hl => openPicker(b, [{ title: `${AGENT_NAME.local} model`, options: hl.localModels.map(m => [m, m] as [string, string]), current: c.localModel ?? '', pick: v => setCfg({ localModel: v }) }]))))
+  if (c.localModel || run!.usage.local?.runs) out.push(chip('local', `${AGENT_NAME.local} ${c.localModel || 'Auto'}`, `${AGENT_NAME.local} model`, b => void crewHealth().then(hl => openPicker(b, [{ title: `${AGENT_NAME.local} model`, options: hl.localModels.map(m => [m, m] as [string, string]), current: c.localModel ?? '', pick: v => setCfg({ localModel: v }) }]))))
   out.push(chip('perm', c.bypassPermissions === false ? 'Ask before risky actions' : 'Bypass permissions', 'Whether the agents may run commands and read files without asking', () => setCfg({ bypassPermissions: c.bypassPermissions === false }), c.bypassPermissions === false ? '' : 'warn'))
   out.push(chip('fast', 'Fast', 'Many Claude sessions at once, no cross-review, light effort. Saying "fast" in a message turns it on too.', () => { if (replay) return toast('Replay mode: action recorded'); void teamAction(() => window.forge.teamSetSpeed(run!.id, c.speed !== 'fast')) }, c.speed === 'fast' ? 'on' : '', 'bolt'))
   return out
@@ -618,12 +622,12 @@ function renderPauseBanner() {
 }
 
 function renderApprovals(items: Run['approvals']) {
-  const tray = h('section', 'approval-tray'); tray.dataset.key = 'approvals'; tray.setAttribute('role', 'alert'); tray.setAttribute('aria-live', 'assertive'); tray.append(sectionHead(N.waiting, `${items.length} blocking`))
+  const tray = h('section', 'approval-tray'); tray.dataset.key = 'approvals'; tray.setAttribute('role', 'alert'); tray.setAttribute('aria-live', 'assertive'); tray.append(sectionHead(N.waiting, `${items.length} to answer`))
   for (const approval of [...items].sort((a, b) => Number(b.kind === 'question') - Number(a.kind === 'question'))) {
     if (approval.kind === 'plan') { tray.append(renderPlanReview(approval)); continue }
     if (approval.kind === 'question') { tray.append(renderQuestion(approval)); continue }
     const card = h('article', 'team-approval-card'); card.dataset.key = approval.id; card.dataset.sig = JSON.stringify([approval.status, approval.kind, approval.title, approval.detail]); const copy = h('div', 'approval-copy')
-    const kind = h('span', 'approval-kind', approval.kind.replace('_', ' '))
+    const kind = h('span', 'approval-kind', ({ plan: 'Plan', action: 'Action', permission: 'Permission', question: 'Question', review_override: 'Review concern', subtask: 'New task', budget: 'Budget', final: 'Result' } as Record<string, string>)[approval.kind] ?? approval.kind)
     copy.append(kind, h('h3', '', approval.title), h('p', '', approval.detail))
     const note = input('text'); note.placeholder = 'Optional note to the crew'; note.setAttribute('aria-label', `Note for ${approval.title}`)
     const actions = h('div', 'approval-actions')
@@ -707,7 +711,7 @@ function renderAnswered() {
 
 function renderPlanReview(approval: Run['approvals'][number]) {
   const card = h('article', 'team-plan-review'); card.dataset.key = approval.id; card.dataset.sig = JSON.stringify([approval.status, run!.tasks.map(t => [t.id, t.title, t.agent, t.status, t.deps, t.acceptance])])
-  const kind = h('span', 'approval-kind', 'plan')
+  const kind = h('span', 'approval-kind', 'Plan')
   card.append(kind, h('h3', '', approval.title), h('p', '', approval.detail))
   const rows = run!.tasks.map((task, index) => {
     const row = h('div', 'plan-edit-row'), skipped = task.status === 'cancelled'
@@ -750,7 +754,7 @@ function renderPlanReview(approval: Run['approvals'][number]) {
 function renderBoard() {
   const section = h('section', 'team-board-section'); section.append(sectionHead(N.plan, run!.plan.summary || `${run!.tasks.length} tasks`))
   const board = h('div', 'team-board')
-  if (!run!.tasks.length) { if (run!.status === 'planning') for (let i = 0; i < 3; i++) board.append(h('div', 'task-card task-skeleton skel')); else board.append(h('p', 'team-empty', 'No tasks yet.')) }
+  if (!run!.tasks.length) { if (run!.status === 'planning') for (let i = 0; i < 3; i++) board.append(h('div', 'task-card task-skeleton skel')); else board.append(h('p', 'team-empty', 'No tasks yet')) }
   // Tasks the crew added by itself (fixing failed checks or review problems, writing tests) stay in a closed fold, so the board shows the plan and the user's own messages.
   const AUTO = /^(Fix failing checks|Fix problems from|Write or extend tests)/
   const auto = h('div', 'team-board')
@@ -767,9 +771,9 @@ function renderTask(task: Task, index: number) {
   card.append(top, title)
   const facts = h('div', 'task-facts'); const fact = (text: string, title: string, cls = '') => { const f = h('span', cls, text); f.title = title; facts.append(f) }
   if (task.changed.length) fact(`${task.changed.length} ${task.changed.length === 1 ? 'file' : 'files'}`, `${task.changed.length} ${task.changed.length === 1 ? 'file' : 'files'} changed`); if (task.fixRounds) fact(`${task.fixRounds} ${task.fixRounds === 1 ? 'fix' : 'fixes'}`, `${task.fixRounds} fix ${task.fixRounds === 1 ? 'round' : 'rounds'}`)
-  const verdict = task.reviews.at(-1)
-  if (task.agent === 'local') { if (verdict) fact(`Checked by ${AGENT_NAME[verdict.by]}: ${verdict.verdict}`, `${AGENT_NAME.local} work is always checked. ${AGENT_NAME[verdict.by]} reviewed it: ${verdict.verdict}`, `verdict ${verdict.verdict}`); else fact('Will be checked', `${AGENT_NAME.local} work is always checked by another agent`, 'verdict') }
-  else if (verdict) fact(`Review ${verdict.verdict}`, `Review: ${verdict.verdict}`, `verdict ${verdict.verdict}`)
+  const verdict = task.reviews.at(-1), word = verdict && (({ pass: 'passed', fail: 'failed', unclear: 'unclear' } as Record<string, string>)[verdict.verdict] ?? verdict.verdict)
+  if (task.agent === 'local') { if (verdict) fact(`${AGENT_NAME[verdict.by]} review ${word}`, `${AGENT_NAME.local} work is always checked. ${AGENT_NAME[verdict.by]} review ${word}`, `verdict ${verdict.verdict}`); else fact('Will be checked', `${AGENT_NAME.local} work is always checked by another agent`, 'verdict') }
+  else if (verdict) fact(`Review ${word}`, `Review ${word}`, `verdict ${verdict.verdict}`)
   // "After 01, 02": the dependency by task number; the titles are in the tooltip.
   if (task.deps.length) fact(`After ${task.deps.map(id => { const i = run!.tasks.findIndex(t => t.id === id); return i < 0 ? id : String(i + 1).padStart(2, '0') }).join(', ')}`, `After ${task.deps.map(id => run!.tasks.find(t => t.id === id)?.title ?? id).join(', ')}`, 'task-deps')
   card.append(facts)
@@ -787,30 +791,12 @@ let backgroundOpen = false
 function renderBackground() {
   const d = h('details', 'team-background') as HTMLDetailsElement; d.open = backgroundOpen
   const failed = run!.approvals.length === 0 && log.some(x => x.ev.type === 'verify' && !x.ev.ok) && run!.status !== 'done'
-  const sum = h('summary', '', 'Background'); if (failed) sum.append(h('span', 'bg-dot')); d.append(sum, renderMemory(), renderVerify())
+  const sum = h('summary', '', 'Notes and checks'); if (failed) sum.append(h('span', 'bg-dot')); d.append(sum, renderMemory(), renderVerify())
   d.ontoggle = e => { backgroundOpen = (e.currentTarget as HTMLDetailsElement).open }
   return d
 }
-// The run page shows what matters: the answer (logins, URLs, commands the user asked for) and what the user sent. Live coding and the team's own
-// chatter, background checks and changes stay one click away, closed by default.
+// Live coding, the crew's own chatter, checks and changes stay one click away, closed by default.
 let liveOpen = false, activityOpen = false, autoOpen = false
-const AGENT_BODY = (m: { body: string }) => m.body.replace(/\s*Attached files \(open and look at them\):[\s\S]*$/, '').replace(/\s+/g, ' ').trim()
-function liveKeys(): string[] {
-  return keyLines([...run!.tasks.flatMap(t => [t.summary ?? '', t.handoff ?? '']), ...run!.messages.filter(m => m.from !== 'user').map(m => m.body)].join('\n'))
-}
-// What the user sent, each with the first reply an agent gave after it.
-function renderYours(): HTMLElement | null {
-  const mine = run!.messages.filter(m => m.from === 'user').slice(-8)
-  if (!mine.length) return null
-  const section = h('section', 'team-yours'); section.append(h('div', 'key-title', 'What you sent'))
-  for (const m of mine) {
-    const item = h('article', 'yours-item'); item.append(h('p', 'yours-text', AGENT_BODY(m).slice(0, 400)))
-    const reply = run!.messages.find(r => r.at > m.at && r.from !== 'user' && r.from !== 'orchestrator' && (r.kind === 'handoff' || r.kind === 'finding'))
-    if (reply) { const note = h('p', 'yours-reply', `${AGENT_NAME[reply.from as 'claude']}: ${oneLine(reply.body, 220)}`); item.append(note) }
-    section.append(item)
-  }
-  return section
-}
 // A fold builds its content only while open, so a closed one costs nothing on a live redraw; opening it redraws once.
 function fold(title: string, open: boolean, set: (o: boolean) => void, build: () => HTMLElement[]) {
   const d = h('details', 'team-fold') as HTMLDetailsElement; d.open = open
@@ -824,14 +810,35 @@ function makeDetailsToggle() {
   toggle.onclick = () => { laneDetails = !laneDetails; try { localStorage.setItem('forge.teamLaneDetails', laneDetails ? '1' : '0') } catch {} renderRun() }
   return toggle
 }
-// What the agents are doing while no code is being typed (a fix that edits files with tools, a long command, the project check): the latest
-// command or message, so the empty live view never just says "Reading the project" for an hour.
-const oneLine = (text: string, max = 90) => { const t = text.replace(/\s+/g, ' ').trim(); return t.length > max ? `${t.slice(0, max - 1)}…` : t }
-function activityOf(agent: 'claude' | 'codex' | 'local', ev: { type: string; summary?: string; text?: string; kind?: string }): string | null {
-  if (ev.type === 'tool' && ev.summary) return `${AGENT_NAME[agent]} · ${ev.kind === 'command' ? 'running ' : ''}${oneLine(ev.summary)}`
-  if (ev.type === 'text' && ev.text?.trim()) return `${AGENT_NAME[agent]} · ${oneLine(ev.text)}`
-  return null
+// What the agents are doing while no code is being typed (a fix that edits files with tools, a long command, the project check), so the
+// empty live view never just says "Reading the project" for an hour. "Codex is reading login/route.ts", never a raw command or JSON.
+const TEAM_TOOL: Record<string, string> = { team_post: 'messaging the crew', team_inbox: 'reading crew messages', team_handoff: 'writing the hand-over', team_ask: 'asking you a question', team_decision: 'recording a decision', team_context: 'looking up project notes', team_request_approval: 'asking for your approval' }
+const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1)
+const tail2 = (p: string) => p.split('/').filter(Boolean).slice(-2).join('/')
+// What an agent is doing, in a few words. The exact command stays in the Details lanes, which still read ev.summary.
+function stepWords(agent: 'claude' | 'codex' | 'local', ev: { kind?: string; name?: string; summary?: string }): string {
+  const s = ev.summary ?? '', n = ev.name ?? ''
+  if (agent === 'local') return lower(s) // local.ts already sends describeTool's words
+  const team = Object.keys(TEAM_TOOL).find(k => n.endsWith(k)) // mcp__forge_team__team_post (Claude), forge_team.team_post (Codex)
+  if (team) return TEAM_TOOL[team]
+  if (/web_?search/i.test(n)) return 'searching the web'
+  if (/web_?fetch/i.test(n)) return 'reading a web page'
+  if (ev.kind === 'command') return lower(describeCommand(s))
+  const paths = s.split(/,\s*/).map(f => f.replace(/^(add|update|delete|modify|create)\s+/i, '')).filter(f => /^\S+$/.test(f)) // Codex sends "update a.ts, add b.ts"
+  if (ev.kind === 'edit') return paths.length > 1 ? `editing ${paths.length} files` : paths.length ? `editing ${tail2(paths[0])}` : 'editing files'
+  if (/^(Grep|Glob)$/.test(n)) return 'searching the code'
+  if (ev.kind === 'read') return paths.length === 1 ? `reading ${tail2(paths[0])}` : 'reading files'
+  if (n === 'TodoWrite') return 'updating its checklist'
+  if (n === 'Task' || n === 'Agent') return 'starting a helper agent'
+  return 'working'
 }
+// Tool steps only: the agent's own words belong in the result lines, not in the status.
+function activityOf(agent: 'claude' | 'codex' | 'local', ev: { type: string; kind?: string; name?: string; summary?: string }): string | null {
+  return ev.type === 'tool' ? `${AGENT_NAME[agent]} is ${stepWords(agent, ev)}` : null
+}
+const stepNow = new Map<string, string>() // task id -> its latest step, for the checklist's running row
+const noteStep = (x: Logged) => { if (x.ev.type !== 'agent' || x.ev.phase === 'plan') return null; const line = activityOf(x.ev.ev.agent, x.ev.ev as never); if (line) stepNow.set(x.ev.taskId, line); return line }
+const taskTitle = (t: Task) => plainLine(t.title.replace(/\s*Attached files \(open and look at them\):[\s\S]*$/, ''), 200) || 'Look at the attached files'
 function latestActivity(): string | null {
   for (let i = log.length - 1, seen = 0; i >= 0 && seen < 300; i--, seen++) { const x = log[i]; if (x.ev.type === 'agent' && x.ev.phase !== 'plan') { const line = activityOf(x.ev.ev.agent, x.ev.ev as never); if (line) return line } }
   return null
@@ -915,16 +922,16 @@ function renderLiveCode(event: Extract<RunEvent, { type: 'agent' }>['ev'] & { ty
 const openFeed = new Set<string>() // feed messages the person expanded
 function renderFeed() {
   const section = h('section', 'team-feed'); section.append(sectionHead(N.feed, `${run!.messages.length}`))
-  if (!run!.messages.length) section.append(h('p', 'team-empty', 'Handoffs, reviews and decisions appear here.'))
-  for (const msg of run!.messages.slice(-12)) { const item = h('article', `feed-item ${msg.kind}`); item.dataset.key = msg.id; const top = h('div'); const kindTag = h('span', '', msg.kind.replace('_', ' ')); top.append(h('strong', '', msg.from === 'user' ? 'You' : msg.from === 'orchestrator' ? 'Forge' : AGENT_NAME[msg.from]), kindTag); const body = h('p', 'feed-body', msg.body); item.append(top, body); if (msg.body.length > 260) { item.classList.toggle('clamped', !openFeed.has(msg.id)); item.title = 'Click to read all'; item.onclick = () => { if (!openFeed.delete(msg.id)) openFeed.add(msg.id); renderRun() } } section.append(item) }
+  if (!run!.messages.length) section.append(h('p', 'team-empty', 'Handoffs, reviews and decisions appear here'))
+  for (const msg of run!.messages.slice(-12)) { const item = h('article', `feed-item ${msg.kind}`); item.dataset.key = msg.id; const top = h('div'); const kindTag = h('span', '', ({ finding: 'Finding', question: 'Question', review: 'Review', handoff: 'Hand-over', decision: 'Decision', note: 'Note', steer: 'Message' } as Record<string, string>)[msg.kind] ?? msg.kind); top.append(h('strong', '', msg.from === 'user' ? 'You' : msg.from === 'orchestrator' ? 'Forge' : AGENT_NAME[msg.from]), kindTag); const body = h('p', 'feed-body', msg.body); item.append(top, body); if (msg.body.length > 260) { item.classList.toggle('clamped', !openFeed.has(msg.id)); item.title = 'Click to read all'; item.onclick = () => { if (!openFeed.delete(msg.id)) openFeed.add(msg.id); renderRun() } } section.append(item) }
   return section
 }
 
 function renderLiveFiles() {
   const section = h('section', 'team-live-files')
   const count = [...liveFiles.values()].reduce((total, files) => total + files.length, 0)
-  section.append(sectionHead(N.changing, count ? `${count} live` : 'Quiet'))
-  if (!count) { section.append(h('p', 'team-empty', 'Files appear here while an agent is writing them.')); return section }
+  section.append(sectionHead(N.changing, count ? `${count} live` : 'None'))
+  if (!count) { section.append(h('p', 'team-empty', 'Files appear here while an agent is writing them')); return section }
   for (const [taskId, files] of liveFiles) {
     const group = h('div', 'live-file-group'); group.dataset.key = taskId; const task = run!.tasks.find(item => item.id === taskId)
     group.append(h('div', 'live-file-task', task?.title ?? taskId))
@@ -940,8 +947,8 @@ function renderLiveFiles() {
 
 function renderMemory() {
   const section = h('section', 'team-memory')
-  section.append(sectionHead(N.notes, memoryLoading ? 'Refreshing…' : sharedMemory ? 'Current' : 'Waiting'))
-  if (!sharedMemory) { section.append(h('p', 'team-empty', 'Decisions, handoffs, problems and useful project history appear here.')); return section }
+  section.append(sectionHead(N.notes, memoryLoading ? 'Refreshing…' : sharedMemory ? '' : 'None yet'))
+  if (!sharedMemory) { section.append(h('p', 'team-empty', 'Decisions, handoffs, problems and useful project history appear here')); return section }
   const addGroup = (title: string, items: HTMLElement[], open = false) => {
     if (!items.length) return
     const details = h('details', 'memory-group') as HTMLDetailsElement; details.open = open
@@ -976,7 +983,7 @@ function scheduleMemoryRefresh() {
 }
 function renderVerify() {
   const events = log.filter(x => x.ev.type === 'verify')
-  const section = h('section', 'team-verify'); section.append(sectionHead(N.checks, events.length ? `${events.length}` : 'Waiting'))
+  const section = h('section', 'team-verify'); section.append(sectionHead(N.checks, events.length ? `${events.length}` : 'None yet'))
   for (const item of events.slice(-3)) if (item.ev.type === 'verify') { const details = h('details', `verify-card ${item.ev.ok ? 'ok' : 'bad'}`) as HTMLDetailsElement; details.dataset.key = String(item.t); details.open = !item.ev.ok; const sum = h('summary'); sum.append(mark(item.ev.ok ? 'done' : 'failed'), ` ${item.ev.ok ? 'Passed' : 'Failed'} · ${item.ev.command}`); details.append(sum, h('pre', '', item.ev.output.slice(-8000))); section.append(details) }
   return section
 }
@@ -988,7 +995,7 @@ type SteerUi = { runId: string; form: HTMLFormElement; bar: HTMLElement; text: H
 let steerUi: SteerUi | null = null
 function buildSteer(runId: string): SteerUi {
   const form = h('form', 'team-steer team-composer') as HTMLFormElement; const row = h('div', 'team-steer-row')
-  const text = h('textarea') as HTMLTextAreaElement; text.rows = 1; text.value = steerDraft; text.setAttribute('aria-label', 'Message the crew')
+  const text = h('textarea') as HTMLTextAreaElement; text.rows = 1; text.value = steerDraft; text.setAttribute('aria-label', 'Message the crew'); text.title = 'Type pause to stop the crew, resume to continue'
   const send = h('button', 'team-send') as HTMLButtonElement; send.append(icon('arrowup')); send.setAttribute('aria-label', 'Send to the crew'); send.type = 'submit'
   const att = attachmentStrip({
     host: form, textarea: text, max: 12, maxBytes: 200 * 1024 * 1024, limits: 'Up to 12 files per message, 200 MB each.',
@@ -1017,7 +1024,7 @@ function buildSteer(runId: string): SteerUi {
 function renderSteer() {
   const over = ['done', 'failed', 'cancelled', 'awaiting_approval'].includes(run!.status)
   if (!steerUi || steerUi.runId !== run!.id) steerUi = buildSteer(run!.id)
-  steerUi.text.placeholder = over ? 'Keep going: ask for more, add pictures or files, or something new…' : ['paused', 'interrupted'].includes(run!.status) ? 'Paused. Type resume to continue, or add a note first…' : 'Message the crew, add pictures or files, or type pause to stop it…'
+  steerUi.text.placeholder = over ? 'Ask for more, or add files' : ['paused', 'interrupted'].includes(run!.status) ? 'Paused. Type resume to continue' : 'Message the crew'
   steerUi.sync()
   const chips = h('div'); chips.append(...composerChips()); morphChildren(steerUi.bar, chips) // unchanged chips keep focus and hover; an open picker (data-transient) stays
   return steerUi.form
@@ -1050,25 +1057,36 @@ async function openDiff(taskId?: string, path?: string, live = false) {
 
 // Land part of the result: built once per state of the run (it asks for the file groups when drawn).
 let landPanel: { key: string; el: HTMLElement } | null = null
+let reportOpen = false
+// The stored review notes keep "claude: FAIL — …" (queue.ts reads it); only the words shown change, and the reviewer's text shows plain.
+function noteText(n: string) {
+  const m = /^(claude|codex|local|Security review): (PASS|FAIL|UNCLEAR) — (.*)$/s.exec(n)
+  if (!m) return plainLine(n, 600)
+  const rest = plainLine(m[3], 600)
+  return `${m[1] === 'Security review' ? m[1] : `${AGENT_NAME[m[1] as 'claude']}'s review`} ${({ PASS: 'passed', FAIL: 'failed', UNCLEAR: 'unclear' } as Record<string, string>)[m[2]]}.${rest && ` ${rest[0].toUpperCase()}${rest.slice(1)}`}`
+}
 function landPanelFor() { const key = `${run!.id}:${(run!.landedFiles ?? []).length}:${run!.final!.files.length}`; if (!landPanel || landPanel.key !== key) landPanel = { key, el: renderLandPanel(run!, () => void refreshRun()) }; return landPanel.el }
 function renderFinal() {
   const section = h('section', 'team-final'); section.dataset.key = 'final'
   section.append(h('h2', '', N.reviewHead))
-  const split = splitKeyAnswer(run!.final!.report); if (split.key.length) section.append(keyCard(split.key)); const report = h('div', 'team-final-report'); report.innerHTML = md(split.rest); section.append(report)
-  const files = h('div', 'team-final-files'); for (const file of run!.final!.files) { const f = h('div', '', file.path); f.prepend(fileIcon(file.status)); f.title = `${file.status === 'added' ? 'New' : file.status === 'deleted' ? 'Removed' : 'Updated'}: ${file.path}`; files.append(f) } section.append(files)
+  const files = h('div', 'team-final-files'); for (const file of run!.final!.files.slice(0, 12)) { const f = h('div', '', file.path); f.prepend(fileIcon(file.status)); f.title = `${file.status === 'added' ? 'New' : file.status === 'deleted' ? 'Removed' : 'Updated'}: ${file.path}`; files.append(f) }
+  if (run!.final!.files.length > 12) files.append(h('div', '', `${run!.final!.files.length - 12} more files`))
+  section.append(files)
   const localReviews = run!.tasks.filter(t => t.agent === 'local' && t.status !== 'cancelled').flatMap(t => t.reviews.slice(-1))
   if (run!.tasks.some(t => t.agent === 'local' && t.status !== 'cancelled')) {
     const by = [...new Set(localReviews.map(r => AGENT_NAME[r.by]))].join(' and ') || 'another agent', ok = localReviews.length > 0 && localReviews.every(r => r.verdict === 'pass')
-    const line = h('div', `final-verify ${localReviews.length ? (ok ? 'ok' : 'bad') : ''}`); line.append(mark(localReviews.length ? (ok ? 'done' : 'failed') : 'pending'), h('span', '', localReviews.length ? `${AGENT_NAME.local} work was reviewed by ${by}: ${ok ? 'PASS' : 'FAIL'}` : `${AGENT_NAME.local} work has not been reviewed yet`)); section.append(line)
+    const line = h('div', `final-verify ${localReviews.length ? (ok ? 'ok' : 'bad') : ''}`); line.append(mark(localReviews.length ? (ok ? 'done' : 'failed') : 'pending'), h('span', '', localReviews.length ? `${AGENT_NAME.local} work reviewed by ${by}: ${ok ? 'passed' : 'failed'}` : `${AGENT_NAME.local} work has not been reviewed yet`)); section.append(line)
   }
   const verify = h('div', `final-verify ${run!.final!.verifyOk ? 'ok' : run!.final!.verifyOk === false ? 'bad' : ''}`); verify.append(mark(run!.final!.verifyOk ? 'done' : run!.final!.verifyOk === false ? 'failed' : 'pending'), h('span', '', run!.final!.verifyOk ? 'Project check passed' : run!.final!.verifyOk === false ? 'Project check failed' : 'No project check configured')); section.append(verify)
-  if (run!.final!.reviewNotes.length) { const notes = h('details', 'final-review-notes'); notes.append(h('summary', '', `Final review notes · ${run!.final!.reviewNotes.length}`), ...run!.final!.reviewNotes.map(item => h('p', '', item))); section.append(notes) }
+  const report = splitKeyAnswer(run!.final!.report).rest.replace(/^# .*\n+/, '').replace(/\s*\**\bKEY\b\**\s*:[^\n]*/g, '') // the header shows the goal; saved reports carry KEY inline in 'What the team did'
+  section.append(fold('Full report', reportOpen, o => { reportOpen = o }, () => { const r = h('div', 'team-final-report'); r.innerHTML = md(report); return [r] }))
+  if (run!.final!.reviewNotes.length) { const notes = h('details', 'final-review-notes'); notes.append(h('summary', '', `Final review notes · ${run!.final!.reviewNotes.length}`), ...run!.final!.reviewNotes.map(item => h('p', '', noteText(item)))); section.append(notes) }
   if (undoResult) section.append(h('div', 'errcard final-action-result', undoResult))
   if (!replay && !isRemote() && typeof window.forge.teamLandings === 'function' && run!.final!.files.length > 1) section.append(keep('land', landPanelFor()))
   const note = h('p', 'team-final-note', 'Nothing has changed in your project yet. If you don’t land this result, Forge keeps a saved crew copy that you can reopen later.'); section.append(note)
   const actions = h('div', 'team-final-actions')
   const apply = actionButton(N.land, async () => { if (replay) { if (replayScenario === 'applyfail') { undoResult = 'Could not land: your project changed while the crew was working. Review the project and try again.'; renderRun(); return } run!.status = 'done'; run!.applied = true; run!.appliedCheckpoint = 'replay-checkpoint'; toast('Landed · Undo is ready'); renderRun(); return } await call(async () => { let result = await window.forge.teamApply(run!.id); if (!result.ok && /apply without Undo/.test(result.message) && window.confirm(`${result.message}\n\nApply anyway, without Undo?`)) result = await window.forge.teamApply(run!.id, true); if (!result.ok) { undoResult = result.message; renderRun(); return } toast(result.checkpoint ? `${result.message} · Undo is ready` : result.message, 5000); await refreshRun() }) }, 'primary')
-  const reject = actionButton("Don't land", () => { if (replay) { run!.status = 'done'; run!.applied = false; toast('Not landed · Forge kept a saved crew copy'); renderRun(); return } void teamAction(() => window.forge.teamReject(run!.id)) })
+  const reject = actionButton('Don’t land', () => { if (replay) { run!.status = 'done'; run!.applied = false; toast('Not landed · Forge kept a saved crew copy'); renderRun(); return } void teamAction(() => window.forge.teamReject(run!.id)) })
   actions.append(apply, reject); section.append(actions); return section
 }
 
@@ -1078,7 +1096,7 @@ function gitPanelFor() { const key = `${run!.id}:${run!.applied}:${run!.undone}`
 function renderApplied() {
   const section = h('section', `team-applied ${run!.undone ? 'undone' : ''}`); section.dataset.key = 'applied'
   const tag = h('div', 'eyebrow', run!.undone ? 'Changes undone' : 'Landed in your project'); tag.prepend(run!.undone ? icon('undo', 'sm') : mark('done'))
-  section.append(tag, h('h2', '', run!.undone ? 'Your project is back where it was.' : 'The crew’s work is now in your project.'))
+  section.append(tag, h('h2', '', run!.undone ? 'Your project is back where it was' : 'The crew’s work is now in your project'))
   const copy = run!.undone ? 'The landed files were restored to how they were before the crew.' : 'You can keep working, or undo the whole landing. Undo also removes hand edits made after it.'
   section.append(h('p', '', copy))
   if (undoResult) section.append(h('div', 'team-undo-result', undoResult))
@@ -1104,7 +1122,7 @@ function reduceEvent(event: RunEvent, t = Date.now()) {
   const state = reduceTeamView({ run, log, liveFiles }, event, t); run = state.run; log = state.log; liveFiles = state.liveFiles
   if (event.type === 'agent') {
     const e = event.ev
-    if (event.phase !== 'plan') { const line = activityOf(e.agent, e as never); const idle = line && document.querySelector('.stage-idle-text'); if (idle) idle.textContent = line } // keep the empty live view honest
+    const line = noteStep({ t, ev: event }); const idle = line && document.querySelector('.stage-idle-text'); if (idle) idle.textContent = line // keep the empty live view honest
     if (!document.querySelector('.team-lanes')) return // agent events only change Live work: while it is closed nothing is redrawn
     if (!laneDetails) {
       if (e.type === 'code' && event.phase !== 'plan') { if (pushCode({ id: e.id, agent: e.agent, path: e.path, text: e.text, kind: e.kind, done: e.done })) return }
@@ -1134,6 +1152,7 @@ async function resyncTeam() {
   if (!saved || run?.id !== id) return
   run = saved
   const normal = await normaliseTeamEventsAsync(events); log = normal.log; liveFiles = normal.liveFiles
+  stepNow.clear(); log.forEach(noteStep)
   if (!['planning', 'running', 'paused', 'interrupted'].includes(run.status)) liveFiles.clear()
   renderRun()
 }

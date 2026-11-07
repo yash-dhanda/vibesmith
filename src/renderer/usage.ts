@@ -17,7 +17,7 @@ export function setUsage(u: UsageSummary) {
   const top = u.byModel.find((m) => m.avgTps > 0)
   const today = u.today.input + u.today.output
   const per = u.byAgent.map((a) => `${a.agent[0].toUpperCase()}${a.agent.slice(1)} ${formatTokens(a.today)}`).join(' · ')
-  const sub = total ? `${formatTokens(today)} today${top ? ` · ${formatRate(top.avgTps)} tok/s` : ''}` : 'no usage yet'
+  const sub = total ? `${formatTokens(today)} today${top ? ` · ${formatRate(top.avgTps)} tok/s` : ''}` : 'No usage yet'
   badge.querySelector('.u-sub')!.textContent = sub
   badge.title = `${total.toLocaleString()} tokens used · ${sub}\nToday: ${per}`
 }

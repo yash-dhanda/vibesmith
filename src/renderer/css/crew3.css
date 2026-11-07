@@ -22,8 +22,8 @@
 .crew-step-state { color: var(--faint); font-size: 11.5px; }
 .crew-step.running .crew-step-state { color: var(--accent, currentColor); }
 .crew-step.failed .crew-step-state, .crew-step.blocked .crew-step-state { color: #e5484d; }
-.crew-said { margin: 0; padding-left: 18px; font-size: 14px; line-height: 1.55; }
-.crew-said li { margin: 2px 0; user-select: text; }
+.crew-said { display: flex; flex-direction: column; gap: 4px; margin: 0; font-size: 14px; line-height: 22px; }
+.crew-said p { margin: 0; user-select: text; overflow-wrap: anywhere; }
 .crew-claude .team-fold { border: 0; }
 .crew-claude .team-fold > summary { padding: 4px 0; line-height: 16px; }
 

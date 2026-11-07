@@ -18,7 +18,7 @@ export const N = {
   checks: 'Checks',
   changing: 'Changing now',
   waiting: 'Waiting for you',
-  reviewHead: 'Review before it lands.',
+  reviewHead: 'Review before it lands',
   land: 'Land it',
 } as const
 

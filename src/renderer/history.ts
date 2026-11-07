@@ -66,7 +66,7 @@ export function renderHistory(chats: ChatListItem[], activeId: string, query: st
   lastArgs = [chats, activeId, query, handlers, runs, activeRun]
   const out = h('div') // built off the page, then morphed in: rows that stay keep hover, a rename, an armed Delete? and their spinner
   if (!chats.length && !runs.length) {
-    out.append(h('div', 'empty-list', query ? 'No chats or runs match.' : 'Your chats and Crew runs will show up here.'))
+    out.append(h('div', 'empty-list', query ? 'No chats or runs match' : 'Your chats and Crew runs will show up here'))
     morphChildren(list, out)
     return
   }

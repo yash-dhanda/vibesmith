@@ -236,7 +236,7 @@ function setProject(p: string | null) {
   projectBtn.classList.toggle('need', !p)
   projectBtn.disabled = hasMessages || isRemote() // the phone cannot open the computer's folder dialog
   projectBtn.hidden = isRemote() && !p
-  if (emptySub) emptySub.textContent = p ? `Working in ${folderName(p)}. Say what it should do.` : 'A website, a small tool, something just for you.'
+  if (emptySub) emptySub.textContent = p ? `Working in ${folderName(p)}. Say what it should do.` : 'A website, a small tool, something just for you'
 }
 
 function setRunning(on: boolean) {
@@ -572,7 +572,7 @@ function handle(ev: AgentEvent) {
       finishGroup()
       hideThinking()
       const msg = {
-        stopped: 'Stopped.',
+        stopped: 'Stopped by you',
         stuck: 'Stopped: the agent kept repeating a failing step.',
         max_steps: 'Stopped: step limit reached.',
         max_time: 'Stopped: time limit reached.',
