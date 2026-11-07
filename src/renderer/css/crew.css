@@ -248,8 +248,7 @@
 .agent-thinking { margin-top: 6px; color: var(--muted); }
 .agent-thinking p { margin: 6px 0 0; padding-left: 10px; border-left: 1px solid var(--border); font-size: 12px; }
 .agent-prompt { margin-top: 6px; }
-.live-code { margin-top: 8px; overflow: hidden; border: 1px solid var(--hair); border-left: 2px solid var(--agent, var(--border)); border-radius: var(--r-sm); background: var(--panel); }
-.live-code.done { border-left-color: var(--ok); }
+.live-code { margin-top: 8px; overflow: hidden; border: 1px solid var(--hair); border-radius: var(--r-sm); background: var(--panel); }
 .agent-lane.codex { --agent: var(--a-codex); } .agent-lane.local { --agent: var(--a-local); }
 .live-code > summary { list-style: none; cursor: pointer; }
 .live-code > summary::-webkit-details-marker { display: none; }

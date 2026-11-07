@@ -37,7 +37,7 @@ dialog.diff-review[open], dialog.restore-points[open], dialog.project-dashboard[
 .dr-note-line { margin: 0; padding: 8px 10px; color: var(--faint); font: 12px var(--sans); }
 .dr-more { align-self: center; }
 .dr-box, .dr-note { margin: 4px 10px 6px 90px; padding: 8px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--panel); font: 12.5px/1.5 var(--sans); }
-.dr-note { white-space: pre-wrap; overflow-wrap: anywhere; border-left: 3px solid var(--warn); }
+.dr-note { white-space: pre-wrap; overflow-wrap: anywhere; }
 .dr-box textarea { display: block; width: 100%; min-height: 54px; resize: vertical; box-sizing: border-box; border: 1px solid var(--border); border-radius: var(--r-sm); padding: 6px 8px; background: var(--bg); color: var(--text); font: inherit; }
 .dr-box-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 .dr-box-actions kbd { margin-right: auto; }

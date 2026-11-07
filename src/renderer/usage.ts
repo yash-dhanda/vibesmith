@@ -3,10 +3,7 @@ import { formatRate, formatTokens } from './format'
 import { AGENT_NAME, N } from './names'
 import { $, h } from './ui'
 
-let last: UsageSummary | null = null
-
 export function setUsage(u: UsageSummary) {
-  last = u
   const total = u.allTime.input + u.allTime.output
   const badge = $('usage-badge')
   const main = badge.querySelector<HTMLElement>('.u-main')!
@@ -24,7 +21,7 @@ export function setUsage(u: UsageSummary) {
 
 // The usage page inside Settings.
 export async function renderUsage(into: HTMLElement) {
-  const u = (last = await window.forge.usageSummary())
+  const u = await window.forge.usageSummary()
   const total = u.allTime.input + u.allTime.output
   const hero = h('div', 'sgroup')
   const big = h('div', 'big')
