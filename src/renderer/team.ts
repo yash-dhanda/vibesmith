@@ -413,15 +413,17 @@ async function openRun(id: string, fixture?: { run: Run; events: Logged[]; memor
   setActiveRun(fixture ? '' : id)
   root.replaceChildren(h('div', 'team-run-loading skel'))
   const loaded = fixture ?? await (async () => { const [saved, events] = await Promise.all([window.forge.teamGet(id), window.forge.teamEvents(id)]); if (!saved) throw new Error('This run no longer exists.'); return { run: saved, events } })()
-  run = structuredClone(loaded.run); sharedMemory = fixture?.memory ?? null; undoResult = ''; crewOpen = false; reportOpen = false; resetIslands()
+  run = structuredClone(loaded.run); sharedMemory = fixture?.memory ?? null; undoResult = ''; crewOpen = false; reportOpen = false; finishedOpen = false; resetIslands()
   const normal = await normaliseTeamEventsAsync(loaded.events); log = normal.log; liveFiles = normal.liveFiles
-  stepNow.clear(); log.forEach(noteStep)
+  stepNow.clear(); actNow.clear(); log.forEach(noteStep)
   if (!['planning', 'running', 'paused', 'interrupted'].includes(run.status)) liveFiles.clear()
   renderRun(); startClock()
   if (!fixture) void refreshMemory()
 }
 
-function startClock() { stopClock(); elapsedTimer = setInterval(() => { const el = document.getElementById('team-elapsed'); if (el && run) el.textContent = fmtTime(Math.floor((Date.now() - run.createdAt) / 1000)) }, 1000) }
+// The page's one clock: every [data-since] (the run's age in its header, each background task's time) ticks in place, nothing is redrawn.
+const since = (at: number) => fmtTime(Math.max(0, Math.floor((Date.now() - at) / 1000)))
+function startClock() { stopClock(); elapsedTimer = setInterval(() => { for (const el of root.querySelectorAll<HTMLElement>('[data-since]')) el.textContent = since(Number(el.dataset.since)) }, 1000) }
 function stopClock() { if (elapsedTimer) clearInterval(elapsedTimer); elapsedTimer = null }
 
 // ---------------------------------------------------------------- the run page, built like a chat
@@ -492,10 +494,66 @@ function renderReply(p: { id: string }, last: boolean) {
   return box
 }
 
+// ---- Background tasks, like Claude Code's panel: a card for each task an agent works on now (who, which step, how long, Stop), what is next,
+// and a closed fold of what finished. A card's line is patched in place on agent events (reduceEvent) and its time ticks through data-since.
+let finishedOpen = false
+type BgCard = { key: string; title: string; state: 'active' | 'ask'; desc: string; at?: number; task?: Task }
+const upper = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+const dots = (...parts: (string | false | undefined)[]) => parts.filter((p, i) => p && p !== parts[i - 1]).join(' · ') // never "Working · Working"
+function bgCards(): BgCard[] {
+  const out: BgCard[] = run!.tasks.filter(t => t.status === 'running').map(t => {
+    const a = actNow.get(t.id), asks = run!.approvals.some(x => x.status === 'pending' && x.taskId === t.id), busy = !t.stopRequested && !asks
+    return { key: t.id, title: taskTitle(t), state: asks ? 'ask' : 'active', at: t.startedAt, task: t,
+      desc: dots(AGENT_NAME[a?.agent ?? t.agent], t.stopRequested ? 'Stopping' : asks ? 'Needs you' : PHASE_LABEL[t.phase ?? 'work'], busy && a?.words && upper(a.words)) }
+  })
+  const fresh = (id: string) => { const a = actNow.get(id); return a && a.at >= (run!.activeSince ?? 0) ? a : undefined } // this round's, not an earlier planning's or check's
+  if (run!.status === 'planning') { const a = fresh('plan'); out.unshift({ key: 'plan', title: 'Planning the work', state: 'active', at: run!.activeSince ?? promptsOf().at(-1)!.at, desc: dots(a && AGENT_NAME[a.agent], upper(a?.words ?? 'reading the project')) }) }
+  if (run!.status === 'verifying') { // the project check runs without an agent; the security and final reviews have one
+    const s = fresh('security'), f = fresh('final'), a = f && (!s || f.at >= s.at) ? f : s
+    out.push({ key: 'check', title: 'Checking the result', state: 'active', at: run!.activeSince, desc: a ? dots(AGENT_NAME[a.agent], a === f ? 'Final review' : 'Security review', a.words && upper(a.words)) : 'Running the project check' })
+  }
+  return out
+}
+function renderBackgroundTasks() {
+  const cards = bgCards(), queued = run!.tasks.filter(t => t.status === 'queued')
+  const finished = run!.tasks.filter(t => t.status === 'done' || t.status === 'failed' || (t.status === 'cancelled' && t.startedAt)).sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0)) // stopped, not skipped
+  if (!cards.length && !queued.length && !finished.length) return null
+  const sec = h('section', `crew-side-sec crew-bg${isWorking() ? ' live' : ''}`); sec.dataset.key = 'bg'; sec.append(h('h3', '', 'Background tasks'))
+  if (cards.length) { const label = h('div', 'bg-label', `Running ${cards.length}`); label.dataset.key = 'running'; sec.append(label) }
+  for (const c of cards) {
+    const card = h('article', 'bg-card'); card.dataset.key = c.key; enter(card, `bg:${run!.id}:${c.key}`, 0)
+    const title = h('div', 'bg-title', c.title); title.title = c.title
+    const time = h('span', 'bg-time'); if (c.at) { time.dataset.since = String(c.at); time.textContent = since(c.at) }
+    const desc = h('div', 'bg-desc', c.desc); desc.title = c.desc
+    card.append(mark(c.state, c.state === 'ask' ? 'Needs you' : 'Running'), title, time)
+    // a fix made during the last checks or the final review is part of them: stopping it would stop them too
+    if (c.task && !c.task.lastStep) {
+      const stop = h('button', 'icon-btn bg-stop') as HTMLButtonElement; stop.append(icon('stop')); stop.setAttribute('aria-label', 'Stop this task'); stop.title = 'Stop this task; the rest of the run continues'; stop.disabled = !!c.task.stopRequested
+      const id = c.task.id; stop.onclick = () => void teamAction(() => window.forge.teamStopTask(run!.id, id)); card.append(stop)
+    }
+    card.append(desc); sec.append(card)
+  }
+  if (queued.length) {
+    const next = h('div', 'bg-next'); next.dataset.key = 'next'; const what = h('span', 'bg-next-title', taskTitle(queued[0])); what.title = taskTitle(queued[0])
+    next.append(h('span', 'bg-faint', 'Up next'), what); if (queued.length > 1) next.append(h('span', 'bg-faint', `+${queued.length - 1} more`)); sec.append(next)
+  }
+  if (finished.length) {
+    const took = (t: Task) => (t.startedAt && t.endedAt ? fmtTime(Math.max(0, Math.round((t.endedAt - t.startedAt) / 1000))) : '')
+    const done = fold(`Finished ${finished.length}`, finishedOpen, o => { finishedOpen = o }, () => finished.map(t => {
+      const row = h('div', 'bg-done'); row.dataset.key = t.id; row.title = taskTitle(t)
+      row.append(mark(TASK_MARK[t.status], t.status === 'done' ? 'Done' : t.status === 'failed' ? 'Failed' : 'Stopped'), h('span', 'bg-done-title', taskTitle(t)), h('span', 'bg-time', took(t)))
+      return row
+    }))
+    done.dataset.key = 'finished'; sec.append(done)
+  }
+  return sec
+}
+
 function renderSidePanel() {
   const side = h('aside', 'crew-side'); side.setAttribute('aria-label', 'Run details')
   const sec = (title: string, ...kids: HTMLElement[]) => { const el = h('section', 'crew-side-sec'); el.append(h('h3', '', title), ...kids); return el }
   const row = (glyph: IconName, text: string, title = '') => { const r = h('div', 'crew-side-row'); r.append(icon(glyph, 'sm'), h('span', '', text)); if (title) r.title = title; return r }
+  const bg = renderBackgroundTasks(); if (bg) side.append(bg)
   side.append(sec('Project', row('folder', folderName(run!.project), run!.project), row('code', run!.integrationBranch, run!.integrationBranch)))
   const agents = h('div', 'crew-side-agents')
   for (const agent of ['claude', 'codex', 'local'] as const) {
@@ -530,7 +588,7 @@ function renderRunHeader() {
   const back = h('button', 'icon-btn back'); back.append(icon('arrowleft')); back.title = `All ${N.crewRuns.toLowerCase()}`; back.setAttribute('aria-label', back.title); back.onclick = () => void showEntry()
   const asking = run!.approvals.some(a => a.status === 'pending' && a.kind !== 'final')
   const status = asking ? h('span', 'status-pill awaiting_approval asking') : statusTag(run!.status); if (asking) status.append(mark('ask'), N.waiting); status.setAttribute('role', 'status')
-  const elapsed = h('span', 'team-elapsed', fmtTime(Math.floor((Date.now() - run!.createdAt) / 1000))); elapsed.id = 'team-elapsed'
+  const elapsed = h('span', 'team-elapsed', since(run!.createdAt)); elapsed.dataset.since = String(run!.createdAt)
   const title = h('h1', 'crew-title', run!.goal.replace(/\s+/g, ' ')); title.title = run!.goal
   const where = h('span', 'crew-where', folderName(run!.project)); where.prepend(icon('folder', 'sm')); where.title = run!.project
   const meta = h('div', 'crew-head-meta'); meta.append(where, status, elapsed)
@@ -841,7 +899,16 @@ function activityOf(agent: 'claude' | 'codex' | 'local', ev: { type: string; kin
   return ev.type === 'tool' ? `${AGENT_NAME[agent]} is ${stepWords(agent, ev)}` : null
 }
 const stepNow = new Map<string, string>() // task id -> its latest step, for the checklist's running row
-const noteStep = (x: Logged) => { if (x.ev.type !== 'agent' || x.ev.phase === 'plan') return null; const line = activityOf(x.ev.ev.agent, x.ev.ev as never); if (line) stepNow.set(x.ev.taskId, line); return line }
+// task id (and the planner's 'plan', the reviews' 'security' and 'final') -> the agent of its latest event, which may be the reviewer, and that
+// agent's latest tool step in a few words, for the Background tasks cards
+const actNow = new Map<string, { agent: Task['agent']; words?: string; at: number }>()
+const noteStep = (x: Logged) => {
+  if (x.ev.type !== 'agent') return null
+  const { taskId, ev } = x.ev, words = ev.type === 'tool' ? stepWords(ev.agent, ev) : undefined, was = actNow.get(taskId)
+  actNow.set(taskId, { agent: ev.agent, words: words ?? (was?.agent === ev.agent ? was.words : undefined), at: x.t }) // another agent takes over with no step yet
+  if (x.ev.phase === 'plan' || !words) return null
+  const line = `${AGENT_NAME[ev.agent]} is ${words}`; stepNow.set(taskId, line); return line
+}
 const taskTitle = (t: Task) => plainLine(t.title.replace(/\s*Attached files \(open and look at them\):[\s\S]*$/, ''), 200) || 'Look at the attached files'
 function latestActivity(): string | null {
   for (let i = log.length - 1, seen = 0; i >= 0 && seen < 300; i--, seen++) { const x = log[i]; if (x.ev.type === 'agent' && x.ev.phase !== 'plan') { const line = activityOf(x.ev.ev.agent, x.ev.ev as never); if (line) return line } }
@@ -1128,6 +1195,7 @@ function reduceEvent(event: RunEvent, t = Date.now()) {
     const e = event.ev
     const line = noteStep({ t, ev: event }); const idle = line && document.querySelector('.stage-idle-text'); if (idle) idle.textContent = line // keep the empty live view honest
     if (line) { const d = root.querySelector(`.ck-row[data-key='${CSS.escape(event.taskId)}'] .ck-detail`); if (d && d.textContent !== line) d.textContent = line } // the running row's step changes in place, without a redraw
+    if (root.querySelector('.bg-card')) for (const c of bgCards()) { const d = root.querySelector<HTMLElement>(`.bg-card[data-key='${CSS.escape(c.key)}'] .bg-desc`); if (d && d.textContent !== c.desc) { d.textContent = c.desc; d.title = c.desc } } // so do the Background tasks lines
     if (!document.querySelector('.team-lanes')) return // agent events only change Live work: while it is closed nothing is redrawn
     if (!laneDetails) {
       if (e.type === 'code' && event.phase !== 'plan') { if (pushCode({ id: e.id, agent: e.agent, path: e.path, text: e.text, kind: e.kind, done: e.done })) return }
@@ -1157,7 +1225,7 @@ async function resyncTeam() {
   if (!saved || run?.id !== id) return
   run = saved
   const normal = await normaliseTeamEventsAsync(events); log = normal.log; liveFiles = normal.liveFiles
-  stepNow.clear(); log.forEach(noteStep)
+  stepNow.clear(); actNow.clear(); log.forEach(noteStep)
   if (!['planning', 'running', 'paused', 'interrupted'].includes(run.status)) liveFiles.clear()
   renderRun()
 }

@@ -53,7 +53,7 @@ export function reduceTeamView(state: TeamViewState, raw: RunEvent | { type: str
   let log = state.log
   if (event.type === 'live') liveFiles.set(event.taskId, event.files)
   else log = append(log, { t, ev: structuredClone(event) })
-  if (event.type === 'run') { run.status = event.status; run.pausedReason = event.reason }
+  if (event.type === 'run') { run.status = event.status; run.pausedReason = event.reason; run.activeSince = ['planning', 'running', 'verifying'].includes(event.status) ? t : undefined } // as setStatus does: when this planning, work or check began
   else if (event.type === 'plan') { run.plan.summary = event.summary; run.tasks = event.tasks }
   else if (event.type === 'task') { const i = run.tasks.findIndex(task => task.id === event.task.id); if (i >= 0) run.tasks[i] = event.task; else run.tasks.push(event.task); if (event.task.status !== 'running') liveFiles.delete(event.task.id) }
   else if (event.type === 'message' && !run.messages.some(message => message.id === event.message.id)) run.messages.push(event.message)

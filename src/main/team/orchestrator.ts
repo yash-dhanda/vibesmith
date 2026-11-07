@@ -580,6 +580,7 @@ export class TeamOrchestrator {
     t.status = 'cancelled'
     t.phase = null
     t.error = 'Stopped by you.'
+    t.endedAt = Date.now()
     t.stopRequested = undefined
     for (const o of run.tasks) if (o.status === 'blocked' && o.deps.includes(t.id)) (o.status = 'queued'), (o.error = undefined)
     this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', taskId: t.id, body: `Stopped "${t.title}".` })

@@ -31,6 +31,13 @@ describe('Team UI reducer', () => {
     expect(state.liveFiles.has('task')).toBe(false)
   })
 
+  it('a status change says when this planning, work or check began, as the orchestrator does (the Background tasks clock)', () => {
+    let state = reduceTeamView(base(), { type: 'run', runId: 'replay-team-run', status: 'verifying' }, 500)
+    expect(state.run.activeSince).toBe(500)
+    state = reduceTeamView(state, { type: 'run', runId: 'replay-team-run', status: 'paused', reason: 'Paused by you' }, 900)
+    expect(state.run.activeSince).toBeUndefined()
+  })
+
   it('keeps one exact prompt per task and phase', () => {
     let state = reduceTeamView(base(), agent({ type: 'prompt', agent: 'claude', text: 'first' }), 1)
     state = reduceTeamView(state, agent({ type: 'prompt', agent: 'claude', text: 'corrected' }), 2)

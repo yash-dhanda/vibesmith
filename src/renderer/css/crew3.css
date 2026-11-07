@@ -54,6 +54,25 @@
 .crew-side-none { font-family: inherit; margin: 0; }
 .crew-side > .team-fold { margin-top: 12px; }
 .crew-activity { display: flex; flex-direction: column; gap: 12px; padding-top: 8px; }
+/* Background tasks (team.ts renderBackgroundTasks), Claude Code's panel: a hairline card per running task, its title on up to two lines with the
+   time and a square Stop on the right, who does what under it; then what is next and a closed fold of what finished, marks in one column */
+.crew-bg { display: flex; flex-direction: column; gap: 8px; }
+.crew-bg > h3 { margin: 0; }
+.crew-bg:not(.live) .ck-spin { animation-play-state: paused; } /* a paused run holds the arc still, as the checklist does */
+.bg-label { font-size: 12px; line-height: 16px; color: var(--muted); }
+.bg-card { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto 20px; gap: 0 8px; align-items: start; padding: 8px 8px 8px 12px; border: 1px solid var(--hair); border-radius: var(--r-md); } /* the Stop column stays on cards without one: the times line up */
+.bg-card > .ck-mark { margin-top: 3px; }
+.bg-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; font-size: 13px; line-height: 20px; color: var(--text); }
+.bg-time { font: 12px/20px var(--mono); font-variant-numeric: tabular-nums; color: var(--faint); white-space: nowrap; }
+.bg-stop { width: 20px; height: 20px; padding: 0; border-radius: var(--r-xs); box-shadow: inset 0 0 0 1px var(--border); }
+.bg-stop .ic { width: 20px; height: 20px; }
+@media (hover: none) { .bg-card > .bg-stop { position: relative; min-width: 0; min-height: 0; } .bg-card > .bg-stop::after { content: ''; position: absolute; inset: -12px; } } /* touch: the 20px button, a 44px hit area */
+.bg-desc { grid-column: 2 / -1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; color: var(--muted); }
+.bg-next { display: flex; gap: 8px; min-width: 0; font-size: 12px; line-height: 16px; color: var(--muted); }
+.bg-next-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bg-faint { flex: none; color: var(--faint); }
+.bg-done { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 2px 0 2px 13px; font-size: 13px; line-height: 20px; color: var(--muted); } /* 13px: its mark sits under the cards' marks */
+.bg-done-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* one title bar on a run: the run's own header stands in for the Crew page head, from the loading skeleton on, so nothing jumps */
 @media (min-width: 801px) {

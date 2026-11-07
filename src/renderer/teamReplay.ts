@@ -7,6 +7,7 @@ const task = (id: string, title: string, agent: 'claude' | 'codex', status: Task
   fixRounds: status === 'running' && phase === 'fix' ? 1 : 0, reviews: status === 'done' ? [{ by: agent === 'claude' ? 'codex' : 'claude', verdict: 'pass', issues: '', round: 1, at: Date.now() }] : [],
   sessions: {}, branch: null, worktree: null, summary: status === 'done' ? 'Completed and reviewed.' : '', handoff: '',
   changed: status === 'done' ? [{ path: `${id}.ts`, status: 'modified', added: 24, removed: 7 }] : [], usage: usage(status === 'done' ? 2 : 1),
+  startedAt: status === 'queued' ? undefined : Date.now() - (status === 'done' ? 135_000 : 52_000), endedAt: status === 'done' ? Date.now() - 62_000 : undefined,
 })
 
 // Long on purpose: real goals run to several sentences, and the run header must clamp them.
@@ -23,7 +24,7 @@ export function replayRun(state = 'running'): { run: Run; events: { t: number; e
     tasks.splice(0, tasks.length, ...Array.from({ length: 30 }, (_, i) => task(`task-${i + 1}`, `Build resilient part ${i + 1} with an unusually descriptive outcome`, i % 2 ? 'codex' : 'claude', i < 3 ? 'done' : i === 3 ? 'running' : 'queued', i === 3 ? 'work' : null, i ? [`task-${i}`] : [])))
   }
   if (state === 'planning') tasks.splice(0)
-  if (state === 'final' || state === 'applied') for (const item of tasks) { item.status = 'done'; item.phase = null; item.summary = 'Completed and reviewed.' }
+  if (state === 'final' || state === 'applied') for (const item of tasks) { item.status = 'done'; item.phase = null; item.summary = 'Completed and reviewed.'; item.startedAt ??= now - 30_000; item.endedAt ??= now - 5_000 }
   const status = state === 'final' || state === 'approval' ? 'awaiting_approval' : state === 'applied' ? 'done' : state === 'paused' ? 'paused' : state === 'interrupted' ? 'interrupted' : state === 'planning' ? 'planning' : 'running'
   const run: Run = {
     id: 'replay-team-run', project: '/tmp/forge-team-replay', goal: REPLAY_GOAL, status,
