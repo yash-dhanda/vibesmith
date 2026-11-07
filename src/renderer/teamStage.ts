@@ -6,7 +6,7 @@ import { colorize } from './codeColor'
 import { mark } from './glyphs'
 import { reduced } from './ui'
 
-export type StageAgent = 'claude' | 'codex' | 'local'
+export type StageAgent = 'claude' | 'codex' | 'gemini' | 'local'
 export type StageCode = { id: string; agent: StageAgent; path: string; text: string; kind: 'content' | 'diff'; done: boolean }
 export type StageAgentInfo = { agent: StageAgent; name: string; running: boolean }
 
@@ -21,7 +21,7 @@ const remote = (window as { __forgeRemote?: boolean }).__forgeRemote === true
 const MAX_FRESH = remote ? 12 : 90 // fading fragments alive in one block before they are folded back into plain text
 const MAX_BLOCKS = 12 // files kept in the phone's document; older finished ones wait behind "Show earlier files"
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e }
-const NAMES: Record<StageAgent, string> = { claude: 'Claude', codex: 'Codex', local: 'Local' }
+const NAMES: Record<StageAgent, string> = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', local: 'Local' }
 const countLines = (t: string) => (t ? t.split('\n').length : 1)
 const newlines = (t: string) => { let n = 0; for (let i = t.indexOf('\n'); i >= 0; i = t.indexOf('\n', i + 1)) n++; return n }
 function resetCode(b: Block) { b.base = document.createTextNode(''); b.code.replaceChildren(b.base); b.fresh = []; b.shown = 0; b.lines = 1 }

@@ -8,7 +8,7 @@ const OTHER_LIMIT = 200
 const known = new Set(['run', 'plan', 'task', 'agent', 'live', 'message', 'approval', 'verify', 'usage', 'final'])
 
 function bounded(log: LoggedTeamEvent[]) {
-  const agent = { claude: 0, codex: 0, local: 0 }, other: LoggedTeamEvent[] = [], kept: LoggedTeamEvent[] = []
+  const agent = { claude: 0, codex: 0, gemini: 0, local: 0 }, other: LoggedTeamEvent[] = [], kept: LoggedTeamEvent[] = []
   for (let i = log.length - 1; i >= 0; i--) {
     const item = log[i]
     if (item.ev.type === 'agent') {

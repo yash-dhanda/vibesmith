@@ -61,7 +61,7 @@ a.ref-sub { color: var(--muted); text-decoration: underline; text-underline-offs
 .cs-table tfoot { color: var(--muted); font-weight: 500; }
 .cs-who { display: inline-flex; align-items: center; gap: 6px; margin-right: 8px; color: var(--muted); }
 .cs-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--a-claude); }
-.cs-dot[data-agent='codex'] { background: var(--a-codex); }
+.cs-dot[data-agent='codex'] { background: var(--a-codex); } .cs-dot[data-agent='gemini'] { background: var(--a-gemini); }
 .cs-dot[data-agent='local'] { background: var(--a-local); }
 .cs-title { color: var(--text); }
 .cs-forecast { margin: 0; color: var(--text); font-size: 12.5px; line-height: 1.5; }

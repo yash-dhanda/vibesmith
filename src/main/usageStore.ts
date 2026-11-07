@@ -10,7 +10,7 @@ export type UsageSummary = {
   today: { input: number; output: number }
   last7: { input: number; output: number }
   byModel: { model: string; input: number; output: number; calls: number; avgTps: number }[]
-  byAgent: { agent: 'claude' | 'codex' | 'local'; today: number; last7: number; allTime: number }[] // Crew (crew:<agent>) plus Solo chats on local models (ollama:*)
+  byAgent: { agent: 'claude' | 'codex' | 'gemini' | 'local'; today: number; last7: number; allTime: number }[] // Crew (crew:<agent>) plus Solo chats on local models (ollama:*)
   byDay: { day: string; tokens: number }[] // the last 14 days, oldest first, zero-filled
 }
 
@@ -89,7 +89,7 @@ export class UsageStore {
     const days = this.read() ?? {}
     const out: UsageSummary = { allTime: { input: 0, output: 0, calls: 0 }, today: { input: 0, output: 0 }, last7: { input: 0, output: 0 }, byModel: [], byAgent: [], byDay: [] }
     const models = new Map<string, Bucket>()
-    const agents = { claude: [0, 0, 0], codex: [0, 0, 0], local: [0, 0, 0] } // today, last 7 days, all time
+    const agents = { claude: [0, 0, 0], codex: [0, 0, 0], gemini: [0, 0, 0], local: [0, 0, 0] } // today, last 7 days, all time
     const agentOf = (m: string) => (m.startsWith('crew:') ? (m.slice(5) as keyof typeof agents) : m.startsWith('ollama:') ? 'local' : null)
     const today = dayKey(now)
     const week = new Set(Array.from({ length: 7 }, (_, i) => daysBack(now, i)))

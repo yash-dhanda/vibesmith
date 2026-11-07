@@ -22,8 +22,8 @@ export const N = {
   land: 'Land it',
 } as const
 
-export const AGENT_NAME = { claude: 'Claude', codex: 'Codex', local: 'Local' } as const
-export const AGENT_FULL = { claude: 'Claude Code', codex: 'OpenAI Codex', local: 'Local' } as const
+export const AGENT_NAME = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', local: 'Local' } as const
+export const AGENT_FULL = { claude: 'Claude Code', codex: 'OpenAI Codex', gemini: 'Google Gemini', local: 'Local' } as const
 
 // Static markup marks words with data-name="key"; this fills them from the map.
 export function applyNames(root: ParentNode = document) {

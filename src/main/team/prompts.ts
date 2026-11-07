@@ -20,6 +20,7 @@ export type Plan = { summary: string; tasks: PlannedTask[] }
 const ROLE: Record<AgentName, string> = {
   claude: '"claude" for architecture, planning, multi-file design and research',
   codex: '"codex" for well-scoped implementation and tests',
+  gemini: '"gemini" (Google Gemini) for large-context reading, research, UI work and well-scoped implementation',
   local: '"local" (a small model on the user\'s computer) for simple, well-bounded chores such as boilerplate, config, docs and small tests',
 }
 
@@ -264,7 +265,7 @@ Reply with a short list of the real problems, the most serious first, each with 
 
 // ---------------------------------------------------------------- the final report the user reads
 
-const NAME: Record<AgentName, string> = { claude: 'Claude', codex: 'Codex', local: 'Local' }
+const NAME: Record<AgentName, string> = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', local: 'Local' }
 // `changed`: this round's files (the diff Apply will carry); without it the files of every finished task are listed.
 export function buildReport(run: Run, verify: { ok: boolean | null; command?: string; output?: string }, reviewNotes: string[], changed?: Task['changed']): string {
   const lines: string[] = [`# ${run.goal.split('\n')[0].slice(0, 120)}`, '', run.plan.summary ? `${run.plan.summary}\n` : '']

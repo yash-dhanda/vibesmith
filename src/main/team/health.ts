@@ -1,4 +1,7 @@
 import { execFile, spawn } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { resolveCommand } from './bin'
 import { cleanEnv } from './process'
 import type { AgentName } from './events'
@@ -79,7 +82,27 @@ export async function checkLocal(): Promise<Health> {
   return { agent: 'local', ok: true, detail: `${models.length} model${models.length === 1 ? '' : 's'} installed` }
 }
 
-export const checkTeamTools = () => Promise.all([checkClaude(), checkCodex(), checkLocal()])
+// Gemini CLI signed in with a Google account (Google AI Pro / Ultra, or the free tier): the login lives in ~/.gemini. An API key or Vertex
+// bills per use, so it is refused like the other agents' API keys.
+export function judgeGeminiAuth(hasLogin: boolean, authType?: string): { ok: boolean; detail: string; fix?: string } {
+  if (authType && /api[-_ ]?key|vertex/i.test(authType)) return { ok: false, detail: `Gemini CLI is set to ${authType}, which bills per use instead of using your Google AI plan.`, fix: 'Run `gemini`, choose "Login with Google" and sign in with your Google AI Pro account.' }
+  if (!hasLogin) return { ok: false, detail: 'Gemini CLI is not signed in.', fix: 'Run `gemini` once, choose "Login with Google" and sign in with your Google AI Pro account.' }
+  return { ok: true, detail: 'signed in with your Google account' }
+}
+
+export async function checkGemini(bin = 'gemini', home = homedir()): Promise<Health> {
+  const v = await run(bin, ['--version'])
+  if (v.missing) return { agent: 'gemini', ok: false, detail: 'Gemini CLI is not installed.', fix: 'Install it with `npm i -g @google/gemini-cli`, then run `gemini` once and choose "Login with Google".' }
+  const version = v.out.trim().split('\n')[0]
+  let authType: string | undefined
+  try {
+    authType = JSON.parse(readFileSync(join(home, '.gemini', 'settings.json'), 'utf8'))?.security?.auth?.selectedType
+  } catch {}
+  const a = judgeGeminiAuth(existsSync(join(home, '.gemini', 'oauth_creds.json')), authType)
+  return a.ok ? { agent: 'gemini', ok: true, detail: a.detail, version } : { agent: 'gemini', ok: false, detail: a.detail, fix: a.fix, version }
+}
+
+export const checkTeamTools = () => Promise.all([checkClaude(), checkCodex(), checkGemini(), checkLocal()])
 
 export type LimitInfo = { primaryPct: number; primaryResetsAt?: number; secondaryPct?: number; secondaryResetsAt?: number; plan?: string }
 

@@ -18,7 +18,7 @@ const stamp = (t = Date.now()) => {
   return `${new Date(t + off * 60_000).toISOString().slice(0, 16).replace('T', ' ')} ${off < 0 ? '-' : '+'}${pad(off / 60)}:${pad(off % 60)}`
 }
 const oneLine = (s: string, n: number) => redact(s).replace(/\s+/g, ' ').trim().slice(0, n)
-const AGENT = { claude: 'Claude', codex: 'Codex', local: 'Local' } as const
+const AGENT = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', local: 'Local' } as const
 const NOFOLLOW = constants.O_NOFOLLOW ?? 0
 
 export const historyPath = (project: string) => join(project, HISTORY_DIR, HISTORY_FILE)

@@ -113,12 +113,12 @@ type Live = {
   bg: Set<Promise<unknown>> // the planner and the last steps: turns that are not tasks, but must have stopped before a resume replaces the controller
 }
 
-// Who does a job: the strongest agent that is ready (Claude, then Codex, then the local model), optionally not the one that wrote the work.
-const PREFER: AgentName[] = ['claude', 'codex', 'local']
+// Who does a job: the strongest agent that is ready (Claude, then Codex, then Gemini, then the local model), optionally not the one that wrote the work.
+const PREFER: AgentName[] = ['claude', 'codex', 'gemini', 'local']
 const strongest = (avail: AgentName[], not?: AgentName): AgentName => PREFER.find((a) => a !== not && avail.includes(a)) ?? PREFER.find((a) => avail.includes(a)) ?? avail[0]
 // A cap of 100 is the highest the user can allow: reaching it must not stop the run for good, and an agent that is really out answers with a limit error.
 const over = (pct: number, cap: number) => (cap >= 100 ? pct > cap : pct >= cap)
-const label = (a: AgentName) => (a === 'claude' ? 'Claude' : a === 'codex' ? 'Codex' : 'The local model')
+const label = (a: AgentName) => (a === 'claude' ? 'Claude' : a === 'codex' ? 'Codex' : a === 'gemini' ? 'Gemini' : 'The local model')
 const inLine = (a: AgentName) => (a === 'local' ? 'the local model' : label(a)) // label() inside a sentence
 const id = (p: string) => `${p}${randomUUID().slice(0, 8)}`
 const MAX_PROPOSALS = 6
@@ -220,7 +220,7 @@ export class TeamOrchestrator {
     const config: TeamConfig = { ...DEFAULT_CONFIG, ...cfg, budget: { ...DEFAULT_CONFIG.budget, ...cfg.budget } }
     const ready = await this.d.available()
     const { agents: available, skipped } = await this.usable(config.maxLimitPercent)
-    if (!ready.length) throw new Error('No agent is ready. Sign in to Claude Code or Codex, or start Ollama with a model, first.')
+    if (!ready.length) throw new Error('No agent is ready. Sign in to Claude Code, Codex or Gemini CLI, or start Ollama with a model, first.')
     if (!available.length) throw new Error(`${skipped.join(' ')} Wait for the allowance to reset, or raise the limit in the team settings.`)
     if (available.includes('codex') && !config.codexModel) {
       const m = await this.d.codexModels()
@@ -287,7 +287,7 @@ export class TeamOrchestrator {
     if (run.approvals.some((a) => a.kind === 'plan' && a.status === 'pending')) return void this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: 'Approve or edit the plan first; nothing starts before that.' })
     const { agents: available, skipped } = await this.usable(run.config.maxLimitPercent) // the user may have just signed an agent in
     for (const note of skipped) this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: note })
-    if (!available.length) return void this.setStatus(run, run.status, 'Neither Claude Code nor Codex is signed in yet.')
+    if (!available.length) return void this.setStatus(run, run.status, 'No agent is signed in yet.')
     let live = this.live.get(runId)
     if (!live) {
       live = this.newLive(available)
@@ -675,19 +675,20 @@ export class TeamOrchestrator {
   }
 
   // Change which models the agents use for the rest of the run. Work already running keeps its model; the next task each agent starts uses the new one.
-  setModels(runId: string, m: { claudeModel?: string; codexModel?: string; localModel?: string; claudeEffort?: string; codexEffort?: string; bypassPermissions?: boolean }) {
+  setModels(runId: string, m: { claudeModel?: string; codexModel?: string; geminiModel?: string; localModel?: string; claudeEffort?: string; codexEffort?: string; bypassPermissions?: boolean }) {
     const run = this.runOf(runId)
     if (!run) return null
     const name = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, 120) : undefined)
     const c = run.config
     if (m.claudeModel !== undefined) c.claudeModel = name(m.claudeModel) || undefined
     if (m.codexModel !== undefined && name(m.codexModel)) c.codexModel = name(m.codexModel)!
+    if (m.geminiModel !== undefined) c.geminiModel = name(m.geminiModel) || undefined
     if (m.localModel !== undefined) c.localModel = name(m.localModel) || undefined
     if (['low', 'medium', 'high', 'xhigh', 'max'].includes(m.claudeEffort ?? '')) c.claudeEffort = m.claudeEffort as TeamConfig['claudeEffort']
     if (['low', 'medium', 'high', 'xhigh'].includes(m.codexEffort ?? '')) c.codexEffort = m.codexEffort as TeamConfig['codexEffort']
     if (typeof m.bypassPermissions === 'boolean') c.bypassPermissions = m.bypassPermissions
     this.save(run)
-    return { claudeModel: c.claudeModel, codexModel: c.codexModel, localModel: c.localModel, claudeEffort: c.claudeEffort, codexEffort: c.codexEffort, bypassPermissions: c.bypassPermissions !== false }
+    return { claudeModel: c.claudeModel, codexModel: c.codexModel, geminiModel: c.geminiModel, localModel: c.localModel, claudeEffort: c.claudeEffort, codexEffort: c.codexEffort, bypassPermissions: c.bypassPermissions !== false }
   }
 
   private raiseBudget(run: Run, factor = 1.5) {
@@ -826,7 +827,7 @@ export class TeamOrchestrator {
       const hit = l && (over(l.primaryPct, cap) ? ['this window', l.primaryPct, l.primaryResetsAt] : l.secondaryPct !== undefined && over(l.secondaryPct, cap) ? ['this week', l.secondaryPct, l.secondaryResetsAt] : null)
       if (!hit) return true
       const when = hit[2] ? ` It resets around ${new Date(Number(hit[2]) * 1000).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}.` : ''
-      skipped.push(`${a === 'codex' ? 'Codex' : 'Claude'} was left out: ${a === 'codex' ? 'your ChatGPT plan' : 'your Claude plan'} allowance for ${hit[0]} is ${Math.round(Number(hit[1]))}% used.${when}`)
+      skipped.push(`${label(a)} was left out: ${a === 'codex' ? 'your ChatGPT plan' : a === 'gemini' ? 'your Google AI plan' : 'your Claude plan'} allowance for ${hit[0]} is ${Math.round(Number(hit[1]))}% used.${when}`)
       return false
     })
     return { agents, skipped }
@@ -1059,14 +1060,14 @@ export class TeamOrchestrator {
   // The one place an agent is run: wires events, usage, session handles and the budget.
   private async agentRun(run: Run, task: Task, agent: AgentName, phase: TaskPhase | 'plan' | 'final-review', prompt: string, write: boolean, cwd: string, resume?: string, changedFiles?: number): Promise<RunResult> {
     const live = this.liveOf(run)
-    const skills = ['work', 'fix', 'plan'].includes(phase) && agent !== 'local' ? this.d.skills?.() : undefined // the local model cannot read outside its task folder
-    const att = agent !== 'local' && ['work', 'fix', 'plan', 'review', 'final-review'].includes(phase) ? run.config.attachments : undefined
+    const skills = ['work', 'fix', 'plan'].includes(phase) && agent !== 'local' && agent !== 'gemini' ? this.d.skills?.() : undefined // the local model cannot read outside its task folder, and Gemini CLI is not given the skill folders
+    const att = agent !== 'local' && agent !== 'gemini' && ['work', 'fix', 'plan', 'review', 'final-review'].includes(phase) ? run.config.attachments : undefined
     if (att?.length) prompt = `${attachmentsBlock(att)}\n\n${prompt}`
     const past = ['work', 'fix', 'plan'].includes(phase) ? historyBlock(run.project) : ''
     if (past) prompt = `${past}\n\n${prompt}`
     if (skills?.block) prompt = `${skills.block}\n\n${prompt}`
-    if (agent === 'local') {
-      const text = ['work', 'fix'].includes(phase) ? this.d.localSkills?.() : ''
+    if (agent === 'local' || agent === 'gemini') { // neither has the team tools: the closing summary is the hand-over
+      const text = agent === 'local' && ['work', 'fix'].includes(phase) ? this.d.localSkills?.() : ''
       prompt = forLocal(prompt)
       if (text) prompt = `${text}\n\n${prompt}`
     }
@@ -1082,7 +1083,7 @@ export class TeamOrchestrator {
     live.agentRuns.set(runKey, state)
     const call = async (resumeId: string | undefined) => this.d.runner(agent, {
       cwd, prompt, write, resume: resumeId, signal: ac.signal, taskId: task.id, link: await this.linkFor(run, task, agent),
-      model: agent === 'codex' ? run.config.codexModel : agent === 'local' ? run.config.localModel : run.config.claudeModel,
+      model: agent === 'codex' ? run.config.codexModel : agent === 'gemini' ? run.config.geminiModel : agent === 'local' ? run.config.localModel : run.config.claudeModel,
       effort: effortFor({ agent, phase, kind: task.kind, changedFiles: changedFiles ?? (phase === 'review' ? task.changed.length : undefined), config: run.config }),
       codexMode: run.config.codexMode,
       addDirs: [...(skills?.dirs ?? []), ...(past ? [join(run.project, HISTORY_DIR)] : []), ...(att?.length ? [join(this.d.teamDir, 'attachments')] : []), ...(phase === 'final-review' && live.shots?.length ? [join(this.d.teamDir, 'visual', run.id)] : []), ...(existsSync(join(run.project, '.forge', 'references', 'repos')) ? [join(run.project, '.forge', 'references', 'repos')] : [])],
@@ -1160,7 +1161,7 @@ export class TeamOrchestrator {
     const cap = run.config.maxLimitPercent
     if (cap)
       for (const [a, l] of Object.entries(run.limits ?? {})) {
-        const who = a === 'codex' ? 'your ChatGPT plan' : 'your Claude plan'
+        const who = a === 'codex' ? 'your ChatGPT plan' : a === 'gemini' ? 'your Google AI plan' : 'your Claude plan'
         if (l && over(l.primaryPct, cap)) return `${who} allowance for this window is ${Math.round(l.primaryPct)}% used`
         if (l?.secondaryPct !== undefined && over(l.secondaryPct, cap)) return `${who} weekly allowance is ${Math.round(l.secondaryPct)}% used`
       }

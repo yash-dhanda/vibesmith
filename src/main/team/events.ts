@@ -1,7 +1,7 @@
-// What every agent (Claude Code, Codex, a local Ollama model) is reduced to, so the rest of Forge never sees a vendor format.
-export type AgentName = 'claude' | 'codex' | 'local'
-export const AGENTS: AgentName[] = ['claude', 'codex', 'local']
-export const isAgent = (v: unknown): v is AgentName => v === 'claude' || v === 'codex' || v === 'local'
+// What every agent (Claude Code, Codex, Gemini CLI, a local Ollama model) is reduced to, so the rest of Forge never sees a vendor format.
+export type AgentName = 'claude' | 'codex' | 'gemini' | 'local'
+export const AGENTS: AgentName[] = ['claude', 'codex', 'gemini', 'local']
+export const isAgent = (v: unknown): v is AgentName => v === 'claude' || v === 'codex' || v === 'gemini' || v === 'local'
 export type ErrorKind = 'auth' | 'model' | 'limit' | 'timeout' | 'stalled' | 'aborted' | 'missing' | 'protocol' | 'busy' | 'other'
 
 export type TeamEvent =
@@ -29,7 +29,7 @@ export function classifyError(msg: string): ErrorKind {
   if (/model[_ ]not[_ ]found|not supported when using|unknown model|invalid model/i.test(msg)) return 'model'
   if (/usage limit|limit reached|out of (extra )?usage|5-hour|weekly limit|plan limit|quota|hit your [\w -]*limit|usage credit limit/i.test(msg)) return 'limit' // the plan's allowance: waiting minutes will not help
   if (/rate limit|\b429\b|overloaded|too many requests|temporarily unavailable|\b529\b/i.test(msg)) return 'busy' // a short-lived rejection: trying again soon works
-  if (/authenticat|oauth|not logged in|log ?in|\b401\b|unauthorized|expired/i.test(msg)) return 'auth'
+  if (/authenticat|oauth|auth method|not logged in|log ?in|\b401\b|unauthorized|expired/i.test(msg)) return 'auth'
   return 'other'
 }
 

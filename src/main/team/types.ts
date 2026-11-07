@@ -76,6 +76,7 @@ export type TeamConfig = {
   codexModel: string
   localModel?: string // the Ollama model the local agent uses; empty = the best installed one
   claudeModel?: string
+  geminiModel?: string // the model Gemini CLI uses; empty = the CLI's own choice for the signed-in Google AI plan
   bypassPermissions?: boolean // never ask the user to allow a command or file read (default on). Hard limits stay: no push, no sudo, no writes outside the task folder or to secrets
   claudeEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   attachments?: import('./attach').TeamAttachment[] // pictures, videos and files the user gave this run
@@ -135,7 +136,7 @@ export type Run = {
   decisions: Decision[]
   errors: ErrorRecord[]
   approvals: Approval[]
-  usage: Record<'claude' | 'codex', Usage> & { local?: Usage } // `local` is missing on runs saved before the local agent existed
+  usage: Record<'claude' | 'codex', Usage> & { local?: Usage; gemini?: Usage } // `local` and `gemini` are missing on runs saved before those agents existed
   config: TeamConfig
   limits?: Partial<Record<AgentName, { primaryPct: number; primaryResetsAt?: number; secondaryPct?: number; secondaryResetsAt?: number }>>
   final?: RunFinal

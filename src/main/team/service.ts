@@ -29,6 +29,7 @@ export function sanitizeConfig(raw: unknown): Partial<TeamConfig> {
   if (r.planner === 'auto' || isAgent(r.planner)) out.planner = r.planner
   if (typeof r.localModel === 'string' && /^[\w.:/-]{1,80}$/.test(r.localModel)) out.localModel = r.localModel
   if (typeof r.codexModel === 'string' && /^[\w.:-]{1,60}$/.test(r.codexModel)) out.codexModel = r.codexModel
+  if (typeof r.geminiModel === 'string' && /^[\w.:-]{1,60}$/.test(r.geminiModel)) out.geminiModel = r.geminiModel
   if (typeof r.bypassPermissions === 'boolean') out.bypassPermissions = r.bypassPermissions
   if (r.claudeEffort === 'low' || r.claudeEffort === 'medium' || r.claudeEffort === 'high' || r.claudeEffort === 'xhigh' || r.claudeEffort === 'max') out.claudeEffort = r.claudeEffort
   if (r.codexEffort === 'low' || r.codexEffort === 'medium' || r.codexEffort === 'high' || r.codexEffort === 'xhigh') out.codexEffort = r.codexEffort

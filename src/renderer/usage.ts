@@ -48,7 +48,7 @@ export async function renderUsage(into: HTMLElement) {
     c.append(h('div', 'k', `${AGENT_NAME[a.agent]} today`), h('div', 'v', formatTokens(a.today)), h('div', 'note', `${formatTokens(a.last7)} this week · ${formatTokens(a.allTime)} all time`))
     agentCards.append(c)
   }
-  crew.append(agentCards, h('div', 'note', `${N.crew} work counts for ${AGENT_NAME.claude}, ${AGENT_NAME.codex} and ${AGENT_NAME.local}. ${AGENT_NAME.local} also includes ${N.solo} chats on your Ollama models.`))
+  crew.append(agentCards, h('div', 'note', `${N.crew} work counts for ${AGENT_NAME.claude}, ${AGENT_NAME.codex}, ${AGENT_NAME.gemini} and ${AGENT_NAME.local}. ${AGENT_NAME.local} also includes ${N.solo} chats on your Ollama models.`))
   into.append(crew)
 
   const chart = h('div', 'sgroup')

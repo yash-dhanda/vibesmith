@@ -338,7 +338,7 @@ async function team(into: HTMLElement) {
 
   const p = group('Planning')
   p.box.append(
-    row('Planner', 'Chooses who splits the goal into tasks.', choose([['auto', 'Choose for me'], ['claude', 'Claude'], ['codex', 'Codex'], ['local', AGENT_NAME.local]], cfg.planner ?? 'auto', (v) => put('planner', v as TeamConfig['planner']))),
+    row('Planner', 'Chooses who splits the goal into tasks.', choose([['auto', 'Choose for me'], ['claude', 'Claude'], ['codex', 'Codex'], ['gemini', 'Gemini'], ['local', AGENT_NAME.local]], cfg.planner ?? 'auto', (v) => put('planner', v as TeamConfig['planner']))),
     row('Plan approval', 'Stop after planning so you can edit, reassign or skip tasks before any agent works.', onOff(!!cfg.reviewPlan, (v) => put('reviewPlan', v))),
     row('Task review', 'Each agent checks the other’s work before it is merged.', onOff((cfg.review ?? 'cross') === 'cross', (v) => put('review', v ? 'cross' : 'off'))),
     row('Final review', 'Automatic checks the whole result only for runs of 3 or more tasks, which saves plan usage.', choose([['auto', 'Automatic'], ['true', 'Always'], ['false', 'Skip']], String(cfg.finalReview ?? 'auto'), (v) => put('finalReview', v === 'auto' ? 'auto' : v === 'true'))),
@@ -346,7 +346,7 @@ async function team(into: HTMLElement) {
     row('Never push', 'Hide Push and Open pull request after a run lands and refuse them in the app. Commit to a local branch still works. Your own git commands are not affected.', onOff(!!cfg.neverPush, (v) => put('neverPush', v))),
     row('Security review', 'A final read-only check for secrets, injection, missing authorisation and unsafe input before landing. Automatic runs it when auth, payment, admin, secret or dependency files change.', choose([['auto', 'Automatic'], ['always', 'Always'], ['off', 'Off']], cfg.securityReview ?? 'auto', (v) => put('securityReview', v as TeamConfig['securityReview']))),
     row('Write tests', 'After the build tasks, one agent writes or extends tests for the changed code when the project has a test command.', onOff(cfg.testTask !== false, (v) => put('testTask', v))),
-    row('Switch agents at a limit', 'When Claude or Codex reaches its plan limit, another ready agent takes over its tasks and the run keeps going.', onOff(cfg.autoSwitch !== false, (v) => put('autoSwitch', v))),
+    row('Switch agents at a limit', 'When an agent reaches its plan limit, another ready agent takes over its tasks and the run keeps going.', onOff(cfg.autoSwitch !== false, (v) => put('autoSwitch', v))),
     row('Effort', 'Automatic thinks less on reading and small reviews and keeps your chosen effort for building. Cheap uses the least and prefers Codex and the local model for building.', choose([['auto', 'Automatic'], ['fixed', 'As set below'], ['cheap', 'Cheap']], cfg.effortMode ?? 'auto', (v) => put('effortMode', v as TeamConfig['effortMode']))),
   )
   into.append(p.g)
@@ -356,6 +356,8 @@ async function team(into: HTMLElement) {
   if (cfg.claudeModel && !claudeModels.some(([v]) => v === cfg.claudeModel)) claudeModels.push([cfg.claudeModel, cfg.claudeModel])
   const codexModel = field('text', cfg.codexModel ?? '', 'Codex default')
   codexModel.onchange = () => put('codexModel', codexModel.value.trim())
+  const geminiModels: [string, string][] = [['', 'Account default'], ['gemini-2.5-pro', '2.5 Pro'], ['gemini-2.5-flash', '2.5 Flash']]
+  if (cfg.geminiModel && !geminiModels.some(([v]) => v === cfg.geminiModel)) geminiModels.push([cfg.geminiModel, cfg.geminiModel])
   const m = group('Models and effort')
   m.box.append(
     row('Claude model', 'The Claude Code model for tasks and reviews.', choose(claudeModels, cfg.claudeModel ?? '', (v) => put('claudeModel', v || undefined))),
@@ -363,6 +365,7 @@ async function team(into: HTMLElement) {
     row('Codex model', 'The model name Codex should use. Leave empty for its default.', codexModel),
     row('Codex effort', 'How hard Codex reasons before it answers.', choose(efforts, cfg.codexEffort ?? 'high', (v) => put('codexEffort', v as TeamConfig['codexEffort']))),
     row('Codex connection', 'Live sessions support streaming and immediate steering.', choose([['app-server', 'Live session'], ['exec', 'Simple run']], cfg.codexMode ?? 'app-server', (v) => put('codexMode', v as TeamConfig['codexMode']))),
+    row('Gemini model', 'The Gemini CLI model for tasks and reviews, on your Google AI plan.', choose(geminiModels, cfg.geminiModel ?? '', (v) => put('geminiModel', v || undefined))),
     row(`${AGENT_NAME.local} model`, ol.models.length ? `The Ollama model ${AGENT_NAME.local} uses.` : 'No Ollama models are installed.', choose([['', 'Best installed'], ...ol.models.map((n) => [n, n] as [string, string])], cfg.localModel ?? '', (v) => put('localModel', v || undefined))),
   )
   into.append(m.g)

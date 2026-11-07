@@ -55,7 +55,7 @@ const steerDrafts = new Map<string, string>() // each run's message box keeps it
 let goalDraft = '' // the start card's goal survives a trip to Solo and back (the card is built again each time)
 let nav = 0 // every page load takes a number: a load that finishes after another one started draws nothing
 const questionDrafts = new Map<string, { picked: number[]; other: string }>() // a live redraw must not lose a half-made answer
-let steerTarget: 'all' | 'claude' | 'codex' | 'local' = 'all'
+let steerTarget: 'all' | 'claude' | 'codex' | 'gemini' | 'local' = 'all'
 let laneDetails = (() => { try { return localStorage.getItem('forge.teamLaneDetails') === '1' } catch { return false } })()
 // The lanes show the code each agent is writing, live. Planning output, talk, commands, step results, prompts and reasoning sit behind "Details".
 const laneVisible = (ev: RunEvent & { type: 'agent' }) => { const e = ev.ev; return laneDetails || (ev.phase !== 'plan' && (e.type === 'code' || e.type === 'error' || (e.type === 'done' && !e.ok))) }
@@ -67,7 +67,7 @@ const statusLabel = (status: Run['status']) => ({ planning: 'Planning', running:
 // A status as its mark plus its word.
 function statusTag(status: Run['status']) { const tag = h('span', `status-pill ${status}`); tag.append(mark(RUN_MARK[status]), statusLabel(status)); return tag }
 // An agent's error as one plain line: the orchestrator's "codex: …" names the agent as Codex, and no markdown, emoji or code block shows.
-const plainError = (text: string, max = 300) => plainLine(text.replace(/^(claude|codex|local): /, (_, a: 'claude' | 'codex' | 'local') => `${AGENT_NAME[a]}: `), max)
+const plainError = (text: string, max = 300) => plainLine(text.replace(/^(claude|codex|local): /, (_, a: 'claude' | 'codex' | 'gemini' | 'local') => `${AGENT_NAME[a]}: `), max)
 // Section heading: a short title on the left, a quiet count on the right.
 function sectionHead(title: string, meta: string) { const head = h('div', 'team-section-head'); head.append(h('div', '', title), h('span', '', meta)); return head }
 const fileStatus = (status: string) => { const s = h('span', `file-status ${status}`); s.append(fileIcon(status)); s.title = status; return s }
@@ -217,7 +217,7 @@ async function showEntry() {
   more.setAttribute('aria-controls', advanced.id); more.setAttribute('aria-expanded', 'false')
   const showMore = (open: boolean) => { advanced.hidden = !open; more.setAttribute('aria-expanded', String(open)) }
   more.onclick = () => showMore(more.getAttribute('aria-expanded') !== 'true')
-  const planner = select([['auto', 'Choose for me'], ['claude', 'Claude'], ['codex', 'Codex'], ['local', AGENT_NAME.local]], defaults.planner ?? 'auto')
+  const planner = select([['auto', 'Choose for me'], ['claude', 'Claude'], ['codex', 'Codex'], ['gemini', 'Gemini'], ['local', AGENT_NAME.local]], defaults.planner ?? 'auto')
   const parallel = input('number', String(defaults.maxParallelPerAgent ?? 2)); parallel.min = '1'; parallel.max = '4'
   const review = select([['cross', 'Cross-review every task'], ['off', 'No cross-review']], defaults.review ?? 'cross')
   const finalReview = select([['auto', 'Automatic (bigger runs only)'], ['true', 'Always check the combined result'], ['false', 'Skip the final review']], String(defaults.finalReview ?? 'auto'))
@@ -231,6 +231,8 @@ async function showEntry() {
   const claudeModels: [string, string][] = [['', 'Default'], ['claude-opus-5-5', 'Opus 5.5'], ['claude-sonnet-5-5', 'Sonnet 5.5'], ['claude-haiku-5-5', 'Haiku 5.5'], ['claude-fable-5-1', 'Fable 5.1']]
   if (defaults.claudeModel && !claudeModels.some(([v]) => v === defaults.claudeModel)) claudeModels.push([defaults.claudeModel, defaults.claudeModel])
   const claudeModel = select(claudeModels, defaults.claudeModel ?? ''); claudeModel.setAttribute('aria-label', 'Claude model')
+  const geminiModels = [...GEMINI_MODEL_CHOICES]; if (defaults.geminiModel && !geminiModels.some(([v]) => v === defaults.geminiModel)) geminiModels.push([defaults.geminiModel, defaults.geminiModel])
+  const geminiModel = select(geminiModels, defaults.geminiModel ?? ''); geminiModel.setAttribute('aria-label', `${AGENT_NAME.gemini} model`)
   const codexEffort = select([['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high']], defaults.codexEffort ?? 'high'); codexEffort.setAttribute('aria-label', 'Codex reasoning effort')
   const effort = select([['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high'], ['max', 'Maximum']], defaults.claudeEffort ?? 'high'); effort.setAttribute('aria-label', 'Claude effort')
   const minutes = input('number', ''); minutes.min = '1'; minutes.placeholder = 'No limit'
@@ -254,9 +256,9 @@ async function showEntry() {
   const readConfig = (): Partial<TeamConfig> | null => {
     if (numeric.some(item => !item.checkValidity() || !Number.isFinite(Number(item.value)))) { showMore(true); validation.textContent = 'Check the highlighted crew settings.'; numeric.find(item => !item.checkValidity())?.focus(); return null }
     validation.textContent = ''
-    return { askQuestions: ask.on(), webResearch: web.on(), planner: planner.value as TeamConfig['planner'], maxParallelPerAgent: Number(parallel.value), review: review.value as TeamConfig['review'], finalReview: finalReview.value === 'auto' ? 'auto' : finalReview.value === 'true', reviewPlan: reviewPlan.value === 'true', bypassPermissions: permissions.value === 'bypass', maxFixRounds: Number(fixRounds.value), codexMode: codexMode.value as TeamConfig['codexMode'], verify: verify.value.trim() || undefined, codexModel: codexModel.value, localModel: localModel.value || undefined, claudeModel: claudeModel.value.trim() || undefined, claudeEffort: effort.value as TeamConfig['claudeEffort'], codexEffort: codexEffort.value as TeamConfig['codexEffort'], maxLimitPercent: Number(limit.value), budget: { maxMinutes: Number(minutes.value) || undefined, maxTokens: Number(tokens.value) || undefined, maxAgentRuns: Number(runs.value) || undefined, maxTasks: Number(maxTasks.value) } }
+    return { askQuestions: ask.on(), webResearch: web.on(), planner: planner.value as TeamConfig['planner'], maxParallelPerAgent: Number(parallel.value), review: review.value as TeamConfig['review'], finalReview: finalReview.value === 'auto' ? 'auto' : finalReview.value === 'true', reviewPlan: reviewPlan.value === 'true', bypassPermissions: permissions.value === 'bypass', maxFixRounds: Number(fixRounds.value), codexMode: codexMode.value as TeamConfig['codexMode'], verify: verify.value.trim() || undefined, codexModel: codexModel.value, localModel: localModel.value || undefined, claudeModel: claudeModel.value.trim() || undefined, geminiModel: geminiModel.value || undefined, claudeEffort: effort.value as TeamConfig['claudeEffort'], codexEffort: codexEffort.value as TeamConfig['codexEffort'], maxLimitPercent: Number(limit.value), budget: { maxMinutes: Number(minutes.value) || undefined, maxTokens: Number(tokens.value) || undefined, maxAgentRuns: Number(runs.value) || undefined, maxTasks: Number(maxTasks.value) } }
   }
-  const reset = h('button', 'btn', 'Reset defaults') as HTMLButtonElement; reset.type = 'button'; reset.onclick = () => { ask.set(true); web.set(true); planner.value = 'auto'; parallel.value = '2'; review.value = 'cross'; finalReview.value = 'auto'; reviewPlan.value = 'false'; permissions.value = 'bypass'; fixRounds.value = '3'; verify.value = ''; codexMode.value = 'app-server'; claudeModel.value = ''; effort.value = 'high'; codexEffort.value = 'high'; minutes.value = ''; tokens.value = ''; runs.value = ''; maxTasks.value = '12'; limit.value = '0'; paintChips(); validation.textContent = 'Defaults restored. They will save when you start a run.' }
+  const reset = h('button', 'btn', 'Reset defaults') as HTMLButtonElement; reset.type = 'button'; reset.onclick = () => { ask.set(true); web.set(true); planner.value = 'auto'; parallel.value = '2'; review.value = 'cross'; finalReview.value = 'auto'; reviewPlan.value = 'false'; permissions.value = 'bypass'; fixRounds.value = '3'; verify.value = ''; codexMode.value = 'app-server'; claudeModel.value = ''; geminiModel.value = ''; effort.value = 'high'; codexEffort.value = 'high'; minutes.value = ''; tokens.value = ''; runs.value = ''; maxTasks.value = '12'; limit.value = '0'; paintChips(); validation.textContent = 'Defaults restored. They will save when you start a run.' }
   const saveDefaults = h('button', 'btn', 'Save defaults') as HTMLButtonElement; saveDefaults.type = 'button'; saveDefaults.onclick = () => void call(async () => { const config = readConfig(); if (!config || typeof window.forge.teamSettingsSet !== 'function') return; await window.forge.teamSettingsSet(config); validation.textContent = 'Crew defaults saved for this project' })
   const settingActions = h('div', 'team-setting-actions'); settingActions.append(reset, saveDefaults)
   advanced.append(grid, validation, settingActions)
@@ -294,7 +296,7 @@ async function showEntry() {
   const paints: (() => void)[] = []
   const paintChips = () => paints.forEach(paint => paint())
   const readyAgents = new Set(health.agents.filter(a => a.ok).map(a => a.agent))
-  const agentChip = (agent: 'claude' | 'codex' | 'local', model: HTMLSelectElement, effortSel?: HTMLSelectElement) => {
+  const agentChip = (agent: 'claude' | 'codex' | 'gemini' | 'local', model: HTMLSelectElement, effortSel?: HTMLSelectElement) => {
     const chip = h('button', `crew-chip ${agent}`) as HTMLButtonElement; chip.type = 'button'
     const words = h('span', 'crew-chip-words')
     const shown = (s: HTMLSelectElement) => s.selectedOptions[0]?.text ?? ''
@@ -313,6 +315,7 @@ async function showEntry() {
     agentsBox.append(chip, pop)
   }
   agentChip('claude', claudeModel, effort); agentChip('codex', codexModel, codexEffort)
+  if (health.agents.some(a => a.agent === 'gemini' && (a.ok || a.version))) agentChip('gemini', geminiModel)
   if (health.localModels.length) agentChip('local', localModel)
   paintChips()
   agentsBox.addEventListener('keydown', e => { // Escape here must not also reach the window (it stops a running Solo agent)
@@ -570,8 +573,8 @@ function renderSidePanel() {
   const bg = renderBackgroundTasks(); if (bg) side.append(bg)
   side.append(sec('Project', row('folder', folderName(run!.project), run!.project), row('code', run!.integrationBranch, run!.integrationBranch)))
   const agents = h('div', 'crew-side-agents')
-  for (const agent of ['claude', 'codex', 'local'] as const) {
-    const u = run!.usage[agent]; const model = agent === 'claude' ? run!.config.claudeModel || 'Default' : agent === 'codex' ? run!.config.codexModel : run!.config.localModel
+  for (const agent of ['claude', 'codex', 'gemini', 'local'] as const) {
+    const u = run!.usage[agent]; const model = agent === 'claude' ? run!.config.claudeModel || 'Default' : agent === 'codex' ? run!.config.codexModel : agent === 'gemini' ? run!.config.geminiModel || 'Default' : run!.config.localModel
     if (!u?.runs && !(agent === 'local' && run!.config.localModel)) continue
     const r = h('div', 'crew-side-agent'); r.dataset.key = agent; r.append(h('span', `agent-orb ${agent}`), h('strong', '', AGENT_NAME[agent]), h('span', 'crew-side-model', model || ''), h('span', 'crew-side-tokens', u ? `${formatTokens(u.input + u.output)}${u.costUsd > 0 ? ` · ~$${u.costUsd.toFixed(2)}` : ''}` : ''))
     r.title = `${AGENT_NAME[agent]}${model ? ` (${model})` : ''}: ${((u?.input ?? 0) + (u?.output ?? 0)).toLocaleString()} tokens`
@@ -623,6 +626,7 @@ function renderRunHeader() {
 }
 
 // ---- the switches under the message box: models, effort, permissions and speed, changeable while the crew works
+const GEMINI_MODEL_CHOICES: [string, string][] = [['', 'Default'], ['gemini-2.5-pro', '2.5 Pro'], ['gemini-2.5-flash', '2.5 Flash']]
 const CLAUDE_MODEL_CHOICES: [string, string][] = [['', 'Default'], ['claude-opus-5-5', 'Opus 5.5'], ['claude-sonnet-5-5', 'Sonnet 5.5'], ['claude-haiku-5-5', 'Haiku 5.5'], ['claude-fable-5-1', 'Fable 5.1']]
 const EFFORT_CHOICES: [string, string][] = [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high'], ['max', 'Maximum']]
 let healthCache: { codexModels: string[]; localModels: string[] } | null = null
@@ -655,7 +659,7 @@ function openPicker(anchor: HTMLElement, groups: { title: string; options: [stri
   }
   setTimeout(() => document.addEventListener('mousedown', away), 0)
 }
-const setCfg = (patch: { claudeModel?: string; codexModel?: string; localModel?: string; claudeEffort?: string; codexEffort?: string; bypassPermissions?: boolean }) => { if (replay) return toast('Replay mode: action recorded'); void teamAction(() => window.forge.teamSetModels(run!.id, patch)) }
+const setCfg = (patch: { claudeModel?: string; codexModel?: string; geminiModel?: string; localModel?: string; claudeEffort?: string; codexEffort?: string; bypassPermissions?: boolean }) => { if (replay) return toast('Replay mode: action recorded'); void teamAction(() => window.forge.teamSetModels(run!.id, patch)) }
 function composerChips(): HTMLElement[] {
   if (typeof window.forge.teamSetModels !== 'function') return []
   const c = run!.config
@@ -675,6 +679,7 @@ function composerChips(): HTMLElement[] {
     { title: 'Codex model', options: hl.codexModels.map(m => [m, m] as [string, string]), current: c.codexModel ?? '', pick: v => setCfg({ codexModel: v }) },
     { title: 'Effort', options: EFFORT_CHOICES.filter(([v]) => v !== 'max'), current: c.codexEffort ?? 'high', pick: v => setCfg({ codexEffort: v }) },
   ]))))
+  if (c.geminiModel || run!.usage.gemini?.runs) out.push(chip('gemini', `${AGENT_NAME.gemini} ${GEMINI_MODEL_CHOICES.find(([v]) => v === (c.geminiModel ?? ''))?.[1] ?? c.geminiModel ?? 'Default'}`, `${AGENT_NAME.gemini} model`, b => openPicker(b, [{ title: `${AGENT_NAME.gemini} model`, options: GEMINI_MODEL_CHOICES, current: c.geminiModel ?? '', pick: v => setCfg({ geminiModel: v }) }])))
   if (c.localModel || run!.usage.local?.runs) out.push(chip('local', `${AGENT_NAME.local} ${c.localModel || 'Auto'}`, `${AGENT_NAME.local} model`, b => void crewHealth().then(hl => openPicker(b, [{ title: `${AGENT_NAME.local} model`, options: hl.localModels.map(m => [m, m] as [string, string]), current: c.localModel ?? '', pick: v => setCfg({ localModel: v }) }]))))
   out.push(chip('perm', c.bypassPermissions === false ? 'Ask before risky actions' : 'Bypass permissions', 'Whether the agents may run commands and read files without asking', () => setCfg({ bypassPermissions: c.bypassPermissions === false }), c.bypassPermissions === false ? '' : 'warn'))
   out.push(chip('fast', 'Fast', 'Many Claude sessions at once, no cross-review, light effort. Saying "fast" in a message turns it on too.', () => { if (replay) return toast('Replay mode: action recorded'); void teamAction(() => window.forge.teamSetSpeed(run!.id, c.speed !== 'fast')) }, c.speed === 'fast' ? 'on' : '', 'bolt'))
@@ -811,7 +816,7 @@ function renderPlanReview(approval: Run['approvals'][number]) {
   const rows = run!.tasks.map((task, index) => {
     const row = h('div', 'plan-edit-row'), skipped = task.status === 'cancelled'; enter(row, `plan:${approval.id}:${task.id}`, index)
     const title = input('text', task.title); title.setAttribute('aria-label', `Task ${index + 1} title`)
-    const agent = select([['claude', 'Claude'], ['codex', 'Codex'], ['local', AGENT_NAME.local]], task.agent); agent.setAttribute('aria-label', `Task ${index + 1} agent`)
+    const agent = select([['claude', 'Claude'], ['codex', 'Codex'], ['gemini', 'Gemini'], ['local', AGENT_NAME.local]], task.agent); agent.setAttribute('aria-label', `Task ${index + 1} agent`)
     const skip = input('checkbox'); skip.checked = skipped; skip.setAttribute('aria-label', `Skip task ${index + 1}`)
     const skipLabel = h('label', 'plan-skip'); skipLabel.append(skip, document.createTextNode('Skip'))
     const goal = h('p', 'plan-goal', task.goal)
@@ -825,9 +830,9 @@ function renderPlanReview(approval: Run['approvals'][number]) {
   const actions = h('div', 'approval-actions')
   const apply = async (start: boolean) => {
     const edits = rows.flatMap(({ task, title, agent, skip }) => {
-      const edit: { id: string; title?: string; agent?: 'claude' | 'codex' | 'local'; skip?: boolean } = { id: task.id }
+      const edit: { id: string; title?: string; agent?: 'claude' | 'codex' | 'gemini' | 'local'; skip?: boolean } = { id: task.id }
       if (title.value.trim() && title.value.trim() !== task.title) edit.title = title.value.trim()
-      if (agent.value !== task.agent) edit.agent = agent.value as 'claude' | 'codex' | 'local'
+      if (agent.value !== task.agent) edit.agent = agent.value as 'claude' | 'codex' | 'gemini' | 'local'
       if (skip.checked !== (task.status === 'cancelled')) edit.skip = skip.checked
       return Object.keys(edit).length > 1 ? [edit] : []
     })
@@ -904,7 +909,7 @@ function fold(title: string, open: boolean, set: (o: boolean) => void, build: ()
   }
   return d
 }
-const usedAgents = () => (['claude', 'codex', 'local'] as const).filter(a => run!.tasks.some(t => t.agent === a) || log.some(x => x.ev.type === 'agent' && x.ev.ev.agent === a))
+const usedAgents = () => (['claude', 'codex', 'gemini', 'local'] as const).filter(a => run!.tasks.some(t => t.agent === a) || log.some(x => x.ev.type === 'agent' && x.ev.ev.agent === a))
 function makeDetailsToggle() {
   const toggle = h('button', `lane-details ${laneDetails ? 'on' : ''}`, laneDetails ? 'Live' : 'Details'); toggle.prepend(icon(laneDetails ? 'code' : 'list', 'sm')); toggle.title = laneDetails ? 'Back to the live coding view' : 'Show commands, step results, prompts and reasoning'; toggle.setAttribute('aria-pressed', String(laneDetails))
   toggle.onclick = () => { laneDetails = !laneDetails; try { localStorage.setItem('forge.teamLaneDetails', laneDetails ? '1' : '0') } catch {} renderRun() }
@@ -916,7 +921,7 @@ const TEAM_TOOL: Record<string, string> = { team_post: 'messaging the crew', tea
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1)
 const tail2 = (p: string) => p.split('/').filter(Boolean).slice(-2).join('/')
 // What an agent is doing, in a few words. The exact command stays in the Details lanes, which still read ev.summary.
-function stepWords(agent: 'claude' | 'codex' | 'local', ev: { kind?: string; name?: string; summary?: string }): string {
+function stepWords(agent: 'claude' | 'codex' | 'gemini' | 'local', ev: { kind?: string; name?: string; summary?: string }): string {
   const s = ev.summary ?? '', n = ev.name ?? ''
   if (agent === 'local') return lower(s) // local.ts already sends describeTool's words
   const team = Object.keys(TEAM_TOOL).find(k => n.endsWith(k)) // mcp__forge_team__team_post (Claude), forge_team.team_post (Codex)
@@ -933,7 +938,7 @@ function stepWords(agent: 'claude' | 'codex' | 'local', ev: { kind?: string; nam
   return 'working'
 }
 // Tool steps only: the agent's own words belong in the result lines, not in the status.
-function activityOf(agent: 'claude' | 'codex' | 'local', ev: { type: string; kind?: string; name?: string; summary?: string }): string | null {
+function activityOf(agent: 'claude' | 'codex' | 'gemini' | 'local', ev: { type: string; kind?: string; name?: string; summary?: string }): string | null {
   return ev.type === 'tool' ? `${AGENT_NAME[agent]} is ${stepWords(agent, ev)}` : null
 }
 const stepNow = new Map<string, string>() // task id -> its latest step, for the checklist's running row
@@ -965,7 +970,7 @@ function renderLanes() {
   lanes.append(keep('stage', stageEl))
   return lanes
 }
-function renderLane(agent: 'claude' | 'codex' | 'local') {
+function renderLane(agent: 'claude' | 'codex' | 'gemini' | 'local') {
   const lane = h('section', `agent-lane ${agent}`); lane.dataset.key = agent; const header = h('header'); header.append(h('span', `agent-orb ${agent}${run!.tasks.some(t => t.agent === agent && t.status === 'running') ? ' busy' : ''}`), h('div', '', AGENT_FULL[agent]), h('span', `lane-live${['planning', 'running', 'verifying'].includes(run!.status) ? ' on' : ''}`, ['planning', 'running', 'verifying'].includes(run!.status) ? 'Live' : 'History')); header.append(makeDetailsToggle()); lane.append(header)
   const events = log.filter(x => x.ev.type === 'agent' && x.ev.ev.agent === agent && laneVisible(x.ev))
   const body = h('div', 'lane-body')
@@ -1119,7 +1124,7 @@ function buildSteer(runId: string): SteerUi {
   const sync = () => { send.disabled = (!text.value.trim() && !att.ready().length) || att.busy(); send.title = att.busy() ? 'Waiting for the files to finish uploading' : 'Send' }
   const grow = () => { text.style.height = 'auto'; text.style.height = text.value ? `${Math.min(text.scrollHeight, 160)}px` : ''; sync() } // empty, it keeps its CSS height: scrollHeight counts a placeholder that wraps
   text.oninput = () => { steerDrafts.set(runId, text.value); grow() }
-  const to = select([['all', 'Everyone'], ['claude', 'Claude'], ['codex', 'Codex'], ['local', AGENT_NAME.local]], steerTarget); to.onchange = () => { steerTarget = to.value as typeof steerTarget }
+  const to = select([['all', 'Everyone'], ['claude', 'Claude'], ['codex', 'Codex'], ['gemini', 'Gemini'], ['local', AGENT_NAME.local]], steerTarget); to.onchange = () => { steerTarget = to.value as typeof steerTarget }
   const bar = h('div', 'cw-bar'); row.append(att.button, att.input, attachVoice(text, form), text, selectButton('users', to, 'Send to'), send); form.append(att.strip, row, bar); queueMicrotask(grow)
   text.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit() } }
   const sent = () => { steerDrafts.delete(runId); text.value = ''; att.clear(); grow() }
