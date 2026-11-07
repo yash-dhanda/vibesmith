@@ -19,7 +19,7 @@ export const realRunner: AgentRunner = async (agent, o): Promise<RunResult> => {
   const link = o.link
   const common = { cwd: o.cwd, prompt: o.prompt, signal: o.signal, onEvent: o.onEvent, write: o.write, resume: o.resume, maxMs: MAX_MS, hold: link ? () => hubBusy(link.runId, link.taskId) : undefined }
   if (agent === 'local') return runLocal({ cwd: o.cwd, prompt: o.prompt, model: o.model ?? '', write: o.write, signal: o.signal, onEvent: o.onEvent, ask: o.onApproval })
-  if (agent === 'gemini') return runGemini({ cwd: o.cwd, prompt: o.prompt, signal: o.signal, onEvent: o.onEvent, write: o.write, model: o.model, maxMs: MAX_MS, hold: common.hold })
+  if (agent === 'gemini') return runGemini({ cwd: o.cwd, prompt: o.prompt, signal: o.signal, onEvent: o.onEvent, write: o.write, model: o.model, resume: o.resume, maxMs: MAX_MS, hold: common.hold })
   if (agent === 'codex') {
     const model = o.model ?? ''
     if (o.codexMode === 'app-server') {

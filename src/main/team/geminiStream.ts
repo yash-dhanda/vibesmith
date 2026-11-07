@@ -1,31 +1,21 @@
 import { classifyError, json, type Parser, type TeamEvent } from './events'
 
-// `gemini -p ... -o stream-json` (Gemini CLI 0.67): one JSON object per line, read from the CLI's own StreamJsonFormatter.
-// init {session_id, model} · message {role, content, delta} · tool_use {tool_name, tool_id, parameters}
-// tool_result {tool_id, status, output, error} · result {status, error?, stats {input_tokens, output_tokens, cached, input}}
+// `agy --output-format stream-json` (Antigravity CLI 1.5): one JSON object per line, from Google's headless docs.
+// {"event":"init","conversation_id"} · {"event":"step_update","step_update":{conversation_id, step_index, state: ACTIVE|DONE, step_type: user_input|agent_response|tool|checkpoint,
+//   text_delta, tool_name, tool_info {name, parameters, output, error {type, message}}}} · {"event":"result","result":{status, response, error, usage {input_tokens, output_tokens, cache_read_tokens}}}
 
-const KIND: Record<string, 'command' | 'edit' | 'read'> = {
-  run_shell_command: 'command',
-  write_file: 'edit',
-  replace: 'edit',
-  read_file: 'read',
-  read_many_files: 'read',
-  list_directory: 'read',
-  glob: 'read',
-  search_file_content: 'read',
-  grep_search: 'read',
-  web_fetch: 'read',
-  google_web_search: 'read',
-}
+const kindOf = (name: string): 'command' | 'edit' | 'read' | 'other' =>
+  /command|shell|terminal/i.test(name) ? 'command' : /write|replace|edit|create|delete|patch/i.test(name) ? 'edit' : /view|read|list|grep|find|search|url|fetch/i.test(name) ? 'read' : 'other'
 
 const summary = (p: Record<string, unknown> | undefined): string => {
-  const v = p?.command ?? p?.file_path ?? p?.absolute_path ?? p?.path ?? p?.dir_path ?? p?.pattern ?? p?.query ?? p?.url ?? p?.prompt
+  const v = p?.CommandLine ?? p?.TargetFile ?? p?.AbsolutePath ?? p?.FilePath ?? p?.Path ?? p?.SearchPath ?? p?.DirectoryPath ?? p?.Query ?? p?.Pattern ?? p?.Url ?? p?.URL
   return String(v ?? JSON.stringify(p ?? {})).slice(0, 200)
 }
 
 export function makeGeminiParser(): Parser {
   let pending = '' // the answer being written; it becomes one `text` event when a tool call or the end of the turn closes it
   let last = ''
+  const started = new Set<string>()
   const flush = (out: TeamEvent[]) => {
     if (!pending.trim()) return void (pending = '')
     last = pending
@@ -36,26 +26,38 @@ export function makeGeminiParser(): Parser {
     const m = json(line)
     if (!m) return []
     const out: TeamEvent[] = []
-    if (m.type === 'init' && m.session_id) out.push({ type: 'session', agent: 'gemini', sessionId: String(m.session_id) })
-    else if (m.type === 'message' && m.role === 'assistant') {
-      const t = String(m.content ?? '')
-      pending += t
-      if (t) out.push({ type: 'delta', agent: 'gemini', channel: 'text', text: t })
-    } else if (m.type === 'tool_use') {
+    if (m.event === 'init' && m.conversation_id) out.push({ type: 'session', agent: 'gemini', sessionId: String(m.conversation_id) })
+    else if (m.event === 'step_update' && m.step_update) {
+      const s = m.step_update
+      if (s.step_type === 'agent_response') {
+        const t = String(s.text_delta ?? '')
+        pending += t
+        if (t) out.push({ type: 'delta', agent: 'gemini', channel: 'text', text: t })
+        if (s.state === 'DONE') flush(out)
+      } else if (s.step_type === 'tool') {
+        flush(out)
+        const id = `${s.conversation_id ?? ''}:${s.step_index}`
+        const info = s.tool_info ?? {}
+        const name = String(info.name ?? s.tool_name ?? 'tool')
+        if (!started.has(id)) {
+          started.add(id)
+          out.push({ type: 'tool', agent: 'gemini', id, kind: kindOf(name), name, summary: summary(info.parameters) })
+        }
+        if (s.state === 'DONE') out.push({ type: 'tool_result', agent: 'gemini', id, ok: !info.error, text: String(info.error?.message ?? info.output ?? '').slice(0, 4000) })
+      }
+    } else if (m.event === 'result' && m.result) {
       flush(out)
-      const name = String(m.tool_name ?? 'tool')
-      out.push({ type: 'tool', agent: 'gemini', id: String(m.tool_id ?? name), kind: KIND[name] ?? 'other', name, summary: summary(m.parameters) })
-    } else if (m.type === 'tool_result') out.push({ type: 'tool_result', agent: 'gemini', id: String(m.tool_id ?? ''), ok: m.status === 'success', text: String(m.output ?? m.error?.message ?? '').slice(0, 4000) })
-    else if (m.type === 'result') {
-      flush(out)
-      const s = m.stats ?? {}
-      const cached = Number(s.cached ?? 0)
-      out.push({ type: 'usage', agent: 'gemini', input: Number(s.input ?? Math.max(0, Number(s.input_tokens ?? 0) - cached)), output: Number(s.output_tokens ?? 0), cached })
-      if (m.status === 'error') {
-        const msg = String(m.error?.message ?? 'Gemini failed')
+      const r = m.result
+      const u = r.usage ?? {}
+      const cached = Number(u.cache_read_tokens ?? 0)
+      out.push({ type: 'usage', agent: 'gemini', input: Math.max(0, Number(u.input_tokens ?? 0) - cached), output: Number(u.output_tokens ?? 0), cached })
+      const text = String(r.response ?? '').trim() || last
+      if (r.status === 'SUCCESS') out.push({ type: 'done', agent: 'gemini', ok: true, text })
+      else {
+        const msg = String(r.error || `The run ended with status ${r.status ?? 'unknown'}`)
         out.push({ type: 'error', agent: 'gemini', kind: classifyError(msg), message: msg.slice(0, 500) })
-        out.push({ type: 'done', agent: 'gemini', ok: false, text: last })
-      } else out.push({ type: 'done', agent: 'gemini', ok: true, text: last })
+        out.push({ type: 'done', agent: 'gemini', ok: false, text })
+      }
     }
     return out
   }

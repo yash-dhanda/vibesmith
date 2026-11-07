@@ -1,14 +1,11 @@
 import { execFile, spawn } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import { resolveCommand } from './bin'
 import { cleanEnv } from './process'
 import type { AgentName } from './events'
 import { sortByQuality } from '../catalog'
 import { ollamaStatus } from '../ollama'
 
-export type Health = { agent: AgentName; ok: boolean; detail: string; fix?: string; version?: string }
+export type Health = { agent: AgentName; ok: boolean; detail: string; fix?: string; version?: string; models?: string[] }
 
 const run = (bin: string, args: string[]): Promise<{ ok: boolean; out: string; missing: boolean }> => {
   const c = resolveCommand(bin, args)
@@ -82,24 +79,21 @@ export async function checkLocal(): Promise<Health> {
   return { agent: 'local', ok: true, detail: `${models.length} model${models.length === 1 ? '' : 's'} installed` }
 }
 
-// Gemini CLI signed in with a Google account (Google AI Pro / Ultra, or the free tier): the login lives in ~/.gemini. An API key or Vertex
-// bills per use, so it is refused like the other agents' API keys.
-export function judgeGeminiAuth(hasLogin: boolean, authType?: string): { ok: boolean; detail: string; fix?: string } {
-  if (authType && /api[-_ ]?key|vertex/i.test(authType)) return { ok: false, detail: `Gemini CLI is set to ${authType}, which bills per use instead of using your Google AI plan.`, fix: 'Run `gemini`, choose "Login with Google" and sign in with your Google AI Pro account.' }
-  if (!hasLogin) return { ok: false, detail: 'Gemini CLI is not signed in.', fix: 'Run `gemini` once, choose "Login with Google" and sign in with your Google AI Pro account.' }
-  return { ok: true, detail: 'signed in with your Google account' }
+// Google AI Pro / Ultra runs through the Antigravity CLI (`agy`; Gemini CLI is closed to individual accounts). It has no sign-in status command,
+// but `agy models` lists the models only when signed in, and says "sign in" otherwise: that one call answers both questions.
+export function judgeAgy(out: string, ok: boolean): { ok: boolean; detail: string; fix?: string; models: string[] } {
+  if (!ok || /sign in|log ?in|authenticat/i.test(out)) return { ok: false, detail: 'Antigravity CLI is not signed in.', fix: 'Run `agy` once and sign in with the Google account that has your AI Pro plan.', models: [] }
+  const models = [...new Set(out.split('\n').map((l) => l.trim().replace(/^[-*•]\s*/, '').split(/\s+/)[0] ?? '').filter((t) => /^[a-z][a-z0-9._-]{2,70}$/i.test(t) && /[-.\d]/.test(t) && !/^(fetching|available|models?)$/i.test(t)))]
+  return { ok: true, detail: 'signed in with your Google AI plan', models }
 }
 
-export async function checkGemini(bin = 'gemini', home = homedir()): Promise<Health> {
+export async function checkGemini(bin = 'agy'): Promise<Health> {
   const v = await run(bin, ['--version'])
-  if (v.missing) return { agent: 'gemini', ok: false, detail: 'Gemini CLI is not installed.', fix: 'Install it with `npm i -g @google/gemini-cli`, then run `gemini` once and choose "Login with Google".' }
+  if (v.missing) return { agent: 'gemini', ok: false, detail: 'Antigravity CLI is not installed.', fix: 'Install it with `curl -fsSL https://antigravity.google/cli/install.sh | bash`, then run `agy` once and sign in.' }
   const version = v.out.trim().split('\n')[0]
-  let authType: string | undefined
-  try {
-    authType = JSON.parse(readFileSync(join(home, '.gemini', 'settings.json'), 'utf8'))?.security?.auth?.selectedType
-  } catch {}
-  const a = judgeGeminiAuth(existsSync(join(home, '.gemini', 'oauth_creds.json')), authType)
-  return a.ok ? { agent: 'gemini', ok: true, detail: a.detail, version } : { agent: 'gemini', ok: false, detail: a.detail, fix: a.fix, version }
+  const m = await run(bin, ['models'])
+  const a = judgeAgy(m.out, m.ok)
+  return a.ok ? { agent: 'gemini', ok: true, detail: a.detail, version, models: a.models } : { agent: 'gemini', ok: false, detail: a.detail, fix: a.fix, version }
 }
 
 export const checkTeamTools = () => Promise.all([checkClaude(), checkCodex(), checkGemini(), checkLocal()])

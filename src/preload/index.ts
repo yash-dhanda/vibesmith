@@ -100,7 +100,7 @@ const api = {
   // misc
   saveText: (name: string, text: string): Promise<boolean> => ipcRenderer.invoke('save:text', name, text),
   // team mode: Claude Code + Codex as one team (docs/TEAM.md)
-  teamHealth: (): Promise<{ agents: { agent: 'claude' | 'codex' | 'gemini' | 'local'; ok: boolean; detail: string; fix?: string; version?: string }[]; codexModels: string[]; localModels: string[]; limits: { codex?: { primaryPct: number; primaryResetsAt?: number; secondaryPct?: number; secondaryResetsAt?: number; plan?: string } } }> => ipcRenderer.invoke('team:health'),
+  teamHealth: (): Promise<{ agents: { agent: 'claude' | 'codex' | 'gemini' | 'local'; ok: boolean; detail: string; fix?: string; version?: string; models?: string[] }[]; codexModels: string[]; localModels: string[]; limits: { codex?: { primaryPct: number; primaryResetsAt?: number; secondaryPct?: number; secondaryResetsAt?: number; plan?: string } } }> => ipcRenderer.invoke('team:health'),
   teamStart: (goal: string, config?: Partial<TeamConfig>): Promise<RunSummary> => ipcRenderer.invoke('team:start', goal, config),
   teamList: (): Promise<RunSummary[]> => ipcRenderer.invoke('team:list'),
   teamGet: (id: string): Promise<TeamRun | null> => ipcRenderer.invoke('team:get', id),

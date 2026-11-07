@@ -8,7 +8,7 @@ import { $, cleanErr, h, onOff, smooth, toast, uuid, writeClipboard } from './ui
 import { REPLAY_GOAL, replayRun } from './teamReplay'
 import { enabledSkillCount } from './skillsPanel'
 import { historyButton } from './projectHistory'
-import { AGENT_FULL, AGENT_NAME, N } from './names'
+import { AGENT_FULL, AGENT_NAME, geminiChoices, N } from './names'
 import { RUN_MARK, TASK_MARK, TOOL_ICON, mark } from './glyphs'
 import { buildStage, pushCode, updateStage, type StageCode } from './teamStage'
 import { renderCrewPreview, visualCheckButton } from './crewPreview'
@@ -231,8 +231,7 @@ async function showEntry() {
   const claudeModels: [string, string][] = [['', 'Default'], ['claude-opus-5-5', 'Opus 5.5'], ['claude-sonnet-5-5', 'Sonnet 5.5'], ['claude-haiku-5-5', 'Haiku 5.5'], ['claude-fable-5-1', 'Fable 5.1']]
   if (defaults.claudeModel && !claudeModels.some(([v]) => v === defaults.claudeModel)) claudeModels.push([defaults.claudeModel, defaults.claudeModel])
   const claudeModel = select(claudeModels, defaults.claudeModel ?? ''); claudeModel.setAttribute('aria-label', 'Claude model')
-  const geminiModels = [...GEMINI_MODEL_CHOICES]; if (defaults.geminiModel && !geminiModels.some(([v]) => v === defaults.geminiModel)) geminiModels.push([defaults.geminiModel, defaults.geminiModel])
-  const geminiModel = select(geminiModels, defaults.geminiModel ?? ''); geminiModel.setAttribute('aria-label', `${AGENT_NAME.gemini} model`)
+  const geminiModel = select(geminiChoices((health.agents.find(a => a.agent === 'gemini') as { models?: string[] } | undefined)?.models ?? [], defaults.geminiModel), defaults.geminiModel ?? ''); geminiModel.setAttribute('aria-label', `${AGENT_NAME.gemini} model`)
   const codexEffort = select([['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high']], defaults.codexEffort ?? 'high'); codexEffort.setAttribute('aria-label', 'Codex reasoning effort')
   const effort = select([['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high'], ['max', 'Maximum']], defaults.claudeEffort ?? 'high'); effort.setAttribute('aria-label', 'Claude effort')
   const minutes = input('number', ''); minutes.min = '1'; minutes.placeholder = 'No limit'
@@ -626,14 +625,13 @@ function renderRunHeader() {
 }
 
 // ---- the switches under the message box: models, effort, permissions and speed, changeable while the crew works
-const GEMINI_MODEL_CHOICES: [string, string][] = [['', 'Default'], ['gemini-2.5-pro', '2.5 Pro'], ['gemini-2.5-flash', '2.5 Flash']]
 const CLAUDE_MODEL_CHOICES: [string, string][] = [['', 'Default'], ['claude-opus-5-5', 'Opus 5.5'], ['claude-sonnet-5-5', 'Sonnet 5.5'], ['claude-haiku-5-5', 'Haiku 5.5'], ['claude-fable-5-1', 'Fable 5.1']]
 const EFFORT_CHOICES: [string, string][] = [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high'], ['max', 'Maximum']]
-let healthCache: { codexModels: string[]; localModels: string[] } | null = null
+let healthCache: { codexModels: string[]; localModels: string[]; geminiModels: string[] } | null = null
 let picker: HTMLElement | null = null
 const closePicker = () => { const p = picker; picker = null; if (!p) return; p.classList.add('out'); void Promise.allSettled(p.getAnimations().map(a => a.finished)).then(() => p.remove()) } // it fades out (crew3.css); with reduced motion it just goes
 async function crewHealth() {
-  if (!healthCache) { try { const hl = await window.forge.teamHealth(); healthCache = { codexModels: hl.codexModels, localModels: hl.localModels } } catch { healthCache = { codexModels: [], localModels: [] } } }
+  if (!healthCache) { try { const hl = await window.forge.teamHealth(); healthCache = { codexModels: hl.codexModels, localModels: hl.localModels, geminiModels: hl.agents.find(a => a.agent === 'gemini')?.models ?? [] } } catch { healthCache = { codexModels: [], localModels: [], geminiModels: [] } } }
   return healthCache
 }
 function openPicker(anchor: HTMLElement, groups: { title: string; options: [string, string][]; current: string; pick: (v: string) => void }[]) {
@@ -679,7 +677,7 @@ function composerChips(): HTMLElement[] {
     { title: 'Codex model', options: hl.codexModels.map(m => [m, m] as [string, string]), current: c.codexModel ?? '', pick: v => setCfg({ codexModel: v }) },
     { title: 'Effort', options: EFFORT_CHOICES.filter(([v]) => v !== 'max'), current: c.codexEffort ?? 'high', pick: v => setCfg({ codexEffort: v }) },
   ]))))
-  if (c.geminiModel || run!.usage.gemini?.runs) out.push(chip('gemini', `${AGENT_NAME.gemini} ${GEMINI_MODEL_CHOICES.find(([v]) => v === (c.geminiModel ?? ''))?.[1] ?? c.geminiModel ?? 'Default'}`, `${AGENT_NAME.gemini} model`, b => openPicker(b, [{ title: `${AGENT_NAME.gemini} model`, options: GEMINI_MODEL_CHOICES, current: c.geminiModel ?? '', pick: v => setCfg({ geminiModel: v }) }])))
+  if (c.geminiModel || run!.usage.gemini?.runs) out.push(chip('gemini', `${AGENT_NAME.gemini} ${c.geminiModel || 'Default'}`, `${AGENT_NAME.gemini} model`, b => void crewHealth().then(hl => openPicker(b, [{ title: `${AGENT_NAME.gemini} model`, options: geminiChoices(hl.geminiModels, c.geminiModel), current: c.geminiModel ?? '', pick: v => setCfg({ geminiModel: v }) }]))))
   if (c.localModel || run!.usage.local?.runs) out.push(chip('local', `${AGENT_NAME.local} ${c.localModel || 'Auto'}`, `${AGENT_NAME.local} model`, b => void crewHealth().then(hl => openPicker(b, [{ title: `${AGENT_NAME.local} model`, options: hl.localModels.map(m => [m, m] as [string, string]), current: c.localModel ?? '', pick: v => setCfg({ localModel: v }) }]))))
   out.push(chip('perm', c.bypassPermissions === false ? 'Ask before risky actions' : 'Bypass permissions', 'Whether the agents may run commands and read files without asking', () => setCfg({ bypassPermissions: c.bypassPermissions === false }), c.bypassPermissions === false ? '' : 'warn'))
   out.push(chip('fast', 'Fast', 'Many Claude sessions at once, no cross-review, light effort. Saying "fast" in a message turns it on too.', () => { if (replay) return toast('Replay mode: action recorded'); void teamAction(() => window.forge.teamSetSpeed(run!.id, c.speed !== 'fast')) }, c.speed === 'fast' ? 'on' : '', 'bolt'))

@@ -24,7 +24,7 @@ export type RunResult = {
 
 // The agent CLIs must run as the user signed in with their own subscription. Variables that switch them to API billing
 // (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY) or mark this process as a child of another Claude session would change that, so they are dropped.
-const DROP = /^(CLAUDECODE|CLAUDE_CODE_.*|CLAUDE_AGENT_SDK_.*|CLAUDE_EFFORT|CLAUDE_PID|ANTHROPIC_.*|OPENAI_API_KEY|OPENAI_BASE_URL|CODEX_API_KEY|GEMINI_API_KEY|GOOGLE_API_KEY|GOOGLE_GENAI_USE_VERTEXAI|AI_AGENT)$/
+const DROP = /^(CLAUDECODE|CLAUDE_CODE_.*|CLAUDE_AGENT_SDK_.*|CLAUDE_EFFORT|CLAUDE_PID|ANTHROPIC_.*|OPENAI_API_KEY|OPENAI_BASE_URL|CODEX_API_KEY|GEMINI_API_KEY|GOOGLE_API_KEY|GOOGLE_GENAI_USE_VERTEXAI|AGY_ADC_AUTH|AI_AGENT)$/
 export function cleanEnv(env: NodeJS.ProcessEnv = process.env, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   const out: NodeJS.ProcessEnv = {}
   for (const [k, v] of Object.entries(env)) if (!DROP.test(k)) out[k] = v

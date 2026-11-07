@@ -32,3 +32,10 @@ export function applyNames(root: ParentNode = document) {
     if (key in N) el.textContent = N[key]
   })
 }
+
+// The Gemini model list: what `agy models` reports for the signed-in account (empty until then), plus the one already saved.
+export const geminiChoices = (models: readonly string[], current?: string, first = 'Default'): [string, string][] => {
+  const out: [string, string][] = [['', first], ...models.map((m) => [m, m] as [string, string])]
+  if (current && !out.some(([v]) => v === current)) out.push([current, current])
+  return out
+}

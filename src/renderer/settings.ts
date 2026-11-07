@@ -8,7 +8,7 @@ import { openLibrary } from './library'
 import { renderUsage } from './usage'
 import { timeAgo } from './format'
 import { isRemote } from './phone'
-import { AGENT_NAME, N } from './names'
+import { AGENT_NAME, geminiChoices, N } from './names'
 
 // Settings is a full page: grouped pages in a nav column on the left, one column of sections on the right.
 export type Page = 'general' | 'appearance' | 'shortcuts' | 'models' | 'agent' | 'team' | 'skills' | 'remote' | 'usage' | 'privacy' | 'about'
@@ -356,8 +356,8 @@ async function team(into: HTMLElement) {
   if (cfg.claudeModel && !claudeModels.some(([v]) => v === cfg.claudeModel)) claudeModels.push([cfg.claudeModel, cfg.claudeModel])
   const codexModel = field('text', cfg.codexModel ?? '', 'Codex default')
   codexModel.onchange = () => put('codexModel', codexModel.value.trim())
-  const geminiModels: [string, string][] = [['', 'Account default'], ['gemini-2.5-pro', '2.5 Pro'], ['gemini-2.5-flash', '2.5 Flash']]
-  if (cfg.geminiModel && !geminiModels.some(([v]) => v === cfg.geminiModel)) geminiModels.push([cfg.geminiModel, cfg.geminiModel])
+  const gm = (await window.forge.teamHealth().catch(() => null))?.agents.find((a) => a.agent === 'gemini')?.models ?? []
+  const geminiModels = geminiChoices(gm, cfg.geminiModel, 'Account default')
   const m = group('Models and effort')
   m.box.append(
     row('Claude model', 'The Claude Code model for tasks and reviews.', choose(claudeModels, cfg.claudeModel ?? '', (v) => put('claudeModel', v || undefined))),
@@ -365,7 +365,7 @@ async function team(into: HTMLElement) {
     row('Codex model', 'The model name Codex should use. Leave empty for its default.', codexModel),
     row('Codex effort', 'How hard Codex reasons before it answers.', choose(efforts, cfg.codexEffort ?? 'high', (v) => put('codexEffort', v as TeamConfig['codexEffort']))),
     row('Codex connection', 'Live sessions support streaming and immediate steering.', choose([['app-server', 'Live session'], ['exec', 'Simple run']], cfg.codexMode ?? 'app-server', (v) => put('codexMode', v as TeamConfig['codexMode']))),
-    row('Gemini model', 'The Gemini CLI model for tasks and reviews, on your Google AI plan.', choose(geminiModels, cfg.geminiModel ?? '', (v) => put('geminiModel', v || undefined))),
+    row('Gemini model', 'The model Antigravity CLI uses for tasks and reviews, on your Google AI plan.', choose(geminiModels, cfg.geminiModel ?? '', (v) => put('geminiModel', v || undefined))),
     row(`${AGENT_NAME.local} model`, ol.models.length ? `The Ollama model ${AGENT_NAME.local} uses.` : 'No Ollama models are installed.', choose([['', 'Best installed'], ...ol.models.map((n) => [n, n] as [string, string])], cfg.localModel ?? '', (v) => put('localModel', v || undefined))),
   )
   into.append(m.g)

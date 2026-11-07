@@ -1,108 +1,110 @@
-import { chmodSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { geminiArgs, geminiPolicy, runGemini } from './gemini'
+import { geminiArgs, geminiInput, geminiSettings, runGemini } from './gemini'
 import { makeGeminiParser } from './geminiStream'
-import { checkGemini, judgeGeminiAuth } from './health'
+import { checkGemini, judgeAgy } from './health'
 import type { TeamEvent } from './events'
 
 const feed = (lines: object[]): TeamEvent[] => {
   const parse = makeGeminiParser()
   return lines.flatMap((l) => parse(JSON.stringify(l)))
 }
+const step = (o: object) => ({ event: 'step_update', step_update: { conversation_id: 'C1', ...o } })
 
-describe('gemini stream', () => {
+describe('agy stream (shapes from the Antigravity CLI headless docs)', () => {
   const run = [
-    { type: 'init', session_id: 'S1', model: 'gemini-2.5-pro' },
-    { type: 'message', role: 'user', content: 'do it' },
-    { type: 'message', role: 'assistant', content: 'Let me ', delta: true },
-    { type: 'message', role: 'assistant', content: 'look.', delta: true },
-    { type: 'tool_use', tool_name: 'run_shell_command', tool_id: 'c1', parameters: { command: 'npm test' } },
-    { type: 'tool_result', tool_id: 'c1', status: 'success', output: 'ok' },
-    { type: 'tool_use', tool_name: 'write_file', tool_id: 'c2', parameters: { file_path: 'a.txt', content: 'x' } },
-    { type: 'tool_result', tool_id: 'c2', status: 'error', error: { type: 'X', message: 'denied' } },
-    { type: 'message', role: 'assistant', content: 'All done.', delta: true },
-    { type: 'result', status: 'success', stats: { input_tokens: 120, output_tokens: 30, cached: 20, input: 100 } },
+    { event: 'init', conversation_id: 'C1', init: { cwd: '/p', tools: ['run_command'], permission_mode: 'request-review' } },
+    step({ step_index: 0, state: 'DONE', step_type: 'user_input' }),
+    step({ step_index: 1, state: 'ACTIVE', step_type: 'agent_response', text_delta: 'Let me ' }),
+    step({ step_index: 1, state: 'DONE', step_type: 'agent_response', text_delta: 'look.' }),
+    step({ step_index: 2, state: 'ACTIVE', step_type: 'tool', tool_name: 'run_command', tool_info: { name: 'run_command', parameters: { CommandLine: 'npm test' } } }),
+    step({ step_index: 2, state: 'DONE', step_type: 'tool', tool_name: 'run_command', tool_info: { name: 'run_command', parameters: { CommandLine: 'npm test' }, output: 'ok\r\n' } }),
+    step({ step_index: 3, state: 'DONE', step_type: 'tool', tool_name: 'write_to_file', tool_info: { name: 'write_to_file', parameters: { TargetFile: '/p/a.txt' }, error: { type: 'DENIED', message: 'denied' } } }),
+    step({ step_index: 4, state: 'DONE', step_type: 'agent_response', text_delta: 'All done.\n' }),
+    step({ step_index: 5, state: 'DONE', step_type: 'checkpoint' }),
+    { event: 'result', result: { conversation_id: 'C1', status: 'SUCCESS', response: 'All done.\n', usage: { input_tokens: 120, output_tokens: 30, cache_read_tokens: 20, total_tokens: 150 } } },
   ]
   it('turns a run into session, text, tool, usage and done events', () => {
     const ev = feed(run)
-    expect(ev[0]).toEqual({ type: 'session', agent: 'gemini', sessionId: 'S1' })
-    expect(ev.filter((e) => e.type === 'text').map((e) => (e as { text: string }).text)).toEqual(['Let me look.', 'All done.'])
-    expect(ev.filter((e) => e.type === 'tool').map((e) => [(e as { kind: string }).kind, (e as { summary: string }).summary])).toEqual([['command', 'npm test'], ['edit', 'a.txt']])
+    expect(ev[0]).toEqual({ type: 'session', agent: 'gemini', sessionId: 'C1' })
+    expect(ev.filter((e) => e.type === 'text').map((e) => (e as { text: string }).text)).toEqual(['Let me look.', 'All done.\n'])
+    expect(ev.filter((e) => e.type === 'tool').map((e) => [(e as { kind: string }).kind, (e as { summary: string }).summary])).toEqual([['command', 'npm test'], ['edit', '/p/a.txt']]) // the command is announced once, not again when it finishes
     expect(ev.filter((e) => e.type === 'tool_result').map((e) => (e as { ok: boolean }).ok)).toEqual([true, false])
     expect(ev.find((e) => e.type === 'usage')).toEqual({ type: 'usage', agent: 'gemini', input: 100, output: 30, cached: 20 })
     expect(ev.at(-1)).toEqual({ type: 'done', agent: 'gemini', ok: true, text: 'All done.' })
   })
-  it('reports a failed run as an error and a failed done, classified', () => {
-    const ev = feed([{ type: 'init', session_id: 'S2' }, { type: 'result', status: 'error', error: { type: 'Error', message: 'Quota exceeded for this plan' }, stats: {} }])
-    expect(ev.find((e) => e.type === 'error')).toMatchObject({ kind: 'limit' })
+  it('reports a failed run as a classified error and a failed done', () => {
+    const ev = feed([{ event: 'result', result: { conversation_id: '', status: 'ERROR', response: '', error: 'authentication failed or timed out', usage: {} } }])
+    expect(ev.find((e) => e.type === 'error')).toMatchObject({ kind: 'auth' })
     expect(ev.at(-1)).toMatchObject({ type: 'done', ok: false })
   })
   it('ignores lines it does not know', () => {
     expect(makeGeminiParser()('not json')).toEqual([])
-    expect(feed([{ type: 'something_new' }])).toEqual([])
+    expect(feed([{ event: 'something_new' }])).toEqual([])
   })
 })
 
-describe('gemini args', () => {
-  it('reads the prompt from stdin in headless stream mode', () => {
-    expect(geminiArgs({ cwd: '.', prompt: 'x', write: true, model: 'gemini-2.5-pro' }, '/p.toml')).toEqual(['-p', ' ', '-o', 'stream-json', '--skip-trust', '--approval-mode', 'auto_edit', '-m', 'gemini-2.5-pro', '--policy', '/p.toml'])
+describe('agy args', () => {
+  it('reads the prompt from stdin as one stream-json message', () => {
+    expect(JSON.parse(geminiInput('do "it"\nnow'))).toEqual({ event: 'user', message: { content: 'do "it"\nnow' } })
+    expect(geminiInput('x').endsWith('\n')).toBe(true)
   })
-  it('is read-only (plan mode) without write, and takes no policy', () => {
-    const a = geminiArgs({ cwd: '.', prompt: 'x', write: false }, '/p.toml')
-    expect(a).toContain('plan')
-    expect(a).not.toContain('--policy')
-    expect(a).not.toContain('-m')
+  it('edits files automatically in write mode and only plans without it', () => {
+    const w = geminiArgs({ cwd: '.', prompt: 'x', write: true, model: 'm1', resume: 'C0' })
+    expect(w).toEqual(expect.arrayContaining(['--input-format', 'stream-json', '--output-format', 'stream-json', '--mode', 'accept-edits', '--model', 'm1', '--conversation', 'C0']))
+    const r = geminiArgs({ cwd: '.', prompt: 'x', write: false })
+    expect(r).toEqual(expect.arrayContaining(['--mode', 'plan']))
+    expect(r).not.toContain('--model')
+    expect(r).not.toContain('--conversation')
   })
-  it('allows build commands and refuses push, sudo and deploys', () => {
-    const p = geminiPolicy()
-    expect(p).toMatch(/commandPrefix = \[[^\]]*"npm test"/)
-    expect(p).toMatch(/decision = "deny"/)
-    expect(p).toMatch(/"git push"/)
-  })
-})
-
-describe('gemini sign-in check', () => {
-  it('needs a Google login and refuses API-key billing', () => {
-    expect(judgeGeminiAuth(true).ok).toBe(true)
-    expect(judgeGeminiAuth(true, 'oauth-personal').ok).toBe(true)
-    expect(judgeGeminiAuth(false).ok).toBe(false)
-    expect(judgeGeminiAuth(true, 'gemini-api-key').ok).toBe(false)
-    expect(judgeGeminiAuth(true, 'vertex-ai').ok).toBe(false)
+  it('allows build commands and denies push, sudo and deploys, for this session only', () => {
+    const s = JSON.parse(geminiSettings(true))
+    expect(s.permissions.allow).toContain('command(npm test)')
+    expect(s.permissions.deny).toEqual(expect.arrayContaining(['command(git push)', 'command(sudo)', 'command(npm publish)']))
+    expect(JSON.parse(geminiSettings(false)).permissions.allow).not.toContain('command(npm install)')
   })
 })
 
-describe.skipIf(process.platform === 'win32')('gemini, as started', () => {
-  const fake = (home: string) => {
-    const f = join(home, 'gemini')
-    writeFileSync(f, `#!${process.execPath}\nif(process.argv.includes('--version')){console.log('0.67.0');process.exit(0)}\nlet s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const o=(m)=>console.log(JSON.stringify(m));o({type:'init',session_id:'G1'});o({type:'message',role:'assistant',content:JSON.stringify({argv:process.argv.slice(2),stdin:s,key:process.env.GEMINI_API_KEY??null})});o({type:'result',status:'success',stats:{input_tokens:1,output_tokens:1,cached:0}})})\n`)
+describe('agy sign-in check', () => {
+  it('is signed in when the model list comes back, and says to sign in otherwise', () => {
+    const ok = judgeAgy('Fetching available models...\ngemini-3.8-flash-medium  Gemini Flash\n- gemini-3.1-pro-high\n', true)
+    expect(ok).toMatchObject({ ok: true, models: ['gemini-3.8-flash-medium', 'gemini-3.1-pro-high'] })
+    expect(judgeAgy('Error: Please sign in to view available models. Launch the CLI without arguments to sign in.', false).ok).toBe(false)
+    expect(judgeAgy('Please sign in to view available models', true).ok).toBe(false)
+  })
+})
+
+describe.skipIf(process.platform === 'win32')('agy, as started', () => {
+  const fake = (home: string, signedIn = true) => {
+    const f = join(home, 'agy')
+    writeFileSync(
+      f,
+      `#!${process.execPath}\nconst a=process.argv.slice(2);if(a[0]==='--version'){console.log('1.5.3');process.exit(0)}\nif(a[0]==='models'){${signedIn ? "console.log('Fetching available models...\\ngemini-3.8-flash-medium');process.exit(0)" : "console.error('Error: Please sign in to view available models.');process.exit(1)"}}\nlet s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const o=(m)=>console.log(JSON.stringify(m));o({event:'init',conversation_id:'G1'});o({event:'result',result:{status:'SUCCESS',response:JSON.stringify({argv:a,stdin:s,key:process.env.GEMINI_API_KEY??null}),usage:{input_tokens:1,output_tokens:1,cache_read_tokens:0}}})})\n`,
+    )
     chmodSync(f, 0o755)
     return f
   }
   it('sends the prompt on stdin and drops an API key from the environment', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'forge-gem-'))
+    const home = mkdtempSync(join(tmpdir(), 'forge-agy-'))
     process.env.GEMINI_API_KEY = 'key-should-not-reach-the-agent'
     try {
       const r = await runGemini({ cwd: home, prompt: 'do the thing\nnow', write: true }, fake(home))
       const seen = JSON.parse(r.text)
       expect(r.ok).toBe(true)
       expect(r.sessionId).toBe('G1')
-      expect(seen.stdin).toBe('do the thing\nnow')
-      expect(seen.argv).toEqual(expect.arrayContaining(['-p', '-o', 'stream-json', '--approval-mode', 'auto_edit']))
+      expect(JSON.parse(seen.stdin).message.content).toBe('do the thing\nnow')
+      expect(seen.argv).toEqual(expect.arrayContaining(['--output-format', 'stream-json', '--mode', 'accept-edits']))
       expect(seen.key).toBeNull()
     } finally {
       delete process.env.GEMINI_API_KEY
     }
   })
-  it('is ready when the CLI exists and a Google login is saved in ~/.gemini', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'forge-gem-'))
-    const bin = fake(home)
-    expect((await checkGemini(bin, home)).ok).toBe(false)
-    mkdirSync(join(home, '.gemini'))
-    writeFileSync(join(home, '.gemini', 'oauth_creds.json'), '{}')
-    const h = await checkGemini(bin, home)
-    expect(h).toMatchObject({ agent: 'gemini', ok: true, version: '0.67.0' })
-    expect((await checkGemini(join(home, 'nope'), home)).detail).toMatch(/not installed/)
+  it('is ready when signed in (with its models), and says what to do when not installed or not signed in', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'forge-agy-'))
+    expect(await checkGemini(fake(home))).toMatchObject({ agent: 'gemini', ok: true, version: '1.5.3', models: ['gemini-3.8-flash-medium'] })
+    expect((await checkGemini(fake(mkdtempSync(join(tmpdir(), 'forge-agy-')), false))).detail).toMatch(/not signed in/)
+    expect((await checkGemini(join(home, 'nope'))).detail).toMatch(/not installed/)
   })
 })

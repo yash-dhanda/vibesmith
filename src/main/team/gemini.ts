@@ -1,37 +1,29 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { makeGeminiParser } from './geminiStream'
 import { runCli, type RunOpts, type RunResult } from './process'
 
+// Google AI Pro / Ultra now runs through the Antigravity CLI (`agy`): Google closed Gemini CLI to individual accounts.
 export type GeminiOpts = RunOpts & {
   write: boolean // false: plan mode, nothing is changed
-  model?: string // empty = Gemini CLI's own choice for the signed-in plan
+  model?: string // empty = the CLI's own choice for the signed-in plan
+  resume?: string // conversation id from an earlier run
 }
 
-// What a build task may run without asking, and what is refused in any role. Gemini CLI cannot ask in a headless run, so a command
-// outside the allow list is denied and comes back as a failed tool call, the same as Claude's headless runs.
+// What a build task may run without asking, and what is refused in any role (deny beats allow). The CLI cannot ask in a headless run, so a command
+// outside the allow list is soft-denied and comes back as a failed tool call, the same as Claude's headless runs.
 const ALLOW = ['npm test', 'npm run', 'npm install', 'npm ci', 'npx', 'node', 'python3', 'git status', 'git diff', 'git log', 'git add', 'git commit', 'ls', 'cat', 'mkdir', 'pwd', 'echo']
+const READ = ['git status', 'git diff', 'git log', 'ls', 'cat', 'pwd']
 const DENY = ['git push', 'sudo', 'rm -rf /', 'rm -rf ~', 'curl', 'wget', 'npm publish', 'docker push', 'vercel', 'terraform apply', 'kubectl']
-const list = (a: string[]) => `[${a.map((s) => JSON.stringify(s)).join(', ')}]`
-export const geminiPolicy = (): string =>
-  `[[rule]]\ntoolName = "run_shell_command"\ncommandPrefix = ${list(ALLOW)}\ndecision = "allow"\npriority = 100\n\n[[rule]]\ntoolName = "run_shell_command"\ncommandPrefix = ${list(DENY)}\ndecision = "deny"\npriority = 200\n`
+// Session-only settings (--settings is never saved), so the user's own permission rules are left alone.
+export const geminiSettings = (write: boolean): string => JSON.stringify({ permissions: { allow: (write ? ALLOW : READ).map((c) => `command(${c})`), deny: DENY.map((c) => `command(${c})`) } })
 
-// The prompt goes in on stdin; `-p` only switches to headless mode (its text is appended to stdin).
-export function geminiArgs(o: GeminiOpts, policy?: string): string[] {
-  const a = ['-p', ' ', '-o', 'stream-json', '--skip-trust', '--approval-mode', o.write ? 'auto_edit' : 'plan']
-  if (o.model) a.push('-m', o.model)
-  if (o.write && policy) a.push('--policy', policy)
+// The prompt goes in on stdin as one stream-json message (no quoting problems, no argument length limit); the CLI runs the turn and exits when stdin closes.
+export const geminiInput = (prompt: string): string => `${JSON.stringify({ event: 'user', message: { content: prompt } })}\n`
+
+export function geminiArgs(o: GeminiOpts): string[] {
+  const a = ['--input-format', 'stream-json', '--output-format', 'stream-json', '--mode', o.write ? 'accept-edits' : 'plan', '--settings', geminiSettings(o.write)]
+  if (o.model) a.push('--model', o.model)
+  if (o.resume) a.push('--conversation', o.resume)
   return a
 }
 
-export async function runGemini(o: GeminiOpts, bin = 'gemini'): Promise<RunResult> {
-  const dir = mkdtempSync(join(tmpdir(), 'forge-gemini-'))
-  try {
-    const policy = join(dir, 'policy.toml')
-    writeFileSync(policy, geminiPolicy())
-    return await runCli('gemini', bin, geminiArgs(o, policy), makeGeminiParser(), o)
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
-}
+export const runGemini = (o: GeminiOpts, bin = 'agy'): Promise<RunResult> => runCli('gemini', bin, geminiArgs(o), makeGeminiParser(), { ...o, prompt: geminiInput(o.prompt) })
