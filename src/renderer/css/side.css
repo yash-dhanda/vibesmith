@@ -36,7 +36,7 @@
 
 /* the bottom: usage as a quiet chip, settings beside it */
 .side-foot { padding-top: 8px; margin-top: 0; }
-.usage-badge { padding: 3px 10px 3px 4px; border: 1px solid var(--hair); }
+.usage-badge { height: 32px; padding: 0 10px 0 4px; border: 0; border-radius: var(--r-md); }
 
 /* ---- new chat, Crew: a greeting and one message box, like Claude or ChatGPT ---- */
 .team-entry.crew-new { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; width: auto; padding: 24px 24px 64px; }

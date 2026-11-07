@@ -33,7 +33,7 @@
 .empty h2 { margin: 0 0 8px; font-size: 28px; line-height: 1.2; color: var(--text); font-weight: 500; letter-spacing: -.01em; text-wrap: balance; }
 .empty .sub { font-size: 14px; line-height: 20px; max-width: 46ch; margin: 0 auto; }
 .suggest { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 24px; }
-.suggest button { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border: 1px solid var(--hair); border-radius: 999px; background: transparent; color: var(--muted); animation: rise var(--t3) var(--ease) both; animation-delay: 100ms; }
+.suggest button { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border: 1px solid var(--hair); border-radius: var(--r-md); background: transparent; color: var(--muted); animation: rise var(--t3) var(--ease) both; animation-delay: 100ms; }
 .suggest button .ic { color: var(--faint); transition: color var(--t1); }
 .suggest button:nth-child(2) { animation-delay: 140ms; } .suggest button:nth-child(3) { animation-delay: 180ms; } .suggest button:nth-child(4) { animation-delay: 220ms; }
 .suggest button:hover { background: var(--panel); border-color: var(--border); color: var(--text); transform: translateY(-1px); }
@@ -164,6 +164,7 @@
 .composer-note { display: flex; justify-content: space-between; gap: 12px; max-width: 760px; margin: 8px auto 0; padding: 0 12px; font-size: 12px; line-height: 16px; color: var(--faint); }
 #model-honesty { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .composer-note > span:last-child { white-space: nowrap; }
+.composer-note kbd { line-height: 14px; } /* the keycaps fit the note's 16px line */
 
 /* ---- build brief: closed until asked for (header button or Ctrl .), then a panel on the right ---- */
 #build-brief { display: none; grid-column: 2; grid-row: 2 / -1; min-width: 0; overflow: auto; border-left: 1px solid var(--hair); padding: 14px 18px 14px 20px; flex-direction: column; background: var(--bg); }

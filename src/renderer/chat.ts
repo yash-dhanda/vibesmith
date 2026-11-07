@@ -981,7 +981,7 @@ export async function initChat(opts: {
   window.addEventListener('keydown', (e) => {
     const mod = e.ctrlKey || e.metaKey
     const inEditor = !!(e.target as HTMLElement).closest?.('#editor, #term')
-    if (e.key === 'Escape' && running && !document.querySelector('dialog[open]')) {
+    if (e.key === 'Escape' && running && !$('chat').hidden && !document.querySelector('dialog[open]')) { // Escape on the Crew screen is not for Solo's agent
       window.forge.agentStop(activeId)
     } else if (mod && !inEditor) {
       const k = e.key.toLowerCase()

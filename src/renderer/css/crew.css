@@ -29,7 +29,7 @@
 .team-folder-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); min-width: 0; }
 .team-folder-hint { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .team-folder-hint .ic { flex: none; color: var(--faint); }
-.team-folder-row .skill-chip { height: 24px; font-size: 12px; }
+.team-folder-row .skill-chip { height: 28px; border: 0; border-radius: var(--r-md); font-size: 12px; }
 .team-folder-row .link-btn { font-size: 12px; padding: 4px 7px; }
 .team-folder-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .team-folder-chips:empty { display: none; }
@@ -39,7 +39,7 @@
 .team-folder-chip strong, .team-folder-row-item strong { font-weight: 500; }
 .team-folder-chip span, .team-folder-row-item span { color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .team-folder-panel { margin-top: 8px; border: 1px solid var(--hair); border-radius: var(--r-md); padding: 8px; background: var(--bg); animation: rise var(--t2) var(--ease) both; }
-.team-folder-panel input { width: 100%; height: 32px; margin-bottom: 6px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--r-sm); background: transparent; outline: 0; }
+.team-folder-panel input { width: 100%; height: 32px; margin-bottom: 6px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--r-sm); background: transparent; outline: 0; transition: border-color var(--t1), box-shadow var(--t1); }
 .team-folder-panel input:focus { border-color: var(--focus); }
 .team-folder-list { display: flex; flex-direction: column; gap: 2px; max-height: 220px; overflow: auto; }
 .team-folder-row-item { border-color: transparent; width: 100%; animation: none; }
@@ -62,7 +62,8 @@
 .crew-pop-head > span:last-child { margin-left: auto; min-width: 0; color: var(--faint); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .crew-pop-field { display: grid; grid-template-columns: 52px minmax(0, 1fr); align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
 .crew-pop-field + .crew-pop-field { margin-top: 8px; }
-.crew-pop select { width: 100%; min-width: 0; height: 32px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg); color: var(--text); font-size: 13px; }
+.crew-pop select { width: 100%; min-width: 0; height: 32px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg); color: var(--text); font-size: 13px; transition: border-color var(--t1), box-shadow var(--t1); }
+.crew-pop select:focus { border-color: var(--focus); outline: 0; }
 /* questions and web research: two small Off | On toggles; More options on the right */
 .crew-options { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px; margin-top: 10px; }
 .crew-toggle { display: inline-flex; align-items: center; gap: 9px; color: var(--muted); font-size: 13px; animation: rise var(--t2) var(--ease) 60ms both; }
@@ -78,7 +79,10 @@
 .team-config-error:empty { min-height: 0; padding: 0; }
 .team-setting-actions { display: flex; gap: 6px; padding: 2px 2px 4px; }
 .team-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; color: var(--text); font-size: 13px; }
-.team-field input, .team-field select { width: 100%; min-width: 0; height: 32px; border: 1px solid var(--border); background: var(--bg); border-radius: var(--r-sm); padding: 0 9px; color: var(--text); font-size: 13px; }
+.team-field input, .team-field select { width: 100%; min-width: 0; height: 32px; border: 1px solid var(--border); background: var(--bg); border-radius: var(--r-sm); padding: 0 9px; color: var(--text); font-size: 13px; transition: border-color var(--t1), box-shadow var(--t1); }
+.team-field select { appearance: none; padding-right: 32px; } /* inside .team-select, with the up/down chevrons Settings uses */
+.team-select { position: relative; display: flex; align-items: center; }
+.team-select > .ic { position: absolute; right: 10px; color: var(--faint); pointer-events: none; }
 .team-field input:focus, .team-field select:focus { border-color: var(--focus); }
 .team-field input:invalid { border-color: var(--errborder); }
 .team-field small { color: var(--faint); font-size: 12px; line-height: 1.5; }
@@ -188,7 +192,7 @@
 .q-opt.on .q-mark { border-color: var(--text); }
 .q-opt.on .q-mark::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--text); animation: check-pop .2s var(--ease); }
 .q-opt.on .q-mark.box::after { border-radius: 2px; }
-.q-other { width: 100%; height: 38px; margin-top: 8px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: transparent; outline: 0; }
+.q-other { width: 100%; height: 38px; margin-top: 8px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: transparent; outline: 0; transition: border-color var(--t1), box-shadow var(--t1); }
 .q-other:focus { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
 .q-other:focus-visible { outline: 0; animation: none; }
 .q-other[hidden] { display: none; }
@@ -203,7 +207,7 @@
 .approval-copy h3 { margin: 2px 0; font-size: 14px; font-weight: 500; }
 .approval-copy p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .approval-kind { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12px; }
-.team-approval-card > input { width: 100%; min-width: 0; height: 32px; border: 1px solid var(--border); background: var(--bg); border-radius: var(--r-sm); padding: 0 9px; }
+.team-approval-card > input { width: 100%; min-width: 0; height: 32px; border: 1px solid var(--border); background: var(--bg); border-radius: var(--r-sm); padding: 0 9px; transition: border-color var(--t1), box-shadow var(--t1); }
 .team-approval-card > input:focus { border-color: var(--focus); outline: 0; }
 .approval-actions, .task-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 /* plan approval: the plan as editable rows before any agent works */
@@ -215,7 +219,7 @@
 .plan-edit-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 2px 10px; align-items: center; padding: 8px 12px; animation: rise var(--t2) var(--ease) both; }
 .plan-edit-row + .plan-edit-row { border-top: 1px solid var(--hair); }
 .plan-edit-row:nth-child(2) { animation-delay: 40ms; } .plan-edit-row:nth-child(3) { animation-delay: 80ms; } .plan-edit-row:nth-child(4) { animation-delay: 120ms; } .plan-edit-row:nth-child(n+5) { animation-delay: 160ms; }
-.plan-edit-row input[type="text"], .plan-edit-row select { min-width: 0; height: 32px; border: 1px solid var(--border); background: var(--panel); border-radius: var(--r-sm); padding: 0 9px; }
+.plan-edit-row input[type="text"], .plan-edit-row select { min-width: 0; height: 32px; border: 1px solid var(--border); background: var(--panel); border-radius: var(--r-sm); padding: 0 9px; transition: border-color var(--t1), box-shadow var(--t1); }
 .plan-edit-row input[type="text"]:focus, .plan-edit-row select:focus { border-color: var(--focus); outline: 0; }
 .plan-edit-row .plan-goal, .plan-edit-row .task-deps, .plan-edit-row .plan-checks { grid-column: 2 / -1; margin: 0; padding-left: 2px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .plan-edit-row .plan-goal { margin-top: 4px; }
@@ -281,8 +285,8 @@
 .agent-lane.codex { --agent: var(--a-codex); } .agent-lane.local { --agent: var(--a-local); }
 .live-code > summary { list-style: none; cursor: pointer; }
 .live-code > summary::-webkit-details-marker { display: none; }
-.live-code > summary::before { content: '▸'; color: var(--faint); font-size: 12px; margin-right: 2px; display: inline-block; transition: transform var(--t1); }
-.live-code[open] > summary::before { transform: rotate(90deg); }
+.live-code > summary::before { content: ''; flex: none; width: 5px; height: 5px; margin: 0 2px; border-right: 1.5px solid var(--faint); border-bottom: 1.5px solid var(--faint); transform: rotate(-45deg); transition: transform var(--t1); }
+.live-code[open] > summary::before { transform: rotate(45deg); }
 .live-code-head { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-bottom: 1px solid var(--hair); }
 .live-code-head .tool-path { flex: 1; min-width: 0; color: var(--muted); }
 .live-code-state { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; white-space: nowrap; }
@@ -360,6 +364,7 @@
 .team-applied.undone { border-color: var(--border); }
 .team-applied.undone .eyebrow { color: var(--muted); }
 .team-undo-result { color: var(--ok); font-size: 12px; }
+.team-applied .git-card { grid-column: 1 / -1; margin-top: 12px; padding: 12px 0 0; border: 0; border-top: 1px solid var(--hair); border-radius: 0; background: none; }
 
 @media (max-width: 1180px) { .team-side-story { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); } .team-run { width: min(100% - 32px, 1100px); } }
 @media (max-width: 1000px) { #app.team-mode, #app.team-mode.ws-open { grid-template-columns: minmax(0, 1fr); } }

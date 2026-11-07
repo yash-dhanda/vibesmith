@@ -100,7 +100,9 @@ function showChat() {
 
 function field(label: string, control: HTMLElement, hint = '') {
   const wrap = h('label', 'team-field')
-  wrap.append(h('span', '', label), control)
+  let box = control
+  if (control instanceof HTMLSelectElement) { box = h('span', 'team-select'); box.append(control, icon('updown', 'sm')) } // a select carries the up/down chevrons Settings' choose() uses
+  wrap.append(h('span', '', label), box)
   if (hint) wrap.append(h('small', '', hint))
   return wrap
 }
@@ -571,7 +573,12 @@ function openPicker(anchor: HTMLElement, groups: { title: string; options: [stri
     for (const [v, label] of g.options) { const b = h('button', `cw-pop-item${v === g.current ? ' on' : ''}`, label) as HTMLButtonElement; b.type = 'button'; b.onclick = () => { closePicker(); g.pick(v) }; pop.append(b) }
   }
   pop.style.left = `${anchor.offsetLeft}px`; anchor.parentElement!.append(pop); picker = pop
-  const away = (e: MouseEvent) => { if (!pop.contains(e.target as Node) && !anchor.contains(e.target as Node)) { closePicker(); document.removeEventListener('mousedown', away) } }
+  pop.onkeydown = e => { if (e.key === 'Escape') { e.stopPropagation(); closePicker(); anchor.focus() } } // Escape closes it and puts the keyboard back on its chip
+  ;(pop.querySelector<HTMLElement>('.cw-pop-item.on') ?? pop.querySelector<HTMLElement>('.cw-pop-item'))?.focus()
+  const away = (e: MouseEvent) => { // a picker closed by a pick or Escape lets go here, so it never closes the next one on its first click
+    if (picker !== pop) document.removeEventListener('mousedown', away)
+    else if (!pop.contains(e.target as Node) && !anchor.contains(e.target as Node)) { closePicker(); document.removeEventListener('mousedown', away) }
+  }
   setTimeout(() => document.addEventListener('mousedown', away), 0)
 }
 const setCfg = (patch: { claudeModel?: string; codexModel?: string; localModel?: string; claudeEffort?: string; codexEffort?: string; bypassPermissions?: boolean }) => { if (replay) return toast('Replay mode: action recorded'); void teamAction(() => window.forge.teamSetModels(run!.id, patch)) }
