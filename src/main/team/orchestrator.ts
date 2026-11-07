@@ -300,8 +300,9 @@ export class TeamOrchestrator {
     if (live.stop) (live.ctl = new AbortController()), (live.stop = null)
     live.paused = false
     for (const t of run.tasks) {
-      if (t.status === 'interrupted' || (t.status === 'running' && !live.running.has(t.id))) (t.status = 'queued'), (t.phase = null) // the second case: a fix stopped during the last checks
-      else if (t.status === 'blocked' && !/depends on failed/.test(t.error ?? '')) (t.status = 'queued'), (t.error = undefined) // blocked by a missing sign-in, which may be fixed now
+      if (t.status === 'failed') (t.status = 'queued'), (t.phase = null), (t.error = undefined), (t.attempts = 0), (t.fixRounds = 0) // the pause says "needs attention": Resume is the owner's go-ahead to try it again, or the run would pause again at once
+      else if (t.status === 'interrupted' || (t.status === 'running' && !live.running.has(t.id))) (t.status = 'queued'), (t.phase = null) // the second case: a fix stopped during the last checks
+      else if (t.status === 'blocked') (t.status = 'queued'), (t.error = undefined) // a missing sign-in may be fixed now; a task blocked behind a failed one goes on with it (pump blocks it again if that one fails again)
     }
     this.setStatus(run, run.tasks.length ? 'running' : 'planning')
     if (!run.tasks.length) this.startPlan(run, live)

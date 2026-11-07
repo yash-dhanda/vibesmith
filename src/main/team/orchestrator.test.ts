@@ -317,6 +317,18 @@ describe('team orchestrator', () => {
     expect(end.pausedReason).toMatch(/needs attention/)
   })
 
+  it('Resume retries a task that failed, instead of pausing again at once with the same message', async () => {
+    const stalled = { ok: false, text: '', usage: { input: 0, output: 0, cached: 0, costUsd: 0 }, events: [], error: { kind: 'stalled' as const, message: 'claude gave no output for 5 minutes and was stopped' } }
+    let calls = 0 // a stall is retried three times before the task fails
+    const x = h({ plan: { tasks: [T('a'), T('b', { deps: ['a'] })] }, fail: (_agent, kind, task) => (kind === 'work' && task === 't1' && ++calls <= 4 ? stalled : null) })
+    const run = await x.orch.start(x.proj, 'stalls')
+    const stuck = await until(x.orch, run.id, (r) => r.status === 'paused')
+    expect(stuck.tasks.map((t) => t.status)).toEqual(['failed', 'blocked'])
+    await x.orch.resume(run.id) // the Resume button and the word "resume" both end here
+    const end = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval')
+    expect(end.tasks.map((t) => t.status)).toEqual(['done', 'done'])
+  })
+
   it('hands merge conflicts to an agent and keeps both changes', async () => {
     let n = 0
     const x = h({
