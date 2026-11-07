@@ -11,17 +11,6 @@
 .crew-me { align-self: flex-end; max-width: 82%; padding: 10px 16px; border-radius: var(--r-lg); background: var(--panel-2); font-size: 14px; line-height: 22px; }
 .crew-me p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 .crew-reply { display: flex; flex-direction: column; gap: 8px; max-width: 100%; }
-.crew-reply-head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
-.crew-reply-line { color: var(--muted); }
-.crew-reply-head.busy .crew-reply-line { color: var(--text); }
-.crew-dots { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--hair); border-top-color: var(--accent, currentColor); animation: crew-spin 0.9s linear infinite; flex: none; }
-@keyframes crew-spin { to { transform: rotate(360deg); } }
-.crew-steps { display: flex; flex-direction: column; gap: 2px; padding: 4px 0; }
-.crew-step { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 13px; }
-.crew-step-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.crew-step-state { color: var(--faint); font-size: 12px; }
-.crew-step.running .crew-step-state { color: var(--accent, currentColor); }
-.crew-step.failed .crew-step-state, .crew-step.blocked .crew-step-state { color: #e5484d; }
 .crew-said { display: flex; flex-direction: column; gap: 4px; margin: 0; font-size: 14px; line-height: 22px; }
 .crew-said p { margin: 0; user-select: text; overflow-wrap: anywhere; }
 .crew-claude .team-fold { border: 0; }

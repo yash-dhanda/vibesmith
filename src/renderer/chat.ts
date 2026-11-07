@@ -22,7 +22,8 @@ import { initBrief, resetBrief, projectBrief, briefGoal, briefEvent, briefUndone
 import { initPalette } from './palette'
 import { attachmentStrip, sentChips, type Kind } from './attachments'
 import { cacheGet, cacheSet, isRemote, onResync, phone, toggleDrawer } from './phone'
-import { morphChildren } from './morph'
+import { morph, morphChildren } from './morph'
+import { checklist, planItems } from './checklist'
 
 // Settings is its own chunk: nothing on the first screen needs it.
 const openSettings = (page?: Page) => import('./settings').then((m) => m.openSettings(page)).catch((e) => toast(cleanErr(e), 4000))
@@ -107,6 +108,7 @@ function flushReply() {
   drawReply()
 }
 let thinkingEl: HTMLElement | null = null
+let planEl: HTMLElement | null = null // this turn's checklist (update_plan), redrawn in place
 let runUsage = { input: 0, output: 0, genSec: 0, calls: 0 }
 const live = { chars: 0, start: 0, timer: null as ReturnType<typeof setInterval> | null }
 
@@ -241,6 +243,7 @@ function setProject(p: string | null) {
 
 function setRunning(on: boolean) {
   running = on
+  planEl?.classList.toggle('live', on)
   sendBtn.classList.toggle('stop', on)
   sendBtn.replaceChildren(icon(on ? 'stop' : 'arrowup'))
   sendBtn.title = on ? 'Stop (Esc)' : 'Send'
@@ -460,6 +463,7 @@ function addUser(text: string, files: { id: string; name: string; kind: Kind }[]
   emptyEl = null
   hasMessages = true
   runUsage = { input: 0, output: 0, genSec: 0, calls: 0 }
+  planEl = null // a new turn gets its own checklist
   log.push({ type: 'user', text })
   briefGoal(text.split('\n\nMy build priorities, in order:')[0])
   const bubble = h('div', 'user')
@@ -558,8 +562,12 @@ function handle(ev: AgentEvent) {
       if (running) showThinking()
       break
     }
-    case 'plan':
-      break // rendered in the persistent build brief
+    case 'plan': {
+      const list = checklist(planItems(ev.items), { live: running })
+      if (planEl?.isConnected) morph(planEl, list)
+      else { finishGroup(); planEl = add(list) }
+      break
+    }
     case 'note':
       finishGroup()
       add(h('div', 'note', ev.text))
@@ -683,6 +691,7 @@ function resetView() {
   reply = null
   group = null
   thinkingEl = null
+  planEl = null
   hasMessages = false
   emptyEl = null
   log = []

@@ -173,7 +173,7 @@ html.remote :is(input, textarea, select) { font-size: 16px !important; }
 html.remote #app #history { box-shadow: none; border-right: 1px solid var(--hair); }
 /* only the working indicators keep moving; every other loop plays once */
 html.remote *, html.remote *::before, html.remote *::after { animation-iteration-count: 1 !important; }
-html.remote .thinking i, html.remote .lane-live.on::before, html.remote .stage-cursor, html.remote .netbar-spin { animation-iteration-count: infinite !important; }
+html.remote .thinking i, html.remote .stage-cursor, html.remote .netbar-spin, html.remote .ck-spin, html.remote .st.running { animation-iteration-count: infinite !important; }
 html.remote #thread > * { animation: none; }
 html.remote .fresh { animation-duration: .6s; }
 html.remote .stage-block.arriving { animation-duration: .25s; }

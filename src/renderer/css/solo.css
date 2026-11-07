@@ -185,13 +185,7 @@
 .brief-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 #priority-count { font: 12px var(--mono); color: var(--faint); }
 .brief-muted { font-size: 12px; line-height: 1.6; color: var(--faint); margin: 6px 0 10px; }
-#agent-plan { list-style: none; padding: 0; margin: 8px 0 0; }
-.plan-item { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; margin: 7px 0; overflow-wrap: anywhere; color: var(--muted); animation: rise var(--t2) var(--ease) both; }
-.plan-item:nth-child(2) { animation-delay: 30ms; } .plan-item:nth-child(3) { animation-delay: 60ms; } .plan-item:nth-child(4) { animation-delay: 90ms; } .plan-item:nth-child(n+5) { animation-delay: 120ms; }
-.plan-item > .ck-mark { margin-top: 3px; } /* centred on the first line of the step */
-.plan-item.done { color: var(--faint); }
-.plan-item.done > span:last-child { text-decoration: line-through; text-decoration-color: var(--border); }
-.plan-item.doing { color: var(--text); font-weight: 500; }
+#agent-plan { margin: 8px 0 0; padding: 0; border: 0; background: none; } /* the brief draws the checklist flat */
 #priorities { padding: 0; margin: 0 0 8px; list-style: none; }
 .priority { display: flex; align-items: center; gap: 2px; margin-bottom: 4px; animation: rise var(--t2) var(--ease) both; }
 .priority label { display: flex; flex: 1; min-width: 0; align-items: flex-start; gap: 7px; font-size: 13px; }

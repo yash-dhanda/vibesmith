@@ -26,6 +26,7 @@ import { cacheGet, cacheSet, isRemote, onResync, phone, toggleDrawer } from './p
 import { colorize, mountDiff } from './codeColor'
 import { normaliseTeamEventsAsync, reduceTeamView, type LoggedTeamEvent } from './teamReducer'
 import { forget, keep, morph, morphChildren } from './morph'
+import { checklist, type CheckItem } from './checklist'
 
 type Logged = LoggedTeamEvent
 type Summary = RunSummary
@@ -424,14 +425,18 @@ function startClock() { stopClock(); elapsedTimer = setInterval(() => { const el
 function stopClock() { if (elapsedTimer) clearInterval(elapsedTimer); elapsedTimer = null }
 
 // ---------------------------------------------------------------- the run page, built like a chat
-// What you sent on the right, what the crew did on the left as a few plain lines, the model switches under the message box,
+// What you sent on the right, what the crew does on the left as a live checklist and a few plain lines, the model switches under the message box,
 // and the crew's own tasks, live code and chatter behind one closed "Crew activity" fold in the side panel.
 const AUTO_TASK = /^(Fix failing checks|Fix problems from|Write or extend tests)/
 const promptsOf = () => (run!.prompts?.length ? run!.prompts : [{ id: 'p1', text: run!.goal, at: run!.createdAt }])
 const isWorking = () => ['planning', 'running', 'verifying'].includes(run!.status)
 let crewOpen = false
-const openSteps = new Set<string>()
-const taskState = (t: Task) => ({ done: 'Done', running: 'Working', queued: 'Waiting', failed: 'Failed', blocked: 'Blocked', paused: 'Paused' } as Record<string, string>)[t.status] ?? t.status
+// A task as a checklist row: running turns (with its latest step), done and failed say so; queued, blocked, interrupted and proposed wait.
+const taskItem = (t: Task): CheckItem => ({
+  key: t.id, text: taskTitle(t),
+  state: t.status === 'running' ? 'active' : t.status === 'done' ? 'done' : t.status === 'failed' ? 'failed' : 'pending',
+  detail: t.status === 'running' ? stepNow.get(t.id) ?? (t.phase && t.phase !== 'work' ? PHASE_LABEL[t.phase] : AGENT_NAME[t.agent]) : t.status === 'blocked' ? 'Blocked' : t.status === 'interrupted' ? 'Interrupted' : undefined,
+})
 
 function renderRun() {
   if (!run) return
@@ -471,27 +476,17 @@ function renderThread() {
   return thread
 }
 
-// One reply per request: a single line of what is going on, the plain results (newest three, each once), and the work itself behind a closed fold.
+// One reply per request: the live checklist of its tasks (Claude Code's), then the plain results (newest three, each once).
 function renderReply(p: { id: string }, last: boolean) {
   const first = promptsOf()[0].id
   const mine = run!.tasks.filter(t => (t.promptId ?? first) === p.id && t.status !== 'cancelled' && !AUTO_TASK.test(t.title))
-  const done = mine.filter(t => t.status === 'done').length
-  const busy = last && isWorking()
   const box = h('div', 'crew-reply'); box.dataset.key = `re:${p.id}`
-  const head = h('div', `crew-reply-head${busy ? ' busy' : ''}`)
-  if (busy) head.append(h('span', 'crew-dots'))
-  const line = busy
-    ? (run!.status === 'planning' && !mine.length ? 'Planning the work…' : latestActivity() ?? (mine.length ? `Working on ${mine.length - done} of ${mine.length} tasks` : 'Reading your message…'))
-    : mine.length ? `${done} of ${mine.length} task${mine.length === 1 ? '' : 's'} done` : last && ['awaiting_approval', 'done'].includes(run!.status) ? 'Finished' : last && isActive(run!.status) ? 'Reading your message…' : ''
-  if (line) head.append(h('span', 'crew-reply-line', line))
-  const agents = [...new Set(mine.map(t => t.agent))]
-  for (const a of agents) head.append(h('span', `agent-orb ${a}`))
-  box.append(head)
-  if (mine.length) {
-    const steps = h('div', 'crew-steps')
-    for (const t of mine) { const row = h('div', `crew-step ${t.status}`); row.append(h('span', `agent-orb ${t.agent}`), h('span', 'crew-step-title', taskTitle(t)), h('span', 'crew-step-state', taskState(t))); steps.append(row) }
-    box.append(fold(`Show the work (${mine.length})`, openSteps.has(p.id), o => { if (o) openSteps.add(p.id); else openSteps.delete(p.id) }, () => [steps]))
+  const items = mine.map(taskItem)
+  if (last && isActive(run!.status) && run!.status !== 'awaiting_approval') {
+    if (!items.length) items.push({ key: 'start', text: run!.status === 'planning' ? 'Planning the work' : 'Reading your message', state: isWorking() ? 'active' : 'pending' })
+    else if (run!.status === 'verifying' || run!.tasks.some(t => t.status === 'running' && AUTO_TASK.test(t.title))) items.push({ key: 'check', text: 'Checking the result', state: 'active' }) // never reads all done while the crew still checks
   }
+  if (items.length) box.append(checklist(items, { live: isWorking() })) // isWorking, not `last`: earlier requests still running keep turning
   const results = [...new Set(mine.filter(t => t.status === 'done').sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0)).map(t => plainLine(t.summary ?? '')).filter(Boolean))].slice(0, 3)
   if (results.length) { const said = h('div', 'crew-said'); for (const line of results) said.append(h('p', '', line)); box.append(said) }
   return box
@@ -1132,6 +1127,7 @@ function reduceEvent(event: RunEvent, t = Date.now()) {
   if (event.type === 'agent') {
     const e = event.ev
     const line = noteStep({ t, ev: event }); const idle = line && document.querySelector('.stage-idle-text'); if (idle) idle.textContent = line // keep the empty live view honest
+    if (line) { const d = root.querySelector(`.ck-row[data-key='${CSS.escape(event.taskId)}'] .ck-detail`); if (d && d.textContent !== line) d.textContent = line } // the running row's step changes in place, without a redraw
     if (!document.querySelector('.team-lanes')) return // agent events only change Live work: while it is closed nothing is redrawn
     if (!laneDetails) {
       if (e.type === 'code' && event.phase !== 'plan') { if (pushCode({ id: e.id, agent: e.agent, path: e.path, text: e.text, kind: e.kind, done: e.done })) return }

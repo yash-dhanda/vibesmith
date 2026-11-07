@@ -1,0 +1,10 @@
+/* Live checklist (checklist.ts): Claude Code's task list measured from its screenshot and scaled for Forge's 107% zoom:
+   13px text on 26px rows, the 14px mark 4px before the text, 10px 14px card padding, a hairline card. */
+.ck { list-style: none; margin: 0; padding: 10px 14px; border: 1px solid var(--hair); border-radius: var(--r-lg); color: var(--text); font-size: 13px; line-height: 20px; }
+.ck-row { display: flex; gap: 4px; padding: 3px 0; overflow-wrap: anywhere; }
+.ck-row > .ck-mark { margin-top: 3px; }
+.ck:not(.live) .ck-spin { animation-play-state: paused; } /* a paused or finished run holds its arc still */
+.ck-row[data-state='skipped'] { color: var(--faint); }
+.ck-row[data-state='skipped'] .ck-text { text-decoration: line-through; text-decoration-color: var(--border); }
+.ck-detail { margin-left: 8px; color: var(--faint); font-size: 12px; }
+.ck-more { padding: 3px 0 0 18px; color: var(--faint); font-size: 12px; }

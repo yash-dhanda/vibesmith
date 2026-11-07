@@ -1,8 +1,9 @@
 import type { AgentEvent } from '../preload'
 import { folderName } from './format'
 import { $, h, cleanErr, toast } from './ui'
-import { mark } from './glyphs'
 import { fileIcon, icon } from './icons'
+import { checklist, planItems } from './checklist'
+import { morph } from './morph'
 
 type Priority = { text: string; skipped: boolean }
 let chatId = ''
@@ -11,7 +12,8 @@ let goal = ''
 let changed = new Map<string, string>()
 let state = 'Ready when you are'
 let page: string | null = null
-let plan: { text: string; status: 'todo' | 'doing' | 'done' }[] = []
+let plan: Extract<AgentEvent, { type: 'plan' }>['items'] = []
+let live = false // the agent is still working, so the step in progress turns
 let openFile: (path: string) => void = () => {}
 const save = () => { try { localStorage.setItem(`forge.brief.${chatId}`, JSON.stringify(priorities)) } catch {} }
 
@@ -79,6 +81,7 @@ export function resetBrief(id: string, project: string | null) {
   changed = new Map()
   page = null
   plan = []
+  live = false
   state = 'Ready when you are'
   try {
     const stored: unknown = JSON.parse(localStorage.getItem(`forge.brief.${id}`) ?? '[]')
@@ -106,7 +109,8 @@ export function withPriorities(text: string) {
 }
 
 export function briefEvent(ev: AgentEvent) {
-  if (ev.type === 'plan') plan = ev.items
+  if (ev.type === 'plan') { plan = ev.items; live = true }
+  if (ev.type === 'done' || ev.type === 'error') live = false
   if (ev.type === 'tool') state = ev.needsApproval ? 'Your approval is needed' : ev.name === 'run_command' ? 'Trying the next step' : /edit|create/.test(ev.name) ? 'Shaping your project' : 'Getting to know your project'
   if (ev.type === 'verify') state = ev.ok ? 'Project check passed' : 'Project check needs attention'
   if (ev.type === 'changes') for (const f of ev.files) {
@@ -126,15 +130,9 @@ export function briefUndone(paths: string[]) {
 }
 
 function render() {
-  const checklist = $('agent-plan')
   $('agent-plan-section').hidden = !plan.length
-  checklist.replaceChildren()
-  for (const item of plan) {
-    const row = h('li', `plan-item ${item.status}`)
-    row.setAttribute('aria-label', `${item.status === 'doing' ? 'In progress' : item.status === 'done' ? 'Complete' : 'To do'}: ${item.text}`)
-    row.append(mark(item.status === 'done' ? 'done' : item.status === 'doing' ? 'active' : 'pending'), h('span', '', item.text))
-    checklist.append(row)
-  }
+  const list = checklist(planItems(plan), { max: Infinity, live }); list.id = 'agent-plan' // morph copies attributes: keep the id
+  morph($('agent-plan'), list)
   $('brief-goal').textContent = goal || 'A small idea can become something real. Describe yours to start the build.'
   $('brief-status').textContent = state
   const files = $('brief-files')
