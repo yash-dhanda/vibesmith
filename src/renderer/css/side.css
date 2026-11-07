@@ -21,8 +21,8 @@
 .chat-item .s { display: none; }
 .chat-open { padding: 6px 8px; line-height: 20px; }
 .chat-item .row1 { gap: 8px; position: relative; padding-left: 24px; }
-.chat-item .row1 > :is(.st, .ck-mark, .run-icon) { position: absolute; left: 8px; top: 50%; translate: -50% -50%; } /* one icon column: every title starts at the same x */
-.chat-item .row1 > :is(.st, .ck-mark) ~ .run-icon { display: none; }
+.chat-item .row1 > :is(.ck-mark, .run-icon) { position: absolute; left: 8px; top: 50%; translate: -50% -50%; } /* one icon column: every title starts at the same x */
+.chat-item .row1 > .ck-mark ~ .run-icon { display: none; }
 .chat-item + .chat-item { margin-top: 2px; }
 .chat-item .run-icon { color: var(--side-faint); flex: none; }
 .chat-item .when { flex: none; margin-left: 6px; font-size: 12px; line-height: 16px; color: var(--side-faint); font-variant-numeric: tabular-nums; transition: opacity var(--t1); }
@@ -54,8 +54,7 @@
 .crew-allruns { display: block; margin: 24px auto 0; color: var(--faint); font-size: 12.5px; }
 .team-runs-wrap { width: 100%; max-width: 980px; margin: 16px auto 0; }
 
-/* Solo's new chat: the Solo/Crew switch loses its emoji and the greeting sits in the middle */
-.composer-mode .emo { display: none; }
+/* Solo's new chat: the greeting sits in the middle */
 #thread .empty { margin-top: 12vh; }
 #thread .empty h2 { font-size: 28px; line-height: 36px; font-weight: 500; letter-spacing: -0.02em; }
 @media (max-width: 800px) {

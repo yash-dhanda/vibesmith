@@ -1,7 +1,7 @@
 import type { AgentEvent } from '../preload'
 import { folderName } from './format'
 import { $, h, cleanErr, toast } from './ui'
-import { STEP_GLYPH } from './glyphs'
+import { mark } from './glyphs'
 import { fileIcon, icon } from './icons'
 
 type Priority = { text: string; skipped: boolean }
@@ -132,9 +132,7 @@ function render() {
   for (const item of plan) {
     const row = h('li', `plan-item ${item.status}`)
     row.setAttribute('aria-label', `${item.status === 'doing' ? 'In progress' : item.status === 'done' ? 'Complete' : 'To do'}: ${item.text}`)
-    const marker = h('span', 'plan-marker', item.status === 'done' ? STEP_GLYPH.done : item.status === 'doing' ? STEP_GLYPH.working : '○')
-    marker.setAttribute('aria-hidden', 'true')
-    row.append(marker, h('span', '', item.text))
+    row.append(mark(item.status === 'done' ? 'done' : item.status === 'doing' ? 'active' : 'pending'), h('span', '', item.text))
     checklist.append(row)
   }
   $('brief-goal').textContent = goal || 'A small idea can become something real. Describe yours to start the build.'

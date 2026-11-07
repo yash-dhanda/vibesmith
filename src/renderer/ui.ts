@@ -9,13 +9,6 @@ export const h = (tag: string, cls = '', text = '') => {
   return el
 }
 
-// An emoji for meaning; the words stay in the control's title / aria-label.
-export const emo = (glyph: string) => {
-  const s = h('span', 'emo', glyph)
-  s.setAttribute('aria-hidden', 'true')
-  return s
-}
-
 // A call the phone could not send (the link is down) says so in words; the link reconnects by itself.
 export const NO_LINK = 'No connection. Retrying.'
 export const cleanErr = (e: unknown) => { const m = String((e as Error).message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''); return /^(Failed to fetch|Load failed|NetworkError|The network connection was lost)/i.test(m) ? NO_LINK : m }

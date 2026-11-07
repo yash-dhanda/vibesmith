@@ -13,8 +13,7 @@
   --float: 0 12px 34px rgba(0, 0, 0, .55), 0 0 0 1px var(--border);
   --r-lg: 12px; --r-md: 8px; --r-sm: 7px; --r-xs: 5px;
   --z-menu: 20; --z-toast: 40;
-  --ease: cubic-bezier(.2, .8, .2, 1); --t1: 150ms; --t2: 220ms; --t3: 320ms;
-  --emoji: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji';
+  --ease: cubic-bezier(.2, .8, .2, 1); --t1: 150ms; --t2: 220ms; --t3: 320ms; --spin: 800ms;
   --sans: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif, 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji';
   --mono: 'Geist Mono Variable', ui-monospace, 'SF Mono', Menlo, Consolas, monospace, 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji';
   --a-claude: #e08a62; --a-codex: #7fb592; --a-local: #86a9de; --on-agent: #0b0b0b;
@@ -50,8 +49,22 @@ button:active:not(:disabled) { transform: scale(.98); }
 ::-webkit-scrollbar-thumb:hover { background: var(--faint); background-clip: content-box; }
 .ic { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .ic.sm { width: 14px; height: 14px; }
-/* emoji: one size, centred on the text line, no baseline jump */
-.emo { display: inline-block; flex: none; font-family: var(--emoji); font-size: 1.05em; line-height: 1; width: 1.25em; text-align: center; vertical-align: -.12em; font-style: normal; }
+/* the status mark (glyphs.ts mark()): Claude Code's checklist glyphs in a 14px box; data-state shows one glyph and a change crossfades */
+.ck-mark { position: relative; display: inline-block; flex: none; width: 14px; height: 14px; vertical-align: -2px; color: var(--muted); }
+.ck-mark svg { position: absolute; inset: 0; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
+.ck-mark svg > *, .ck-spin { opacity: 0; transition: opacity var(--t1); }
+/* pathLength 40: eight dashes centred every 45 degrees, two thirds on, as in Claude Code; a finished step's dashes close up */
+.ck-mark .ck-ring { stroke-linecap: butt; stroke-dasharray: 3.3 1.7; stroke-dashoffset: 1.65; transition: opacity var(--t1), stroke-dasharray var(--t2); }
+.ck-mark .ck-done { transform: scale(.6); transform-box: fill-box; transform-origin: center; transition: opacity var(--t1), transform var(--t2); }
+.ck-mark .ck-ask { fill: currentColor; stroke: none; }
+/* the arc: a faint full ring, a head at five o'clock and a tail fading back, turning clockwise */
+.ck-spin { position: absolute; top: 1.5px; left: 1.5px; width: 11px; height: 11px; border-radius: 50%; background: conic-gradient(from -30deg, var(--hair), var(--faint) 195deg, var(--hair) 0); mask: radial-gradient(closest-side, #0000 calc(100% - 1.2px), #000 calc(100% - 1.2px)); animation: spin var(--spin) linear infinite; }
+.ck-mark[data-state='active'] .ck-spin, .ck-mark[data-state='pending'] .ck-ring, .ck-mark[data-state='done'] :is(.ck-ring, .ck-done), .ck-mark[data-state='failed'] :is(.ck-ring, .ck-fail), .ck-mark[data-state='skipped'] :is(.ck-ring, .ck-skip), .ck-mark[data-state='ask'] :is(.ck-ring, .ck-ask) { opacity: 1; }
+.ck-mark[data-state='done'] .ck-done { transform: none; }
+.ck-mark:is([data-state='done'], [data-state='failed'], [data-state='ask']) .ck-ring { stroke-dasharray: 5 0; }
+.ck-mark[data-state='failed'] { color: var(--err); }
+.ck-mark[data-state='ask'] { color: var(--warn); }
+.ck-mark[data-state='skipped'] { color: var(--faint); }
 .grow { flex: 1; }
 kbd { font: 10.5px var(--mono); color: var(--faint); border: 1px solid var(--hair); border-radius: var(--r-xs); padding: 0 5px; line-height: 17px; }
 .muted { color: var(--muted); }
@@ -63,7 +76,6 @@ kbd { font: 10.5px var(--mono); color: var(--faint); border: 1px solid var(--hai
 .icon-btn:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
 .icon-btn:disabled { opacity: .4; cursor: default; }
 .icon-btn.sm { width: 24px; height: 24px; }
-.icon-btn .emo { font-size: 15px; }
 .btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; border-radius: var(--r-md); padding: 0 12px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 12.5px; white-space: nowrap; }
 .btn:hover:not(:disabled) { background: var(--panel-2); }
 .btn:disabled { opacity: .5; cursor: default; }

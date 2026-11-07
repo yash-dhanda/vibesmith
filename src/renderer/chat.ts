@@ -3,7 +3,7 @@ import { keyLines, withoutKey } from '../main/keyAnswer'
 import type { AgentEvent, ChatListItem, Mode, TranscriptItem } from '../preload'
 import { exportMarkdown, folderName, formatRate, formatTokens, matchesQuery, md, toolTarget, toolVerb } from './format'
 import { fileIcon, icon, type IconName } from './icons'
-import { STEP_GLYPH, TOOL_GLYPH } from './glyphs'
+import { mark } from './glyphs'
 import { renderHistory } from './history'
 import { openDashboard } from './dashboard'
 import { openRestorePoints } from './restorePanel'
@@ -16,7 +16,7 @@ import { openImprove } from './improve'
 import { initLibrary, openLibrary } from './library'
 import { initModels, noModels, selectedModel } from './models'
 import type { Page } from './settings'
-import { $, agentLimits, cleanErr, copy, emo, h, numCtxPref, showMenu, toast, uuid } from './ui'
+import { $, agentLimits, cleanErr, copy, h, numCtxPref, showMenu, toast, uuid } from './ui'
 import { initUsage, setUsage } from './usage'
 import { initBrief, resetBrief, projectBrief, briefGoal, briefEvent, briefUndone, withPriorities } from './brief'
 import { initPalette } from './palette'
@@ -269,16 +269,17 @@ const PHRASE: Record<string, (n: number) => string> = {
 function summarize(g: Group, working: boolean) {
   const text = [...g.counts].map(([v, n]) => (PHRASE[v] ?? ((k: number) => `${v.toLowerCase()} ×${k}`))(n)).join(', ')
   g.el.classList.toggle('working', working)
-  g.label.replaceChildren(emo(working ? STEP_GLYPH.working : g.failed ? STEP_GLYPH.failed : STEP_GLYPH.done), h('span', 'steps-text', working ? ` Building · ${text}…` : ` ${g.failed ? 'Needs attention' : 'Done'} · ${text}`))
+  const words = working ? `Building · ${text}…` : `${g.failed ? 'Needs attention' : 'Done'} · ${text}`
+  if (g.label.textContent !== words) g.label.textContent = words // patched in place: no restarted animation
 }
 
 function ensureGroup(): Group {
   if (group) return group
   const el = h('div', 'steps working')
   const head = h('button', 'steps-head')
-  const dot = h('span', 'dot run')
+  const dot = mark('active')
   const label = h('span', 'steps-label')
-  label.append(emo(TOOL_GLYPH.search), h('span', 'steps-text', ' Getting to know your project…'))
+  label.textContent = 'Getting to know your project…'
   const chev = h('span', 'chev')
   chev.append(icon('chevron', 'sm'))
   head.append(dot, label, chev)
@@ -297,7 +298,7 @@ function ensureGroup(): Group {
 
 function finishGroup() {
   if (!group) return
-  group.dot.className = 'dot ' + (group.failed ? 'err' : 'ok')
+  group.dot.dataset.state = group.failed ? 'failed' : 'done'
   summarize(group, false)
   group = null
 }
@@ -324,9 +325,9 @@ function toolCard(ev: Extract<AgentEvent, { type: 'tool' }>) {
 
   const card = h('div', 'tool')
   const head = h('button', 'tool-head')
-  const dot = h('span', 'dot run')
+  const dot = mark('active')
   const toolLabel = h('span', 'tool-label')
-  toolLabel.append(emo(TOOL_GLYPH[ev.name] ?? TOOL_GLYPH.other), ev.label || story)
+  toolLabel.append(ev.label || story)
   head.append(dot, toolLabel, h('span', 'tool-path', path))
   const body = h('div', 'tool-body')
   body.hidden = true
@@ -342,11 +343,11 @@ function toolCard(ev: Extract<AgentEvent, { type: 'tool' }>) {
   summarize(g, true)
   const entry: Card = { dot, body, name: writes ? 'write' : ev.name, path, group: g }
   if (ev.needsApproval) {
-    dot.className = 'dot wait'
+    dot.dataset.state = 'ask'
     card.classList.add('needs-approval')
     const explanation = h('div', 'approval-summary')
     const ask = h('strong', '', 'A quick check before I continue')
-    ask.prepend(emo(STEP_GLYPH.ask))
+    ask.prepend(mark('ask'))
     explanation.append(ask, h('p', '', writes ? `${ev.name === 'create_file' ? 'Create' : 'Change'} ${path}. This updates files in your project folder.` : `Run this command in your project folder: ${path}`), h('span', '', 'Open the step above to inspect the exact details.'))
     card.append(explanation)
     g.body.hidden = false // an action that needs a yes must be visible
@@ -362,8 +363,8 @@ function toolCard(ev: Extract<AgentEvent, { type: 'tool' }>) {
     const answer = (ok: boolean) => {
       actions.remove()
       entry.actions = undefined
-      dot.className = 'dot run'
-      explanation.replaceChildren(emo(ok ? STEP_GLYPH.ok : STEP_GLYPH.skipped), ok ? ' Approved · continuing' : ' Skipped · files left unchanged by this step')
+      dot.dataset.state = 'active'
+      explanation.replaceChildren(mark(ok ? 'done' : 'skipped'), ok ? ' Approved · continuing' : ' Skipped · files left unchanged by this step')
       window.forge.agentApprove(activeId, ev.id, ok)
     }
     yes.onclick = () => answer(true)
@@ -532,7 +533,7 @@ function handle(ev: AgentEvent) {
       if (!c) break
       c.actions?.remove()
       const denied = ev.text.startsWith('DENIED:')
-      c.dot.className = 'dot ' + (ev.ok ? 'ok' : denied ? '' : 'err')
+      c.dot.dataset.state = ev.ok ? 'done' : denied ? 'skipped' : 'failed'
       if (!ev.ok && !denied) c.group.failed = true
       if (ev.ok && c.name === 'write') onFileChanged(c.path)
       if (c.name !== 'write' || !ev.ok) {
@@ -546,8 +547,7 @@ function handle(ev: AgentEvent) {
       const card = h('div', 'tool')
       const head = h('button', 'tool-head')
       const checkLabel = h('span', 'tool-label', ev.ok ? 'Check passed' : 'Check failed')
-      checkLabel.prepend(emo(ev.ok ? STEP_GLYPH.ok : STEP_GLYPH.bad))
-      head.append(h('span', 'dot ' + (ev.ok ? 'ok' : 'err')), checkLabel, h('span', 'tool-path', ev.command))
+      head.append(mark(ev.ok ? 'done' : 'failed'), checkLabel, h('span', 'tool-path', ev.command))
       const body = h('div', 'tool-body')
       body.hidden = ev.ok
       body.append(h('pre', ev.ok ? '' : 'err', ev.output.length > 3000 ? '…' + ev.output.slice(-3000) : ev.output))
@@ -719,7 +719,7 @@ function replay(items: TranscriptItem[], liveRun: boolean, all = !isRemote()) {
     // A chat saved mid-run (app closed) can end on a step that never got an answer: no dead buttons.
     for (const c of cards.values()) {
       c.actions?.remove()
-      if (c.dot.classList.contains('wait') || c.dot.classList.contains('run')) c.dot.className = 'dot'
+      if (c.dot.dataset.state === 'ask' || c.dot.dataset.state === 'active') c.dot.dataset.state = 'pending'
     }
   } else {
     setRunning(true) // still working in the background: keep following it live

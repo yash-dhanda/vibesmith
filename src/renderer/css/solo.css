@@ -11,7 +11,6 @@
 #ctx { margin-right: 6px; }
 .head-btn { display: inline-grid; place-items: center; width: 30px; height: 30px; background: none; border: 0; border-radius: var(--r-sm); color: var(--muted); }
 .head-btn:hover { background: var(--panel-2); color: var(--text); }
-.head-btn .emo { font-size: 15px; }
 #app.ws-open #ws-toggle, #app.brief-open #brief-toggle { background: var(--accent-soft); color: var(--text); }
 #ws-toggle[aria-busy='true'] { opacity: .6; }
 #thread-wrap { grid-column: 1; position: relative; min-height: 0; }
@@ -83,8 +82,6 @@
 .steps-head:hover { background: var(--panel-2); color: var(--text); }
 .steps-head:active:not(:disabled) { transform: none; }
 .steps-label { min-width: 0; white-space: normal; }
-.steps-head > .dot { display: none; } /* the emoji in the label carries the state */
-.steps.working .steps-label .emo { animation: pulse 1.4s ease-in-out infinite; }
 /* while it works, a soft light runs across the words */
 .steps.working .steps-text { background: linear-gradient(90deg, var(--muted) 38%, var(--text) 50%, var(--muted) 62%) 0 0 / 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: text-sheen 2.4s linear infinite; }
 @keyframes text-sheen { from { background-position: 100% 0; } to { background-position: 0 0; } }
@@ -96,7 +93,6 @@
 .tool-head:hover { background: var(--panel-2); }
 .tool-head:active:not(:disabled) { transform: none; }
 #thread > .tool > .tool-head { width: calc(100% + 8px); margin-left: -8px; } /* a check on its own lines up with the steps above it */
-#thread > .tool > .tool-head > .dot { display: none; } /* its emoji says passed or failed */
 .tool-label { color: var(--muted); font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
 .tool-path { font: 12px var(--mono); color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: anywhere; min-width: 0; }
 .tool-body { margin: 4px 0 8px 8px; border: 1px solid var(--hair); border-radius: var(--r-md); background: var(--panel); font: 12px/1.55 var(--mono); max-height: 260px; overflow: auto; animation: fade var(--t2) ease-out both; }
@@ -104,9 +100,6 @@
 .tool-body .err { color: var(--err); }
 .ln { padding: 0 12px; white-space: pre-wrap; word-break: break-word; }
 .ln.add { background: var(--add); color: var(--add-ink); } .ln.del { background: var(--del); color: var(--del-ink); } .ln.more { color: var(--muted); }
-.dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--faint); }
-.dot.run { width: 10px; height: 10px; background: none; border: 2px solid var(--accent); border-top-color: transparent; animation: spin .8s linear infinite; }
-.dot.ok { background: var(--ok); } .dot.err { background: var(--err); } .dot.wait { background: var(--warn); }
 /* a step that needs a yes: a raised card with one clear primary action */
 .needs-approval { margin: 8px 0 6px; padding: 4px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--panel); }
 .approval-summary { padding: 6px 10px 2px; }
@@ -194,7 +187,7 @@
 #agent-plan { list-style: none; padding: 0; margin: 8px 0 0; }
 .plan-item { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; margin: 7px 0; overflow-wrap: anywhere; color: var(--muted); animation: rise var(--t2) var(--ease) both; }
 .plan-item:nth-child(2) { animation-delay: 30ms; } .plan-item:nth-child(3) { animation-delay: 60ms; } .plan-item:nth-child(4) { animation-delay: 90ms; } .plan-item:nth-child(n+5) { animation-delay: 120ms; }
-.plan-marker { flex: none; width: 1.25em; text-align: center; font-family: var(--emoji); font-size: 12px; line-height: 1.6; }
+.plan-item > .ck-mark { margin-top: 3px; } /* centred on the first line of the step */
 .plan-item.done { color: var(--faint); }
 .plan-item.done > span:last-child { text-decoration: line-through; text-decoration-color: var(--border); }
 .plan-item.doing { color: var(--text); font-weight: 500; }
@@ -212,7 +205,7 @@
 .artifact:hover:not(:disabled) { background: var(--panel-2); }
 .artifact:disabled { opacity: .55; cursor: default; }
 .artifact > .ic { color: var(--faint); }
-.artifact > span:not(.emo) { flex: 1; min-width: 0; }
+.artifact > span { flex: 1; min-width: 0; }
 .artifact strong { display: block; font-size: 12.5px; font-weight: 500; overflow-wrap: anywhere; }
 .artifact small { display: block; color: var(--faint); font-size: 11.5px; overflow-wrap: anywhere; }
 #brief-preview { margin-top: 12px; }

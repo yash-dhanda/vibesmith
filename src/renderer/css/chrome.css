@@ -1,7 +1,6 @@
 /* ---- page headers: title left, a compact control cluster right, the primary action last ---- */
 .page-head { display: flex; align-items: center; gap: 12px; min-height: 30px; margin-bottom: 14px; flex-wrap: wrap; }
 .page-title { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -.02em; line-height: 1.2; color: var(--text); }
-.page-title .emo { font-size: 17px; }
 h2.page-title { font-size: 16px; }
 .page-count { color: var(--faint); font: 400 12px var(--mono); margin-left: 2px; }
 .head-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

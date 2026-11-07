@@ -17,10 +17,11 @@ describe('sidebar redraw', () => {
   it('keeps the rows on the page, an armed Delete? and a rename in progress', () => {
     const handlers = { open: vi.fn(), remove: vi.fn(), rename: vi.fn() }
     renderHistory(chats, 'c2', '', handlers)
-    const rows = Array.from(list.children), spinner = row('c1').querySelector('.st.running')
+    const rows = Array.from(list.children), spinner = row('c1').querySelector('.ck-mark[data-state="active"]')
+    expect(spinner).not.toBeNull()
     renderHistory(chats.map((c) => ({ ...c })), 'c2', '', handlers)
     expect(Array.from(list.children).every((n, i) => n === rows[i])).toBe(true)
-    expect(row('c1').querySelector('.st.running')).toBe(spinner)
+    expect(row('c1').querySelector('.ck-mark[data-state="active"]')).toBe(spinner)
 
     const x = row('c3').querySelector<HTMLElement>('.x')!
     x.click()

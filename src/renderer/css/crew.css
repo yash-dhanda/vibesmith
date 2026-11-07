@@ -143,10 +143,9 @@
 .team-goal.open + .team-goal-more { position: static; height: auto; padding: 2px 0 0; background: none; }
 /* status, elapsed time, tokens per agent and progress: one line */
 .team-run-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 18px; margin-top: 7px; min-height: 22px; color: var(--faint); font-size: 12px; }
-.status-pill { display: inline-flex; align-items: center; gap: 5px; width: max-content; color: var(--muted); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.status-pill { display: inline-flex; align-items: center; gap: 8px; width: max-content; color: var(--muted); font-size: 12px; font-weight: 500; white-space: nowrap; }
 .status-pill.running, .status-pill.verifying, .status-pill.planning, .status-pill.awaiting_approval, .status-pill.failed { color: var(--text); }
 .status-pill.icon-only { font-size: 13px; }
-.status-pill.running .emo, .status-pill.planning .emo, .status-pill.verifying .emo { animation: pulse 1.6s ease-in-out infinite; }
 .team-elapsed { margin-left: -6px; color: var(--faint); font: 11.5px var(--mono); font-variant-numeric: tabular-nums; }
 .team-usage-strip { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
 .team-usage-item { display: inline-flex; align-items: center; gap: 6px; color: var(--faint); font-size: 12px; white-space: nowrap; }
@@ -242,8 +241,6 @@
 .agent-badge::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--agent); }
 .agent-badge.codex { --agent: var(--a-codex); } .agent-badge.local { --agent: var(--a-local); }
 .task-state { margin-left: auto; color: var(--muted); font-size: 12px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-.task-state .emo { font-size: 13px; }
-.task-state.running .emo { animation: pulse 1.6s ease-in-out infinite; }
 .task-deps, .task-error { color: var(--faint); font-size: 12px; line-height: 1.5; margin: 0; }
 .task-error { margin-top: 5px; color: var(--err); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .task-facts { display: flex; gap: 10px; min-width: 0; min-height: 18px; margin-top: 2px; color: var(--faint); font-size: 12px; white-space: nowrap; overflow: hidden; }
@@ -272,8 +269,7 @@
 .lane-divider span { margin-left: auto; flex: none; font-size: 11.5px; color: var(--faint); }
 .activity-row { min-width: 0; padding: 8px 2px; border-bottom: 1px solid var(--hair); animation: rise var(--t2) var(--ease) both; }
 .activity-row p { font-size: 12.5px; line-height: 1.6; margin: 6px 0 0; overflow-wrap: anywhere; }
-.activity-tool.web { display: flex; align-items: center; gap: 6px; }
-.activity-tool { margin-top: 6px; padding: 6px 9px; border-radius: var(--r-sm); background: var(--panel); color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.activity-tool { display: flex; align-items: center; gap: 8px; margin-top: 6px; padding: 6px 9px; border-radius: var(--r-sm); background: var(--panel); color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .activity-result summary, .verify-card summary, .agent-output summary, .agent-prompt summary, .agent-thinking summary { cursor: pointer; padding: 6px 0; color: var(--muted); font-size: 12px; }
 .activity-result pre, .verify-card pre, .agent-output pre, .agent-prompt pre { max-height: 220px; overflow: auto; margin: 0; white-space: pre-wrap; word-break: break-word; background: var(--panel); padding: 10px; border-radius: var(--r-sm); font: 11.5px/1.55 var(--mono); }
 .agent-typing { position: relative; white-space: pre-wrap; }
@@ -344,8 +340,8 @@
 .team-diff-loading { height: 100%; }
 /* the final report, then landed */
 .team-final { margin: 14px 0 0; padding: 20px; border: 1px solid var(--border); border-radius: var(--r-lg); animation: rise var(--t3) var(--ease); }
-.team-final .eyebrow, .team-applied .eyebrow { display: flex; align-items: center; gap: 6px; color: var(--muted); font-weight: 500; line-height: 16px; }
-.team-final h2 { font-size: 18px; font-weight: 550; letter-spacing: -.02em; line-height: 24px; margin: 8px 0 12px; }
+.team-applied .eyebrow { display: flex; align-items: center; gap: 6px; color: var(--muted); font-weight: 500; line-height: 16px; }
+.team-final h2 { font-size: 18px; font-weight: 550; letter-spacing: -.02em; line-height: 24px; margin: 0 0 12px; } /* the card opens on its heading: the header already says Ready for you */
 .team-final-report { max-width: 75ch; line-height: 1.65; }
 .team-final-report > :first-child { margin-top: 0; }
 .team-final-files { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }

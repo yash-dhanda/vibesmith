@@ -4,12 +4,12 @@ import type { Run, RunEvent, Task, TeamConfig } from '../main/team/types'
 import type { RunSummary, TeamMemory } from '../main/team/service'
 import { md, folderName, formatTokens, timeAgo } from './format'
 import { fileIcon, icon, type IconName } from './icons'
-import { $, cleanErr, emo, h, onOff, toast, uuid, writeClipboard } from './ui'
+import { $, cleanErr, h, onOff, toast, uuid, writeClipboard } from './ui'
 import { REPLAY_GOAL, replayRun } from './teamReplay'
 import { enabledSkillCount } from './skillsPanel'
 import { historyButton } from './projectHistory'
 import { AGENT_FULL, AGENT_NAME, N } from './names'
-import { RUN_GLYPH, STEP_GLYPH, TASK_GLYPH, TOOL_GLYPH } from './glyphs'
+import { RUN_MARK, TASK_MARK, TOOL_ICON, mark } from './glyphs'
 import { buildStage, pushCode, updateStage, type StageCode } from './teamStage'
 import { renderCrewPreview, visualCheckButton } from './crewPreview'
 import { renderGitPanel } from './gitPanel'
@@ -64,10 +64,10 @@ const PHASE_LABEL: Record<string, string> = { work: 'Working', review: 'Reviewin
 const apiReady = () => typeof window.forge.teamStart === 'function'
 const fmtTime = (seconds: number) => seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`
 const statusLabel = (status: Run['status']) => ({ planning: 'Planning', running: 'Working', paused: 'Paused', verifying: 'Checking', awaiting_approval: 'Ready for you', done: 'Finished', failed: 'Needs attention', cancelled: 'Cancelled', interrupted: 'Interrupted' })[status]
-// A status as an emoji plus its word; `iconOnly` keeps the word for screen readers and the tooltip.
+// A status as its mark plus its word; `iconOnly` keeps the word for screen readers and the tooltip.
 function statusTag(status: Run['status'], iconOnly = false) {
   const tag = h('span', `status-pill ${status}${iconOnly ? ' icon-only' : ''}`)
-  tag.append(emo(RUN_GLYPH[status]))
+  tag.append(mark(RUN_MARK[status]))
   if (iconOnly) { tag.title = statusLabel(status); tag.setAttribute('aria-label', statusLabel(status)); tag.setAttribute('role', 'img') } else tag.append(statusLabel(status))
   return tag
 }
@@ -528,7 +528,7 @@ function renderRunHeader() {
   const header = h('header', 'crew-head')
   const back = h('button', 'icon-btn back'); back.append(icon('arrowleft')); back.title = `All ${N.crewRuns.toLowerCase()}`; back.setAttribute('aria-label', back.title); back.onclick = () => void showEntry()
   const asking = run!.approvals.some(a => a.kind === 'question' && a.status === 'pending')
-  const status = asking ? h('span', 'status-pill awaiting_approval asking') : statusTag(run!.status); if (asking) status.append(emo(RUN_GLYPH.awaiting_approval), N.waiting); status.setAttribute('role', 'status')
+  const status = asking ? h('span', 'status-pill awaiting_approval asking') : statusTag(run!.status); if (asking) status.append(mark('ask'), N.waiting); status.setAttribute('role', 'status')
   const elapsed = h('span', 'team-elapsed', fmtTime(Math.floor((Date.now() - run!.createdAt) / 1000))); elapsed.id = 'team-elapsed'
   const title = h('h1', 'crew-title', oneLine(run!.goal, 100)); title.title = run!.goal
   const where = h('span', 'crew-where', folderName(run!.project)); where.prepend(icon('folder', 'sm')); where.title = run!.project
@@ -606,7 +606,7 @@ async function refreshRun() { if (!run || replay) return; const fresh = await wi
 
 function renderPauseBanner() {
   const banner = h('section', 'team-pause-banner'); banner.dataset.key = 'pause'
-  banner.append(emo(RUN_GLYPH[['interrupted', 'failed', 'cancelled'].includes(run!.status) ? run!.status : 'paused']), h('div', '', run!.pausedReason || 'This run was interrupted when Forge closed. The agents will continue from their saved sessions.'))
+  banner.append(mark(RUN_MARK[run!.status]), h('div', '', run!.pausedReason || 'This run was interrupted when Forge closed. The agents will continue from their saved sessions.'))
   if (run!.status === 'done' || run!.status === 'cancelled') return banner
   if (run!.approvals.some(a => a.kind === 'plan' && a.status === 'pending')) return banner
   const failed = run!.tasks.find(task => task.status === 'failed' || task.status === 'blocked' || task.status === 'interrupted')
@@ -761,7 +761,7 @@ function renderBoard() {
 }
 function renderTask(task: Task, index: number) {
   const card = h('article', `task-card ${task.status}`); card.dataset.task = task.id; card.dataset.key = task.id; enter(card, `${run!.id}:${task.id}`, index)
-  const state = h('span', `task-state ${task.status}`); state.append(emo(TASK_GLYPH[task.status] ?? TASK_GLYPH.queued)); if (task.status === 'running' && task.phase) state.append(PHASE_LABEL[task.phase] ?? task.phase); state.title = task.phase ? `${PHASE_LABEL[task.phase] ?? task.phase} · ${task.status}` : task.status; state.setAttribute('aria-label', state.title)
+  const state = h('span', `task-state ${task.status}`); state.append(mark(TASK_MARK[task.status] ?? 'pending')); if (task.status === 'running' && task.phase) state.append(PHASE_LABEL[task.phase] ?? task.phase); state.title = task.phase ? `${PHASE_LABEL[task.phase] ?? task.phase} · ${task.status}` : task.status; state.setAttribute('aria-label', state.title)
   const top = h('div', 'task-top'); top.append(h('span', 'task-number', String(index + 1).padStart(2, '0')), h('span', `agent-badge ${task.agent}`, AGENT_NAME[task.agent]), state)
   const title = h('h3', '', task.title); title.title = task.title
   card.append(top, title)
@@ -882,8 +882,8 @@ function renderLane(agent: 'claude' | 'codex' | 'local') {
       prompt.append(h('summary', '', 'What this agent was told'), h('pre', '', event.text)); row.append(prompt)
     }
     else if (event.type === 'tool' && /^(web_?search|webfetch|web_fetch)$/i.test(event.name ?? '')) { const tool = h('div', 'activity-tool web'); tool.append(icon('globe', 'sm'), document.createTextNode(`${/fetch/i.test(event.name) ? 'Reading a page' : 'Searching the web'} · ${event.summary}`)); row.append(tool) }
-    else if (event.type === 'tool') row.append(h('div', `activity-tool ${event.kind}`, `${TOOL_GLYPH[event.kind] ?? TOOL_GLYPH.other} ${event.kind === 'command' ? 'Running' : event.kind === 'edit' ? 'Changing' : event.kind === 'read' ? 'Reading' : 'Working'} · ${event.summary}`))
-    else if (event.type === 'tool_result') { const details = h('details', `activity-result ${event.ok ? 'ok' : 'bad'}`); details.append(h('summary', '', event.ok ? `${STEP_GLYPH.ok} Step finished` : `${STEP_GLYPH.bad} Step failed`), h('pre', '', event.text.slice(0, 5000))); row.append(details) }
+    else if (event.type === 'tool') { const tool = h('div', `activity-tool ${event.kind}`); tool.append(icon(TOOL_ICON[event.kind] ?? 'dots', 'sm'), document.createTextNode(`${event.kind === 'command' ? 'Running' : event.kind === 'edit' ? 'Changing' : event.kind === 'read' ? 'Reading' : 'Working'} · ${event.summary}`)); row.append(tool) }
+    else if (event.type === 'tool_result') { const details = h('details', `activity-result ${event.ok ? 'ok' : 'bad'}`); const sum = h('summary'); sum.append(mark(event.ok ? 'done' : 'failed'), event.ok ? ' Step finished' : ' Step failed'); details.append(sum, h('pre', '', event.text.slice(0, 5000))); row.append(details) }
     else if (event.type === 'note') row.append(h('p', 'activity-note', event.text))
     else if (event.type === 'error') row.append(h('p', 'task-error', event.message))
     else if (event.type === 'done') row.append(h('p', event.ok ? 'activity-done' : 'task-error', event.text))
@@ -977,7 +977,7 @@ function scheduleMemoryRefresh() {
 function renderVerify() {
   const events = log.filter(x => x.ev.type === 'verify')
   const section = h('section', 'team-verify'); section.append(sectionHead(N.checks, events.length ? `${events.length}` : 'Waiting'))
-  for (const item of events.slice(-3)) if (item.ev.type === 'verify') { const details = h('details', `verify-card ${item.ev.ok ? 'ok' : 'bad'}`) as HTMLDetailsElement; details.dataset.key = String(item.t); details.open = !item.ev.ok; details.append(h('summary', '', `${item.ev.ok ? `${STEP_GLYPH.ok} Passed` : `${STEP_GLYPH.bad} Failed`} · ${item.ev.command}`), h('pre', '', item.ev.output.slice(-8000))); section.append(details) }
+  for (const item of events.slice(-3)) if (item.ev.type === 'verify') { const details = h('details', `verify-card ${item.ev.ok ? 'ok' : 'bad'}`) as HTMLDetailsElement; details.dataset.key = String(item.t); details.open = !item.ev.ok; const sum = h('summary'); sum.append(mark(item.ev.ok ? 'done' : 'failed'), ` ${item.ev.ok ? 'Passed' : 'Failed'} · ${item.ev.command}`); details.append(sum, h('pre', '', item.ev.output.slice(-8000))); section.append(details) }
   return section
 }
 // One chat box for the whole run, pinned at the bottom in every state. While the crew works the message steers it; after it finishes, the same
@@ -1053,16 +1053,15 @@ let landPanel: { key: string; el: HTMLElement } | null = null
 function landPanelFor() { const key = `${run!.id}:${(run!.landedFiles ?? []).length}:${run!.final!.files.length}`; if (!landPanel || landPanel.key !== key) landPanel = { key, el: renderLandPanel(run!, () => void refreshRun()) }; return landPanel.el }
 function renderFinal() {
   const section = h('section', 'team-final'); section.dataset.key = 'final'
-  const done = h('div', 'eyebrow', 'Crew finished'); done.prepend(emo(STEP_GLYPH.done))
-  section.append(done, h('h2', '', N.reviewHead))
+  section.append(h('h2', '', N.reviewHead))
   const split = splitKeyAnswer(run!.final!.report); if (split.key.length) section.append(keyCard(split.key)); const report = h('div', 'team-final-report'); report.innerHTML = md(split.rest); section.append(report)
   const files = h('div', 'team-final-files'); for (const file of run!.final!.files) { const f = h('div', '', file.path); f.prepend(fileIcon(file.status)); f.title = `${file.status === 'added' ? 'New' : file.status === 'deleted' ? 'Removed' : 'Updated'}: ${file.path}`; files.append(f) } section.append(files)
   const localReviews = run!.tasks.filter(t => t.agent === 'local' && t.status !== 'cancelled').flatMap(t => t.reviews.slice(-1))
   if (run!.tasks.some(t => t.agent === 'local' && t.status !== 'cancelled')) {
     const by = [...new Set(localReviews.map(r => AGENT_NAME[r.by]))].join(' and ') || 'another agent', ok = localReviews.length > 0 && localReviews.every(r => r.verdict === 'pass')
-    const line = h('div', `final-verify ${localReviews.length ? (ok ? 'ok' : 'bad') : ''}`); line.append(emo(localReviews.length ? (ok ? STEP_GLYPH.ok : STEP_GLYPH.bad) : STEP_GLYPH.none), h('span', '', localReviews.length ? `${AGENT_NAME.local} work was reviewed by ${by}: ${ok ? 'PASS' : 'FAIL'}` : `${AGENT_NAME.local} work has not been reviewed yet`)); section.append(line)
+    const line = h('div', `final-verify ${localReviews.length ? (ok ? 'ok' : 'bad') : ''}`); line.append(mark(localReviews.length ? (ok ? 'done' : 'failed') : 'pending'), h('span', '', localReviews.length ? `${AGENT_NAME.local} work was reviewed by ${by}: ${ok ? 'PASS' : 'FAIL'}` : `${AGENT_NAME.local} work has not been reviewed yet`)); section.append(line)
   }
-  const verify = h('div', `final-verify ${run!.final!.verifyOk ? 'ok' : run!.final!.verifyOk === false ? 'bad' : ''}`); verify.append(emo(run!.final!.verifyOk ? STEP_GLYPH.ok : run!.final!.verifyOk === false ? STEP_GLYPH.bad : STEP_GLYPH.none), h('span', '', run!.final!.verifyOk ? 'Project check passed' : run!.final!.verifyOk === false ? 'Project check failed' : 'No project check configured')); section.append(verify)
+  const verify = h('div', `final-verify ${run!.final!.verifyOk ? 'ok' : run!.final!.verifyOk === false ? 'bad' : ''}`); verify.append(mark(run!.final!.verifyOk ? 'done' : run!.final!.verifyOk === false ? 'failed' : 'pending'), h('span', '', run!.final!.verifyOk ? 'Project check passed' : run!.final!.verifyOk === false ? 'Project check failed' : 'No project check configured')); section.append(verify)
   if (run!.final!.reviewNotes.length) { const notes = h('details', 'final-review-notes'); notes.append(h('summary', '', `Final review notes · ${run!.final!.reviewNotes.length}`), ...run!.final!.reviewNotes.map(item => h('p', '', item))); section.append(notes) }
   if (undoResult) section.append(h('div', 'errcard final-action-result', undoResult))
   if (!replay && !isRemote() && typeof window.forge.teamLandings === 'function' && run!.final!.files.length > 1) section.append(keep('land', landPanelFor()))
@@ -1078,7 +1077,7 @@ let gitPanel: { key: string; el: HTMLElement } | null = null
 function gitPanelFor() { const key = `${run!.id}:${run!.applied}:${run!.undone}`; if (!gitPanel || gitPanel.key !== key) gitPanel = { key, el: renderGitPanel(run!) }; return gitPanel.el }
 function renderApplied() {
   const section = h('section', `team-applied ${run!.undone ? 'undone' : ''}`); section.dataset.key = 'applied'
-  const tag = h('div', 'eyebrow', run!.undone ? 'Changes undone' : 'Landed in your project'); tag.prepend(emo(run!.undone ? STEP_GLYPH.undone : STEP_GLYPH.done))
+  const tag = h('div', 'eyebrow', run!.undone ? 'Changes undone' : 'Landed in your project'); tag.prepend(run!.undone ? icon('undo', 'sm') : mark('done'))
   section.append(tag, h('h2', '', run!.undone ? 'Your project is back where it was.' : 'The crew’s work is now in your project.'))
   const copy = run!.undone ? 'The landed files were restored to how they were before the crew.' : 'You can keep working, or undo the whole landing. Undo also removes hand edits made after it.'
   section.append(h('p', '', copy))

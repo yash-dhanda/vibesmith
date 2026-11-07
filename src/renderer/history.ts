@@ -3,6 +3,7 @@ import type { RunSummary } from '../main/team/service'
 import { folderName, timeAgo } from './format'
 import { icon } from './icons'
 import { h } from './ui'
+import { mark } from './glyphs'
 import { morphChildren } from './morph'
 
 const list = document.getElementById('chat-list')!
@@ -32,8 +33,8 @@ function runItem(r: RunSummary, active: boolean, handlers: Handlers, fresh: () =
   open.setAttribute('aria-label', `Open Crew run: ${clip(r.goal, 80)}`)
   if (active) open.setAttribute('aria-current', 'page')
   const row = h('span', 'row1')
-  if (statusOf(r) === 'running') row.append(h('span', 'st running'))
-  else if (waiting) row.append(h('span', 'st waiting'))
+  if (statusOf(r) === 'running') row.append(mark('active'))
+  else if (waiting) row.append(mark('ask'))
   const crew = icon('users', 'sm'); crew.classList.add('run-icon')
   row.append(crew, h('span', 't', clip(r.goal, 90)), h('span', 'when', when(r.updatedAt)))
   open.append(row); item.append(open)
@@ -105,7 +106,7 @@ function chatItem(c: ChatListItem, active: boolean, handlers: Handlers, fresh: (
   open.setAttribute('aria-label', `Open ${c.title}`)
   if (active) open.setAttribute('aria-current', 'page')
   const line = h('span', 'row1')
-  if (c.status !== 'idle') line.append(h('span', 'st ' + c.status))
+  if (c.status !== 'idle') line.append(mark(c.status === 'running' ? 'active' : 'ask'))
   line.append(h('span', 't', c.title), h('span', 'when', when(c.updatedAt)))
   const x = h('button', 'x')
   x.append(icon('x', 'sm'))
