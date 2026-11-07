@@ -35,14 +35,14 @@
 .crew-main .team-composer .att-btn { margin-bottom: 0; }
 .cw-bar { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding-top: 4px; }
 .cw-chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 0; border-radius: var(--r-md); background: transparent; color: var(--muted); font: inherit; font-size: 12px; line-height: 16px; cursor: pointer; white-space: nowrap; }
-.cw-chip:hover { background: var(--hover, rgba(127, 127, 127, 0.14)); color: var(--text); }
-.cw-chip.on { color: var(--accent, currentColor); border-color: currentColor; }
-.cw-chip.warn { color: #d98a2b; }
-.cw-pop { position: absolute; bottom: calc(100% + 6px); min-width: 200px; max-height: 320px; overflow: auto; padding: 4px; border: 1px solid var(--hair); border-radius: 12px; background: var(--panel, var(--bg, #1b1b1b)); box-shadow: 0 12px 36px rgba(0, 0, 0, 0.4); z-index: 20; }
+.cw-chip:hover { background: var(--panel-2); color: var(--text); }
+.cw-chip.on { color: var(--text); background: var(--panel-2); }
+.cw-chip.warn { color: var(--muted); } .cw-chip.warn::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); } /* bypass is every run's default: a small amber dot, not an amber label */
+.cw-pop { position: absolute; bottom: calc(100% + 6px); min-width: 200px; max-height: 320px; overflow: auto; padding: 4px; border: 0; border-radius: 12px; background: var(--panel); box-shadow: var(--float); z-index: 20; }
 .cw-pop-title { padding: 6px 8px 3px; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--faint); }
 .cw-pop-item { display: block; width: 100%; padding: 6px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--text); font: inherit; font-size: 13px; line-height: 20px; text-align: left; cursor: pointer; }
-.cw-pop-item:hover { background: var(--hover, rgba(127, 127, 127, 0.14)); }
-.cw-pop-item.on::after { content: '✓'; float: right; color: var(--accent, currentColor); }
+.cw-pop-item:hover { background: var(--panel-2); }
+.cw-pop-item.on::after { content: '✓'; float: right; color: var(--accent); }
 
 /* the side panel */
 .crew-side { position: sticky; top: 52px; display: flex; flex-direction: column; gap: 0; padding-top: 12px; max-height: calc(100vh - 52px); overflow: auto; }
@@ -54,8 +54,8 @@
 .crew-side-model { grid-column: 3; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 12px; line-height: 16px; }
 .crew-side-tokens { grid-column: 4; grid-row: 1; text-align: right; font-variant-numeric: tabular-nums; color: var(--faint); font-family: var(--mono); font-size: 12px; line-height: 16px; }
 .crew-side-changes { display: flex; align-items: baseline; gap: 8px; font-size: 13px; line-height: 20px; }
-.crew-add { color: #3fb950; font-family: var(--mono); }
-.crew-del { color: #e5484d; font-family: var(--mono); }
+.crew-add { color: var(--add-ink); font-family: var(--mono); }
+.crew-del { color: var(--del-ink); font-family: var(--mono); }
 .crew-side-files { margin-top: 4px; }
 .crew-side-file, .crew-side-more, .crew-side-none { font-size: 12px; line-height: 20px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
 .crew-side-none { font-family: inherit; margin: 0; }

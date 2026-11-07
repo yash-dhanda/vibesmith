@@ -31,7 +31,6 @@
 .chat-item.active { background: color-mix(in srgb, var(--accent) 12%, var(--side-hover)); }
 .chat-item.active .t { font-weight: 500; }
 .chat-item .t { color: var(--side-text); }
-.chat-item .st.waiting { box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 22%, transparent); }
 .run-item .x { display: none; }
 .run-item:hover .when { opacity: 1; }
 

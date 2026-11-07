@@ -52,7 +52,7 @@
 .queue-report > :first-child { margin-top: 0; }
 
 /* Key answer: the few things the user asked to receive, small and easy to copy */
-.key-card { margin: 10px 0; padding: 8px 12px; border: 1px solid var(--border); border-left: 3px solid var(--accent, var(--text)); border-radius: 8px; background: var(--panel); }
+.key-card { margin: 12px 0; padding: 8px 12px; border: 1px solid var(--hair); border-radius: var(--r-md); background: var(--panel); }
 .key-title { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
 .key-row { display: flex; align-items: center; gap: 8px; justify-content: space-between; font-size: 12px; line-height: 1.5; }
 .key-text { font-family: var(--mono, ui-monospace, monospace); overflow-wrap: anywhere; user-select: text; }

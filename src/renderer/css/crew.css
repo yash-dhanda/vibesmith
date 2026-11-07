@@ -5,9 +5,6 @@
 #team-screen { min-width: 0; min-height: 0; display: grid; grid-template-rows: 52px minmax(0, 1fr); background: var(--bg); animation: page-in var(--t2) var(--ease); }
 .team-head { display: flex; align-items: center; gap: 8px; padding: 0 20px 0 10px; }
 #team-root { min-width: 0; min-height: 0; overflow: auto; }
-/* the run screen sits on a dotted canvas; cards and panels are solid on top of it */
-#team-root:has(> .team-run) { background-image: radial-gradient(var(--border) 1px, transparent 1px); background-size: 14px 14px; background-attachment: local; }
-.team-run .task-card, .team-run .team-side-story > *, .team-run .agent-lane, .team-run .approval-tray, .team-run .team-pause-banner, .team-run .team-final, .team-run .team-applied, .team-run .q-answered { background-color: var(--bg); }
 #team-root > * { animation: fade var(--t2) ease-out both; }
 .team-section-head { display: flex; align-items: baseline; gap: 12px; min-width: 0; margin-bottom: 8px; font-size: 12.5px; font-weight: 550; }
 .team-section-head > div { display: inline-flex; align-items: center; gap: 6px; flex: none; }
@@ -20,8 +17,8 @@
 .team-intro > .eyebrow { display: none; }
 .team-intro h1 { font-size: 22px; font-weight: 550; letter-spacing: -.022em; line-height: 1.25; margin: 0 0 6px; text-align: center; animation: rise var(--t3) var(--ease) both; }
 .team-lede { margin: 0 auto; color: var(--muted); font-size: 13px; line-height: 1.6; text-align: center; animation: rise var(--t3) var(--ease) 40ms both; }
-.team-start-card { margin-top: 22px; padding: 14px 14px 12px 16px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--panel); box-shadow: 0 22px 48px -30px rgba(0, 0, 0, .7); transition: border-color var(--t2), box-shadow var(--t2); animation: rise var(--t3) var(--ease) 80ms both; }
-:root[data-theme='light'] .team-start-card { box-shadow: 0 18px 40px -30px rgba(0, 0, 0, .28); }
+.team-start-card { margin-top: 22px; padding: 14px 14px 12px 16px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--panel); box-shadow: none; transition: border-color var(--t2), box-shadow var(--t2); animation: rise var(--t3) var(--ease) 80ms both; }
+:root[data-theme='light'] .team-start-card { box-shadow: 0 1px 2px rgba(0, 0, 0, .05); }
 .team-start-card:focus-within { border-color: color-mix(in srgb, var(--focus) 38%, var(--border)); }
 .team-start-card > textarea { display: block; width: 100%; min-height: 124px; resize: vertical; border: 0; outline: 0; background: transparent; padding: 2px 2px 6px; font-size: 14.5px; line-height: 1.6; }
 .team-start-card > textarea:focus-visible { outline: 0; animation: none; }
@@ -172,7 +169,7 @@
 /* waiting for you: approvals, questions, plan approval */
 .approval-tray { margin: 14px 0 0; border: 1px solid var(--border); border-radius: var(--r-lg); padding: 12px 14px; background: var(--panel); animation: rise var(--t2) var(--ease); }
 /* a question blocks an agent, so it is the loudest thing in the tray: raised card, option rows, white Send */
-.question-card { margin: 4px 0 12px; padding: 16px 18px 0; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--bg); box-shadow: 0 8px 24px -12px rgba(0, 0, 0, .5); animation: rise var(--t2) var(--ease) both; }
+.question-card { margin: 4px 0 12px; padding: 16px 18px 0; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--bg); box-shadow: none; animation: rise var(--t2) var(--ease) both; }
 .question-card:last-child { margin-bottom: 2px; }
 .q-who { display: flex; align-items: center; gap: 7px; color: var(--faint); font-size: 12px; }
 .q-who strong { color: var(--muted); font-weight: 500; }
@@ -206,7 +203,7 @@
 .team-approval-card:first-of-type { border-top: 0; }
 .approval-copy h3 { margin: 2px 0; font-size: 13.5px; font-weight: 550; }
 .approval-copy p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
-.approval-kind { display: inline-flex; align-items: center; gap: 5px; color: var(--warn); font-size: 12px; text-transform: capitalize; }
+.approval-kind { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12px; text-transform: capitalize; }
 .team-approval-card > input { width: 100%; min-width: 0; height: 32px; border: 1px solid var(--border); background: var(--bg); border-radius: var(--r-sm); padding: 0 9px; }
 .team-approval-card > input:focus { border-color: var(--focus); outline: 0; }
 .approval-actions, .task-actions { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -263,7 +260,7 @@
 .agent-lane { --agent: var(--a-claude); min-width: 0; border: 1px solid var(--hair); border-radius: var(--r-md); overflow: hidden; animation: rise var(--t2) var(--ease) both; }
 .agent-lane > header { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--hair); font-weight: 550; font-size: 12.5px; }
 .lane-live { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--faint); font-size: 11.5px; font-weight: 450; }
-.lane-live.on::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--err); animation: pulse 1.4s ease-in-out infinite; }
+.lane-live.on::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
 .lane-details { display: inline-flex; align-items: center; gap: 5px; margin-left: 4px; border: 0; background: transparent; color: var(--muted); font-size: 12px; padding: 4px 8px; border-radius: var(--r-sm); }
 .lane-details:hover, .lane-details.on { color: var(--text); background: var(--panel-2); }
 .lane-body { max-height: clamp(320px, calc(100vh - 420px), 1060px); overflow: auto; padding: 4px 12px 12px; }
@@ -327,8 +324,6 @@
 .feed-item > div strong { font-weight: 550; font-size: 12.5px; }
 .feed-item > div span { display: inline-flex; align-items: center; gap: 4px; color: var(--faint); font-size: 11.5px; text-transform: capitalize; }
 .feed-item p { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; }
-.feed-item.review, .feed-item.handoff, .feed-item.steer { border-left: 2px solid var(--warn); padding-left: 9px; }
-.feed-item.handoff { border-left-color: var(--accent); } .feed-item.steer { border-left-color: var(--ok); }
 .feed-item.clamped { cursor: pointer; }
 .feed-item.clamped .feed-body { display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
 .verify-card { border-top: 1px solid var(--hair); }
@@ -357,7 +352,6 @@
 .team-final-files > div { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid var(--hair); border-radius: var(--r-sm); font: 11.5px var(--mono); line-height: 16px; overflow-wrap: anywhere; }
 .final-verify { display: flex; align-items: center; gap: 8px; color: var(--muted); line-height: 20px; }
 .final-verify + .final-verify { margin-top: 4px; }
-.final-verify.ok { color: var(--ok); } .final-verify.bad { color: var(--err); }
 .final-review-notes summary { cursor: pointer; color: var(--muted); padding: 6px 0; width: max-content; }
 .final-action-result { margin: 10px 0 0; }
 .team-final-note { color: var(--faint); font-size: 12px; line-height: 16px; }
@@ -456,8 +450,7 @@
 
 /* the run's message box: a chat composer pinned to the bottom of the run page in every state */
 .team-composer { position: sticky; bottom: 0; z-index: 5; margin-top: 2px; padding: 16px 0 12px; background: linear-gradient(to bottom, transparent, var(--bg) 20px); }
-.team-composer > .team-steer-row { display: flex; align-items: flex-end; gap: 4px; padding: 5px 5px 5px 14px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--panel); box-shadow: 0 14px 34px -16px rgba(0, 0, 0, .6); transition: border-color var(--t2), box-shadow var(--t2); }
-:root[data-theme='light'] .team-composer > .team-steer-row { box-shadow: 0 12px 30px -18px rgba(0, 0, 0, .25); }
+.team-composer > .team-steer-row { display: flex; align-items: flex-end; gap: 4px; padding: 5px 5px 5px 14px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--panel); box-shadow: none; transition: border-color var(--t2), box-shadow var(--t2); }
 .team-composer > .team-steer-row:focus-within { border-color: color-mix(in srgb, var(--focus) 55%, var(--border)); }
 .team-composer textarea { flex: 1; min-width: 0; min-height: 32px; max-height: 160px; resize: none; border: 0; background: transparent; color: inherit; padding: 6px 0; font: 14px/20px var(--sans); outline: none; }
 .team-composer textarea::placeholder { color: var(--faint); }
