@@ -72,4 +72,4 @@ a.ref-sub { color: var(--muted); text-decoration: underline; text-underline-offs
   .refs-row.link { flex-direction: column; align-items: stretch; }
   .refs-auto { flex-direction: column; align-items: stretch; gap: 8px; }
 }
-@media (hover: none) { .tool-dialog :is(input[type='text'], input[type='url']), .tool-dialog .btn, .voice-btn { min-height: 44px; font-size: 16px; } }
+@media (hover: none) { .tool-dialog :is(input[type='text'], input[type='url']), .tool-dialog .btn, .voice-btn { min-height: 44px; font-size: 16px; } .voice-btn { min-width: 44px; } }

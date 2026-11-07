@@ -48,7 +48,7 @@
 .team-folder-row-item { border-color: transparent; width: 100%; animation: none; }
 /* the agents: one chip each, and a popover with its model and effort */
 .crew-agents { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
-.crew-chip { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; height: 30px; padding: 0 8px 0 11px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg); color: var(--text); font-size: 12.5px; white-space: nowrap; animation: rise var(--t2) var(--ease) both; }
+.crew-chip { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; height: 32px; padding: 0 8px 0 11px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg); color: var(--text); font-size: 12.5px; white-space: nowrap; animation: rise var(--t2) var(--ease) both; }
 .crew-chip:nth-of-type(2) { animation-delay: 30ms; } .crew-chip:nth-of-type(3) { animation-delay: 60ms; }
 .crew-chip:hover:not(:disabled) { background: var(--panel-2); border-color: color-mix(in srgb, var(--focus) 30%, var(--border)); }
 .crew-chip.on { background: var(--panel-2); border-color: var(--focus); }
@@ -76,18 +76,17 @@
 .crew-more[aria-expanded='true'] { color: var(--text); background: var(--panel-2); }
 .crew-more[aria-expanded='true'] .ic:last-child { transform: rotate(180deg); }
 .team-advanced { margin: 10px 0 0; padding-top: 4px; border-top: 1px solid var(--hair); animation: rise var(--t2) var(--ease); }
-.team-config-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; padding: 12px 2px 10px; }
+.team-config-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; padding: 12px 0 8px; }
 .team-config-error { min-height: 18px; padding: 0 2px 6px; color: var(--err); font-size: 12px; }
 .team-config-error:empty { min-height: 0; padding: 0; }
 .team-setting-actions { display: flex; gap: 6px; padding: 2px 2px 4px; }
-.team-setting-actions .btn { height: 30px; }
-.team-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; color: var(--text); font-size: 12.5px; }
+.team-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; color: var(--text); font-size: 12.5px; }
 .team-field input, .team-field select { width: 100%; min-width: 0; height: 32px; border: 1px solid var(--border); background: var(--bg); border-radius: var(--r-sm); padding: 0 9px; color: var(--text); font-size: 12.5px; }
 .team-field input:focus, .team-field select:focus { border-color: var(--focus); }
 .team-field input:invalid { border-color: var(--errborder); }
 .team-field small { color: var(--faint); font-size: 11.5px; line-height: 1.5; }
 .team-start-actions { display: flex; align-items: center; gap: 2px; margin-top: 12px; }
-.team-start-actions .pill, .team-start-actions .link-btn { height: 30px; }
+.team-start-actions .pill, .team-start-actions .link-btn { height: 32px; }
 .team-project { max-width: 260px; }
 .team-start { height: 32px; padding: 0 16px; }
 /* readiness and the plan allowance: one muted line under the card */
@@ -162,15 +161,14 @@
 .team-progress-bar i { position: relative; display: block; width: 100%; height: 100%; border-radius: inherit; background: var(--ok); transform-origin: left; transition: transform .5s var(--ease); overflow: hidden; }
 .team-progress-bar i::after { content: ''; position: absolute; inset: 0; translate: -100% 0; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .32), transparent); animation: sheen 2.4s var(--ease) infinite; }
 .team-controls { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; justify-content: flex-end; }
-.team-controls .btn, .team-controls .link-btn { height: 30px; border-color: transparent; background: transparent; }
+.team-controls .btn, .team-controls .link-btn { height: 32px; border-color: transparent; background: transparent; }
 .team-controls .btn:hover:not(:disabled), .team-controls .link-btn:hover { background: var(--panel-2); }
-.team-controls .btn.only { width: 30px; padding: 0; justify-content: center; }
+.team-controls .btn.only { width: 32px; padding: 0; justify-content: center; }
 .team-controls .btn.danger { color: var(--err); }
 .team-controls .btn.danger:hover:not(:disabled) { background: var(--errbg); }
 /* paused, interrupted, needs attention */
 .team-pause-banner { display: flex; align-items: center; gap: 10px; margin: 14px 0 0; padding: 9px 10px 9px 12px; border: 1px solid var(--border); background: var(--panel); border-radius: var(--r-md); font-size: 12.5px; animation: rise var(--t2) var(--ease); }
 .team-pause-banner > div { flex: 1; min-width: 0; color: var(--muted); }
-.team-pause-banner .btn { height: 30px; }
 /* waiting for you: approvals, questions, plan approval */
 .approval-tray { margin: 14px 0 0; border: 1px solid var(--border); border-radius: var(--r-lg); padding: 12px 14px; background: var(--panel); animation: rise var(--t2) var(--ease); }
 /* a question blocks an agent, so it is the loudest thing in the tray: raised card, option rows, white Send */
@@ -199,7 +197,6 @@
 .q-other:focus-visible { outline: 0; animation: none; }
 .q-other[hidden] { display: none; }
 .q-foot { display: flex; align-items: center; gap: 8px; margin: 14px -18px 0; padding: 11px 18px; border-top: 1px solid var(--hair); }
-.q-foot .btn { height: 30px; }
 .q-answered { display: flex; flex-direction: column; margin: 12px 0 0; padding: 2px 12px; border: 1px solid var(--hair); border-radius: var(--r-md); }
 .q-line { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 0; color: var(--faint); font-size: 12px; animation: fade var(--t2) ease-out both; }
 .q-line + .q-line { border-top: 1px solid var(--hair); }
@@ -213,7 +210,6 @@
 .team-approval-card > input { width: 100%; min-width: 0; height: 32px; border: 1px solid var(--border); background: var(--bg); border-radius: var(--r-sm); padding: 0 9px; }
 .team-approval-card > input:focus { border-color: var(--focus); outline: 0; }
 .approval-actions, .task-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-.approval-actions .btn { height: 30px; }
 /* plan approval: the plan as editable rows before any agent works */
 .team-plan-review { display: grid; gap: 8px; padding: 4px 0 2px; }
 .team-plan-review h3 { margin: 0; font-size: 14px; font-weight: 550; }
@@ -346,32 +342,32 @@
 .team-background[open] > section { animation: rise var(--t2) var(--ease) both; }
 .team-background .bg-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--err); }
 .team-background > section + section { margin-top: 8px; }
-.team-diff-panel > .btn { width: 100%; height: 30px; justify-content: center; }
+.team-diff-panel > .btn { width: 100%; justify-content: center; }
 .team-diff-files { display: flex; flex-direction: column; margin: -2px 0 10px; }
 .team-diff-host { height: 0; overflow: hidden; margin: 0 -12px -11px; }
 .team-diff-host.open { height: 450px; margin-top: 12px; border-top: 1px solid var(--hair); animation: fade var(--t2) ease-out; }
 .team-diff-loading { height: 100%; }
 /* the final report, then landed */
-.team-final { margin: 14px 0 0; padding: 18px 20px; border: 1px solid var(--border); border-radius: var(--r-lg); animation: rise var(--t3) var(--ease); }
-.team-final .eyebrow, .team-applied .eyebrow { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-weight: 500; }
-.team-final h2 { font-size: 18px; font-weight: 550; letter-spacing: -.02em; line-height: 1.3; margin: 6px 0 12px; }
+.team-final { margin: 14px 0 0; padding: 20px; border: 1px solid var(--border); border-radius: var(--r-lg); animation: rise var(--t3) var(--ease); }
+.team-final .eyebrow, .team-applied .eyebrow { display: flex; align-items: center; gap: 6px; color: var(--muted); font-weight: 500; line-height: 16px; }
+.team-final h2 { font-size: 18px; font-weight: 550; letter-spacing: -.02em; line-height: 24px; margin: 8px 0 12px; }
 .team-final-report { max-width: 75ch; line-height: 1.65; }
 .team-final-report > :first-child { margin-top: 0; }
-.team-final-files { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0; }
-.team-final-files > div { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border: 1px solid var(--hair); border-radius: var(--r-sm); font: 11.5px var(--mono); overflow-wrap: anywhere; }
-.final-verify { display: flex; align-items: center; gap: 8px; color: var(--muted); }
-.final-verify + .final-verify { margin-top: 2px; }
+.team-final-files { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.team-final-files > div { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid var(--hair); border-radius: var(--r-sm); font: 11.5px var(--mono); line-height: 16px; overflow-wrap: anywhere; }
+.final-verify { display: flex; align-items: center; gap: 8px; color: var(--muted); line-height: 20px; }
+.final-verify + .final-verify { margin-top: 4px; }
 .final-verify.ok { color: var(--ok); } .final-verify.bad { color: var(--err); }
 .final-review-notes summary { cursor: pointer; color: var(--muted); padding: 6px 0; width: max-content; }
 .final-action-result { margin: 10px 0 0; }
-.team-final-note { color: var(--faint); font-size: 12px; }
+.team-final-note { color: var(--faint); font-size: 12px; line-height: 16px; }
 .team-final-actions { display: flex; gap: 8px; margin-top: 12px; }
 .team-final-actions .btn { height: 32px; padding: 0 14px; }
-.team-applied { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 18px; margin: 14px 0 0; padding: 14px 18px; border: 1px solid var(--border); border-radius: var(--r-lg); animation: rise var(--t3) var(--ease); }
+.team-applied { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 16px; margin: 14px 0 0; padding: 20px; border: 1px solid var(--border); border-radius: var(--r-lg); animation: rise var(--t3) var(--ease); }
 .team-applied .eyebrow, .team-applied h2, .team-applied p, .team-undo-result { grid-column: 1; }
-.team-applied h2 { margin: 2px 0; font-size: 15px; font-weight: 550; }
-.team-applied p { margin: 2px 0; color: var(--muted); font-size: 12px; }
-.team-applied > .btn { grid-column: 2; grid-row: 1 / 5; height: 32px; }
+.team-applied h2 { margin: 0; font-size: 15px; font-weight: 550; line-height: 20px; }
+.team-applied p { margin: 0; color: var(--muted); font-size: 12px; line-height: 16px; }
+.team-applied > .btn { grid-column: 2; grid-row: 1 / 4; height: 32px; }
 .team-applied.undone { border-color: var(--border); }
 .team-applied.undone .eyebrow { color: var(--muted); }
 .team-undo-result { color: var(--ok); font-size: 12px; }
@@ -400,7 +396,7 @@
 }
 /* touch: the chips, toggles and their popover are a finger wide */
 @media (hover: none) {
-  .crew-chip, .crew-pop select, .team-goal-more, .team-send { min-height: 44px; }
+  .crew-chip, .cw-chip, .crew-pop select, .team-goal-more, .team-send { min-height: 44px; }
   .team-send { min-width: 44px; }
   .crew-toggle .seg button { height: 40px; }
 }
@@ -463,7 +459,7 @@
 .team-composer > .team-steer-row { display: flex; align-items: flex-end; gap: 4px; padding: 5px 5px 5px 14px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--panel); box-shadow: 0 14px 34px -16px rgba(0, 0, 0, .6); transition: border-color var(--t2), box-shadow var(--t2); }
 :root[data-theme='light'] .team-composer > .team-steer-row { box-shadow: 0 12px 30px -18px rgba(0, 0, 0, .25); }
 .team-composer > .team-steer-row:focus-within { border-color: color-mix(in srgb, var(--focus) 55%, var(--border)); }
-.team-composer textarea { flex: 1; min-width: 0; min-height: 32px; max-height: 160px; resize: none; border: 0; background: transparent; color: inherit; padding: 6px 0; font: 13.5px/1.5 var(--sans); outline: none; }
+.team-composer textarea { flex: 1; min-width: 0; min-height: 32px; max-height: 160px; resize: none; border: 0; background: transparent; color: inherit; padding: 6px 0; font: 14px/20px var(--sans); outline: none; }
 .team-composer textarea::placeholder { color: var(--faint); }
 .team-composer textarea:focus-visible { outline: 0; animation: none; }
 .team-composer .select-btn { height: 32px; border-color: transparent; padding: 0 6px 0 9px; }

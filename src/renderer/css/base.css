@@ -59,20 +59,20 @@ kbd { font: 10.5px var(--mono); color: var(--faint); border: 1px solid var(--hai
 .eyebrow { font-size: 12px; color: var(--muted); }
 
 /* ---- shared controls ---- */
-.icon-btn { background: none; border: 0; border-radius: var(--r-sm); color: var(--muted); width: 30px; height: 30px; display: inline-grid; place-items: center; flex: none; }
+.icon-btn { background: none; border: 0; border-radius: var(--r-sm); color: var(--muted); width: 32px; height: 32px; display: inline-grid; place-items: center; flex: none; }
 .icon-btn:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
 .icon-btn:disabled { opacity: .4; cursor: default; }
 .icon-btn.sm { width: 24px; height: 24px; }
 .icon-btn .emo { font-size: 15px; }
-.btn { display: inline-flex; align-items: center; gap: 6px; border-radius: var(--r-md); padding: 5px 12px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 12.5px; white-space: nowrap; }
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; border-radius: var(--r-md); padding: 0 12px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 12.5px; white-space: nowrap; }
 .btn:hover:not(:disabled) { background: var(--panel-2); }
 .btn:disabled { opacity: .5; cursor: default; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .btn.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 86%, var(--bg)); }
 .btn.danger:hover:not(:disabled), .btn.danger-quiet:hover:not(:disabled) { color: var(--err); border-color: var(--errborder); }
 .btn.danger-quiet { border-color: transparent; color: var(--muted); }
-.btn.only { padding: 5px 7px; }
-.link-btn { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; color: var(--muted); font-size: 12px; padding: 5px 7px; border-radius: var(--r-sm); }
+.btn.only { min-width: 32px; padding: 0 8px; justify-content: center; } /* min-width, not width: a model's Delete turns into 'Click again to delete' */
+.link-btn { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; color: var(--muted); font-size: 12px; padding: 6px 8px; line-height: 20px; border-radius: var(--r-sm); }
 .link-btn:hover { color: var(--text); background: var(--panel-2); }
 .chip { display: inline-flex; align-items: center; gap: 5px; font: 11.5px var(--mono); color: var(--muted); padding: 3px 7px; border-radius: var(--r-sm); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .chip.live { color: var(--accent); }
@@ -103,12 +103,12 @@ code.k { font: 12px var(--mono); background: var(--panel-2); border-radius: var(
 /* ---- sidebar: wordmark, nav rows, chats under a quiet label, user row at the bottom ---- */
 #history { background: var(--side); color: var(--side-text); display: flex; flex-direction: column; min-height: 0; padding: 10px 8px 8px; gap: 2px; animation: slide-left var(--t2) var(--ease); }
 :root[data-theme='light'] #history { border-right: 1px solid var(--hair); }
-.brand { display: flex; align-items: center; gap: 8px; padding: 2px 4px 10px 8px; }
+.brand { display: flex; align-items: center; gap: 8px; padding: 4px 4px 8px 8px; }
 .brand-mark { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; background: var(--accent); color: var(--accent-ink); font: italic 700 14px/1 Georgia, serif; }
 .brand strong { font-size: 15px; font-weight: 650; letter-spacing: -.03em; color: var(--text); }
 .brand .icon-btn { color: var(--side-faint); }
 .side-nav { display: flex; flex-direction: column; gap: 2px; }
-.side-btn { display: flex; align-items: center; gap: 9px; width: 100%; height: 30px; padding: 0 8px; background: none; border: 0; border-radius: var(--r-md); color: var(--side-text); font-size: 12.5px; text-align: left; }
+.side-btn { display: flex; align-items: center; gap: 8px; width: 100%; height: 30px; padding: 0 8px; background: none; border: 0; border-radius: var(--r-md); color: var(--side-text); font-size: 12.5px; text-align: left; }
 .side-btn:hover, #app.team-mode .team-nav { background: var(--side-hover); color: var(--text); }
 .side-btn kbd { margin-left: auto; opacity: 0; transition: opacity var(--t1); }
 .side-btn:hover kbd, :focus-visible > kbd { opacity: 1; }

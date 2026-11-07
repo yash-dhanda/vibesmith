@@ -1000,7 +1000,7 @@ function buildSteer(runId: string): SteerUi {
     onChange: () => sync(),
   })
   const sync = () => { send.disabled = (!text.value.trim() && !att.ready().length) || att.busy(); send.title = att.busy() ? 'Waiting for the files to finish uploading' : 'Send' }
-  const grow = () => { text.style.height = 'auto'; text.style.height = `${Math.min(text.scrollHeight, 160)}px`; sync() }
+  const grow = () => { text.style.height = 'auto'; text.style.height = text.value ? `${Math.min(text.scrollHeight, 160)}px` : ''; sync() } // empty, it keeps its CSS height: scrollHeight counts a placeholder that wraps
   text.oninput = () => { steerDraft = text.value; grow() }
   const to = select([['all', 'Everyone'], ['claude', 'Claude'], ['codex', 'Codex'], ['local', AGENT_NAME.local]], steerTarget); to.onchange = () => { steerTarget = to.value as typeof steerTarget }
   const bar = h('div', 'cw-bar'); row.append(att.button, att.input, attachVoice(text, form), text, selectButton('users', to, 'Send to'), send); form.append(att.strip, row, bar); queueMicrotask(grow)

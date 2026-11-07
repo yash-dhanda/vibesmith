@@ -130,7 +130,6 @@ button, a, summary, select, label { touch-action: manipulation; }
   .team-runs .view-toggle { display: none; }
   .head-search input { width: 40vw; }
   .run-row .run-acts .icon-btn { opacity: 1; }
-  .team-run { width: calc(100% - 2 * var(--gut-phone) - var(--safe-l) - var(--safe-r)); padding-top: 12px; }
   .team-run-header { box-shadow: none; }
   .team-run-identity h1 { font-size: 15.5px; }
   .team-story, .team-side-story, .team-lanes { grid-template-columns: minmax(0, 1fr); }
