@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { randomBytes } from 'node:crypto'
@@ -217,5 +217,20 @@ describe('team git', () => {
     expect(readFileSync(join(root, 'a.txt'), 'utf8')).toBe('one\n')
     expect((await applyResult(root, base, branch, undefined, ['new.txt', 'a.txt'])).ok).toBe(true)
     expect(readFileSync(join(root, 'a.txt'), 'utf8')).toBe('changed\n')
+  })
+  it('landing again skips what the project already has: deleted files, equal files, and applies only the new ones', async () => {
+    const { root, base, integ, branch } = await setup('again1')
+    rmSync(join(integ, 'a.txt'))
+    writeFileSync(join(integ, 'new.txt'), 'new\n')
+    await commitAll(integ, 'work')
+    expect((await applyResult(root, base, branch)).ok).toBe(true)
+    const again = await applyResult(root, base, branch) // a second landing of the same result, or of a result the folder already matches
+    expect(again.ok).toBe(true)
+    expect(again.message).toMatch(/already/)
+    writeFileSync(join(integ, 'later.txt'), 'later\n') // the run went on after the first landing
+    await commitAll(integ, 'more work')
+    expect((await applyResult(root, base, branch)).ok).toBe(true)
+    expect(readFileSync(join(root, 'later.txt'), 'utf8')).toBe('later\n')
+    expect(existsSync(join(root, 'a.txt'))).toBe(false)
   })
 })

@@ -143,6 +143,14 @@ async function applyThreeWay(root: string, patch: string): Promise<void> {
   })
 }
 
+// Which of these paths differ between the project folder (new and untracked files included) and the branch.
+async function differing(root: string, branch: string, paths: string[]): Promise<string[]> {
+  return withTempIndex(root, async (env) => {
+    await addAll(root, [':(exclude)node_modules', ':(exclude)**/node_modules'], env)
+    return (await git(root, ['--literal-pathspecs', 'diff', '--cached', '--name-only', '-z', '--no-renames', '--relative', branch, '--', ...paths], env)).split('\0').filter(Boolean)
+  })
+}
+
 // Puts the team's result into the user's folder as ordinary uncommitted changes (nothing is committed or staged for them).
 // With the id of the checkpoint taken just before, Undo of that checkpoint is limited to the files written here.
 // `only` (project-relative paths) limits the apply to those files; ponytail: paths go on the command line, which is fine for hundreds of files.
@@ -152,9 +160,12 @@ export async function applyResult(root: string, baseCommit: string, branch: stri
   const lit = only ? ['--literal-pathspecs'] : []
   const spec = only ? ['--', ...only] : []
   try {
-    await git(root, [...lit, 'diff', '--binary', '--no-renames', `--output=${f}`, baseCommit, branch, ...spec]) // to a file: a big binary does not fit in git()'s buffer
-    if (!statSync(f).size) return { ok: true, message: 'The team made no changes.' }
-    const paths = (await git(root, [...lit, 'diff', '--name-only', '-z', '--no-renames', '--relative', baseCommit, branch, ...spec])).split('\0').filter(Boolean)
+    const changed = (await git(root, [...lit, 'diff', '--name-only', '-z', '--no-renames', '--relative', baseCommit, branch, ...spec])).split('\0').filter(Boolean)
+    if (!changed.length) return { ok: true, message: 'The team made no changes.' }
+    // A file the folder already has exactly as the result has it (landed by an earlier landing, or by hand) is left out: a patch cannot add, change or delete it twice.
+    const paths = await differing(root, branch, changed).catch(() => changed) // the folder cannot be read whole (a locked file): every file goes to the patch, as before
+    if (!paths.length) return { ok: true, message: 'Everything in this result is already in your project.' }
+    await git(root, ['--literal-pathspecs', 'diff', '--binary', '--no-renames', `--output=${f}`, baseCommit, branch, '--', ...paths]) // to a file: a big binary does not fit in git()'s buffer
     let message = 'Applied.'
     try {
       await git(root, ['apply', '--whitespace=nowarn', f])

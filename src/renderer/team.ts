@@ -457,7 +457,7 @@ function renderRun() {
   main.append(renderThread()) // newest last: the page lands at the bottom, so what waits for you sits right above the message box
   const answered = renderAnswered(); if (answered) main.append(answered)
   if ((run.pausedReason || run.status === 'interrupted') && !run.approvals.some(a => a.kind === 'plan' && a.status === 'pending')) main.append(renderPauseBanner())
-  const pending = run.approvals.filter(a => a.status === 'pending')
+  const pending = run.approvals.filter(a => a.status === 'pending' && !(a.kind === 'final' && run!.final)) // the result card below has the Land it button; a second card for the same question hid a failed landing
   if (pending.length) main.append(renderApprovals(pending))
   if (run.status === 'awaiting_approval' && run.final) main.append(renderFinal())
   if (run.status === 'done' && run.applied) main.append(renderApplied())
