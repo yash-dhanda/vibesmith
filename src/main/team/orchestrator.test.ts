@@ -189,6 +189,34 @@ describe('team orchestrator', () => {
     expect((await x.orch.approveFinal(run.id)).ok).toBe(true)
   })
 
+  it('"start using gemini also" adds the agent to the run instead of becoming a task', async () => {
+    const over = { available: ['claude', 'codex'] as AgentName[] }
+    const x = h({ delayMs: 40, plan: { tasks: [T('a'), T('b', { deps: ['a'] })] } }, over)
+    const run = await x.orch.start(x.proj, 'two things')
+    await until(x.orch, run.id, (r) => r.status === 'running')
+    over.available = ['claude', 'codex', 'gemini']
+    await x.orch.followUp(run.id, 'start using gemini also')
+    const r = x.orch.get(run.id)!
+    expect(r.tasks).toHaveLength(2)
+    expect(r.prompts).toHaveLength(1)
+    expect(r.messages.some((m) => /Gemini is on the team/.test(m.body))).toBe(true)
+    expect((x.orch as any).liveOf(r).available).toContain('gemini')
+    await x.orch.followUp(run.id, 'use codex too') // a signed-in agent that is already there is fine too
+    await until(x.orch, run.id, (q) => q.status === 'awaiting_approval')
+  })
+
+  it('says when a request is done, once, when the run has several requests', async () => {
+    const x = h({ delayMs: 30, plan: { tasks: [T('a')] } })
+    const run = await x.orch.start(x.proj, 'first job')
+    await until(x.orch, run.id, (r) => r.status === 'running')
+    await x.orch.followUp(run.id, 'now also add a third thing to the project with its own tests please')
+    const r = await until(x.orch, run.id, (q) => q.status === 'awaiting_approval')
+    const done = r.messages.filter((m) => /^Request \d is done/.test(m.body))
+    expect(done.length).toBeGreaterThanOrEqual(1)
+    expect(new Set(done.map((m) => m.body.slice(0, 10))).size).toBe(done.length) // each request is reported once
+    expect(r.prompts?.every((q) => q.announced)).toBe(true)
+  })
+
   it('"start the website" starts the dev server and reports it instead of steering the agents', async () => {
     const x = h({ plan: { tasks: [T('a')] } })
     const calls: string[] = []

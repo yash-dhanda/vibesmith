@@ -15,7 +15,7 @@ import { decideCommand, decideTool } from './policy'
 import { attachmentsBlock, imagePaths, removeAttachmentDirs } from './attach'
 import { historyBlock, HistoryRecorder, HISTORY_DIR, writeHistory } from './history'
 import { plainLine } from '../agent/narrate'
-import { buildReport, conflictPrompt, contextFor, finalReviewPrompt, fixPrompt, forLocal, parsePlan, parseVerdict, parseReplan, planPrompt, replanPrompt, reviewPrompt, wantsSpeed, securityReviewPrompt, verifyFixPrompt, workPrompt } from './prompts'
+import { agentRequested, buildReport, conflictPrompt, contextFor, finalReviewPrompt, fixPrompt, forLocal, parsePlan, parseVerdict, parseReplan, planPrompt, replanPrompt, reviewPrompt, wantsSpeed, securityReviewPrompt, verifyFixPrompt, workPrompt } from './prompts'
 import { effortFor } from './effort'
 import { forecast, mainAuthor, taskStats } from './forecast'
 import { onlyDocsOrConfig, touchesSecurity } from './security'
@@ -427,6 +427,19 @@ export class TeamOrchestrator {
       run.config.attachments = [...(run.config.attachments ?? []), ...files.filter((f) => !have.has(f.path))].slice(-60)
       body = `${body}\n\nAttached files (open and look at them):\n${files.map((f) => `- ${f.name}: ${f.path}${f.frames?.length ? ` (video, frames: ${f.frames.join(', ')})` : ''}`).join('\n')}`
       this.save(run)
+    }
+    // "use Gemini too": a message about the team, answered at once. The agent joins the run if it is signed in; nothing is queued for the agents to read.
+    const want = to === 'all' ? agentRequested(body) : null
+    if (want && ['planning', 'running', 'paused', 'verifying', 'interrupted', 'awaiting_approval'].includes(run.status)) {
+      this.post(run, { from: 'user', to: 'user', kind: 'note', body })
+      const { agents, skipped } = await this.usable(run.config.maxLimitPercent)
+      const live = this.liveOf(run)
+      if (agents.includes(want)) {
+        live.available = agents
+        this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: `${label(want)} is on the team now: it gets tasks from the next one on and can review the others' work.` })
+        this.pump(run)
+      } else this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: `${label(want)} is not ready, so it was not added. ${skipped.join(' ')} Sign it in (see Settings), then ask again.`.trim() })
+      return
     }
     // Every message is a main request of its own: the run keeps them all, in order, and the team reads the newest together with the older ones.
     ;(run.prompts ??= [{ id: 'p1', text: run.goal, at: run.createdAt }]).push({ id: `p${run.prompts.length + 1}`, text: body, at: Date.now() })
@@ -1223,6 +1236,23 @@ export class TeamOrchestrator {
 
   // ------------------------------------------------------------------ scheduling
 
+  // With several requests in one run, each one is reported when its own tasks have finished, so the user is not left wondering until the very end.
+  private announceDoneRequests(run: Run, settled: (t: Task) => boolean) {
+    const prompts = run.prompts
+    if (!prompts || prompts.length < 2) return
+    prompts.forEach((q, i) => {
+      if (q.announced) return
+      const mine = run.tasks.filter((t) => (t.promptId ?? 'p1') === q.id && !t.lastStep && t.status !== 'proposed')
+      if (!mine.length || !mine.every(settled) || !mine.some((t) => t.status === 'done')) return
+      q.announced = true
+      const files = new Set(mine.flatMap((t) => t.changed.map((c) => c.path)))
+      const done = mine.filter((t) => t.status === 'done').length
+      const more = run.tasks.some((t) => !settled(t))
+      this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', body: `Request ${i + 1} is done: ${done} ${done === 1 ? 'task' : 'tasks'} finished${files.size ? `, ${files.size} ${files.size === 1 ? 'file' : 'files'} changed` : ''}. ${more ? 'The team is still working on the other requests.' : 'The team checks the whole result next.'}` })
+    })
+    this.save(run)
+  }
+
   private pump(run: Run) {
     const live = this.liveOf(run)
     if (live.paused || run.status !== 'running') return
@@ -1251,6 +1281,7 @@ export class TeamOrchestrator {
       live.running.set(t.id, p)
     }
 
+    this.announceDoneRequests(run, settled)
     if (live.running.size) return
     if (live.replans > 0) return // a newer request is being planned: more work may come
     const open = run.tasks.filter((t) => !settled(t))

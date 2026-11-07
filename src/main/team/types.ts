@@ -112,7 +112,7 @@ export type TeamConfig = {
 export const DEFAULT_CONFIG: TeamConfig = { planner: 'auto', codexModel: '', maxParallelPerAgent: 2, maxFixRounds: 3, maxVerifyRounds: 2, review: 'cross', finalReview: 'auto', bypassPermissions: true, allowSubtasks: true, budget: { maxTasks: 12 }, codexMode: 'app-server', reviewPlan: false, maxLimitPercent: 0, autoSwitch: true, effortMode: 'auto', testTask: true, securityReview: 'auto' }
 
 // A main request of the user. A run keeps all of them in order: the first is the goal, every later one is another request the team reads together with the earlier ones.
-export type Prompt = { id: string; text: string; at: number }
+export type Prompt = { id: string; text: string; at: number; announced?: boolean } // announced: the run said this request is done
 
 export type RunFinal = { report: string; files: Task['changed']; verifyOk: boolean | null; verifyOutput: string; reviewNotes: string[] }
 

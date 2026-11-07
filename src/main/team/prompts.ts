@@ -364,3 +364,11 @@ export function parseReplan(text: string, available: AgentName[], existing: stri
   if (tasks.some((t) => !done.has(t.id))) throw new Error('the new tasks wait for each other in a circle')
   return { summary: str(raw.summary, 500), tasks, cancel: (Array.isArray(raw.cancel) ? raw.cancel : []).map((c: unknown) => str(c, 40)).filter((c: string) => known.has(c)) }
 }
+
+// "start using gemini also" is a command about who is on the team, not work for the agents: it must not become a task that changes nothing.
+export function agentRequested(body: string): AgentName | null {
+  const t = body.trim()
+  if (t.length > 80 || !/\b(use|using|add|include|enable|involve|bring in|start|also)\b/i.test(t)) return null
+  const m = /\b(gemini|antigravity|codex|claude)\b/i.exec(t)
+  return m ? ({ gemini: 'gemini', antigravity: 'gemini', codex: 'codex', claude: 'claude' } as const)[m[1].toLowerCase() as 'gemini' | 'antigravity' | 'codex' | 'claude'] : null
+}
