@@ -46,16 +46,37 @@ describe('agy stream (shapes from the Antigravity CLI headless docs)', () => {
   })
 })
 
+describe('agy stream, captured from a real agy 1.5.3 run', () => {
+  const real = [
+    '{"event":"init","conversation_id":"E0","init":{"cwd":"/p","tools":["write_file","run_command"],"permission_mode":"request-review"}}',
+    '{"event":"step_update","step_update":{"conversation_id":"E0","step_index":1,"state":"DONE","step_type":"agent_response","duration_seconds":4.7,"usage":{"input_tokens":6950,"output_tokens":202,"thinking_tokens":159,"cache_read_tokens":0,"total_tokens":7152}}}',
+    '{"event":"step_update","step_update":{"conversation_id":"E0","step_index":2,"state":"ACTIVE","step_type":"tool","tool_name":"write_file","tool_info":{"name":"write_file","parameters":{"Path":"/p/hello.js"}}}}',
+    '{"event":"step_update","step_update":{"conversation_id":"E0","step_index":2,"state":"DONE","step_type":"tool","tool_name":"write_file","tool_info":{"name":"write_file","parameters":{"Path":"/p/hello.js"}}}}',
+    '{"event":"step_update","step_update":{"conversation_id":"E0","step_index":4,"state":"ACTIVE","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"node hello.js"}}}}',
+    '{"event":"step_update","step_update":{"conversation_id":"E0","step_index":4,"state":"DONE","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"node hello.js"},"output":"Command exited with code 0.\\n\\nCommand output:\\nhi\\r\\n"}}}',
+    '{"event":"step_update","step_update":{"conversation_id":"E0","step_index":5,"state":"ACTIVE","step_type":"agent_response","text_delta":"Created hello."}}',
+    '{"event":"step_update","step_update":{"conversation_id":"E0","step_index":5,"state":"DONE","step_type":"agent_response","text_delta":"js.\\n","usage":{"input_tokens":7362,"output_tokens":159,"thinking_tokens":124,"cache_read_tokens":0,"total_tokens":7521}}}',
+    '{"event":"result","result":{"conversation_id":"E0","status":"SUCCESS","response":"Created hello.js.\\n","num_turns":1,"usage":{"input_tokens":21540,"output_tokens":408,"thinking_tokens":291,"cache_read_tokens":0,"total_tokens":21948}}}',
+  ]
+  it('reads a write, a command and the closing answer', () => {
+    const parse = makeGeminiParser()
+    const ev = real.flatMap((l) => parse(l))
+    expect(ev.filter((e) => e.type === 'tool').map((e) => [(e as { kind: string }).kind, (e as { summary: string }).summary])).toEqual([['edit', '/p/hello.js'], ['command', 'node hello.js']])
+    expect(ev.filter((e) => e.type === 'tool_result').map((e) => (e as { ok: boolean }).ok)).toEqual([true, true])
+    expect(ev.filter((e) => e.type === 'text').map((e) => (e as { text: string }).text)).toEqual(['Created hello.js.\n'])
+    expect(ev.at(-1)).toEqual({ type: 'done', agent: 'gemini', ok: true, text: 'Created hello.js.' })
+  })
+})
+
 describe('agy args', () => {
   it('reads the prompt from stdin as one stream-json message', () => {
     expect(JSON.parse(geminiInput('do "it"\nnow'))).toEqual({ event: 'user', message: { content: 'do "it"\nnow' } })
     expect(geminiInput('x').endsWith('\n')).toBe(true)
   })
-  it('edits files automatically in write mode and only plans without it', () => {
+  it('takes the model and the conversation to resume, and leaves them out otherwise', () => {
     const w = geminiArgs({ cwd: '.', prompt: 'x', write: true, model: 'm1', resume: 'C0' })
     expect(w).toEqual(expect.arrayContaining(['--input-format', 'stream-json', '--output-format', 'stream-json', '--mode', 'accept-edits', '--model', 'm1', '--conversation', 'C0']))
     const r = geminiArgs({ cwd: '.', prompt: 'x', write: false })
-    expect(r).toEqual(expect.arrayContaining(['--mode', 'plan']))
     expect(r).not.toContain('--model')
     expect(r).not.toContain('--conversation')
   })
@@ -63,7 +84,10 @@ describe('agy args', () => {
     const s = JSON.parse(geminiSettings(true))
     expect(s.permissions.allow).toContain('command(npm test)')
     expect(s.permissions.deny).toEqual(expect.arrayContaining(['command(git push)', 'command(sudo)', 'command(npm publish)']))
-    expect(JSON.parse(geminiSettings(false)).permissions.allow).not.toContain('command(npm install)')
+    expect(s.permissions.deny).not.toContain('write_file(*)')
+    const ro = JSON.parse(geminiSettings(false)).permissions // reviews and research: no file writes at all, and only read commands
+    expect(ro.deny).toContain('write_file(*)')
+    expect(ro.allow).not.toContain('command(npm install)')
   })
 })
 
