@@ -1,6 +1,6 @@
 /* ---- page headers: title left, a compact control cluster right, the primary action last ---- */
 .page-head { display: flex; align-items: center; gap: 12px; min-height: 30px; margin-bottom: 14px; flex-wrap: wrap; }
-.page-title { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -.02em; line-height: 1.2; color: var(--text); }
+.page-title { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 20px; font-weight: 500; line-height: 1.2; color: var(--text); }
 h2.page-title { font-size: 16px; }
 .page-count { color: var(--faint); font: 400 12px var(--mono); margin-left: 2px; }
 .head-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -19,12 +19,12 @@ h2.page-title { font-size: 16px; }
 .head-search.open input { display: block; animation: slide-right var(--t2) var(--ease); }
 .head-search:focus-within { border-color: var(--focus); }
 .head-search input:focus-visible { outline: 0; animation: none; }
-.page-head .btn, .head-tools .btn { height: 30px; border-radius: var(--r-md); font-size: 12.5px; }
+.page-head .btn, .head-tools .btn { height: 30px; border-radius: var(--r-md); font-size: 13px; }
 /* centred empty state: a line glyph, a bold line, two muted lines and one white button */
 .empty-state { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 48px 16px 40px; text-align: center; color: var(--faint); animation: rise var(--t3) var(--ease) both; }
 .empty-glyph { display: grid; place-items: center; width: 52px; height: 52px; color: var(--faint); opacity: .7; }
 .empty-glyph .ic { width: 44px; height: 44px; stroke-width: 1.2; }
-.empty-title { font-size: 14px; font-weight: 600; color: var(--muted); }
+.empty-title { font-size: 14px; font-weight: 500; color: var(--muted); }
 .empty-copy { max-width: 380px; margin: 0 0 4px; font-size: 12px; line-height: 1.6; }
 
 /* ---- toasts: cards bottom-right ---- */
@@ -34,7 +34,7 @@ h2.page-title { font-size: 16px; }
 .toast.out { animation: toast-out var(--t1) ease-in both; }
 .toast-icon { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: var(--r-md); background: var(--panel-2); color: var(--muted); }
 .toast-copy { flex: 1; min-width: 0; padding-top: 1px; overflow-wrap: anywhere; }
-.toast-copy strong { display: block; font-size: 13px; font-weight: 600; line-height: 18px; }
+.toast-copy strong { display: block; font-size: 13px; font-weight: 500; line-height: 18px; }
 .toast-copy p { margin: 3px 0 0; color: var(--muted); font-size: 12px; line-height: 18px; }
 .toast .tbtn { margin-top: 10px; height: 30px; }
 .toast-x { width: 22px; height: 22px; margin-top: -2px; color: var(--faint); }
@@ -52,11 +52,11 @@ dialog[open]::backdrop { background: var(--scrim); }
 #project-history { width: min(760px, 94vw); height: min(640px, 86vh); overflow: hidden; }
 #project-history[open] { display: flex; flex-direction: column; }
 .modal-head { display: flex; align-items: center; gap: 9px; padding: 12px 12px 12px 18px; border-bottom: 1px solid var(--hair); }
-.modal-head h3 { display: flex; align-items: center; gap: 9px; margin: 0; font-size: 14.5px; font-weight: 600; }
+.modal-head h3 { display: flex; align-items: center; gap: 9px; margin: 0; font-size: 14px; font-weight: 500; }
 .modal-head h3 .ic { color: var(--muted); }
 .history-filter { display: flex; align-items: center; gap: 8px; margin: 12px 18px 0; height: 34px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--r-md); color: var(--faint); }
 .history-filter:focus-within { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
-.history-filter input { flex: 1; min-width: 0; border: 0; background: transparent; outline: 0; color: var(--text); font-size: 12.5px; }
+.history-filter input { flex: 1; min-width: 0; border: 0; background: transparent; outline: 0; color: var(--text); font-size: 13px; }
 .history-filter input:focus-visible { outline: 0; animation: none; }
 .history-body { flex: 1; min-height: 0; overflow: auto; margin: 12px 18px; border: 1px solid var(--hair); border-radius: var(--r-md); background: var(--ed-bg); }
 .history-text { margin: 0; padding: 12px 14px; font: 12px/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ed-fg); }
@@ -65,23 +65,23 @@ dialog[open]::backdrop { background: var(--scrim); }
 .history-btn { flex: none; }
 /* modal anatomy: icon + title + close, a divider, the body, then a footer with a muted hint left and actions right */
 .modal-foot { display: flex; align-items: center; gap: 9px; padding: 12px 18px; border-top: 1px solid var(--hair); }
-.modal-hint { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--faint); font-size: 11.5px; }
+.modal-hint { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--faint); font-size: 12px; }
 .modal-foot .btn { height: 30px; }
 
 /* command palette */
 #palette { width: min(620px, 90vw); margin-top: min(16vh, 150px); overflow: hidden; }
 .palette-search { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--hair); padding: 14px 16px; color: var(--muted); }
-#command-search { flex: 1; min-width: 0; background: none; border: 0; outline: none; font-size: 15px; color: var(--text); }
+#command-search { flex: 1; min-width: 0; background: none; border: 0; outline: none; font-size: 14px; color: var(--text); }
 #command-search:focus-visible { outline: 0; animation: none; }
 #command-results { overflow-y: auto; max-height: 50vh; padding: 6px; }
 .command { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; border-radius: var(--r-sm); padding: 7px 10px; background: none; text-align: left; }
 .command:active:not(:disabled) { transform: none; }
 .command.selected, .command:hover { background: var(--panel-2); }
 .command > span:last-child { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: 1; }
-.command strong { font-size: 13px; font-weight: 450; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.command small { color: var(--faint); font-size: 11.5px; margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.command strong { font-size: 13px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.command small { color: var(--faint); font-size: 12px; margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #command-results.opening .command { animation: rise var(--t2) var(--ease) both; }
 #command-results.opening .command:nth-child(2) { animation-delay: 20ms; } #command-results.opening .command:nth-child(3) { animation-delay: 40ms; } #command-results.opening .command:nth-child(4) { animation-delay: 60ms; } #command-results.opening .command:nth-child(5) { animation-delay: 80ms; } #command-results.opening .command:nth-child(n+6) { animation-delay: 100ms; }
-.palette-foot { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid var(--hair); padding: 8px 16px; color: var(--faint); font-size: 11.5px; }
+.palette-foot { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid var(--hair); padding: 8px 16px; color: var(--faint); font-size: 12px; }
 .palette-foot kbd { margin-right: 3px; }
 .palette-empty { padding: 18px 12px; color: var(--muted); margin: 0; }

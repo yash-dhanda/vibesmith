@@ -66,7 +66,7 @@ button:active:not(:disabled) { transform: scale(.98); }
 .ck-mark[data-state='ask'] { color: var(--warn); }
 .ck-mark[data-state='skipped'] { color: var(--faint); }
 .grow { flex: 1; }
-kbd { font: 10.5px var(--mono); color: var(--faint); border: 1px solid var(--hair); border-radius: var(--r-xs); padding: 0 5px; line-height: 17px; }
+kbd { font: 11px var(--mono); color: var(--faint); border: 1px solid var(--hair); border-radius: var(--r-xs); padding: 0 5px; line-height: 17px; }
 .muted { color: var(--muted); }
 .pad { padding: 14px 4px; }
 .eyebrow { font-size: 12px; color: var(--muted); }
@@ -76,7 +76,7 @@ kbd { font: 10.5px var(--mono); color: var(--faint); border: 1px solid var(--hai
 .icon-btn:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
 .icon-btn:disabled { opacity: .4; cursor: default; }
 .icon-btn.sm { width: 24px; height: 24px; }
-.btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; border-radius: var(--r-md); padding: 0 12px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 12.5px; white-space: nowrap; }
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; border-radius: var(--r-md); padding: 0 12px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 13px; white-space: nowrap; }
 .btn:hover:not(:disabled) { background: var(--panel-2); }
 .btn:disabled { opacity: .5; cursor: default; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
@@ -86,11 +86,11 @@ kbd { font: 10.5px var(--mono); color: var(--faint); border: 1px solid var(--hai
 .btn.only { min-width: 32px; padding: 0 8px; justify-content: center; } /* min-width, not width: a model's Delete turns into 'Click again to delete' */
 .link-btn { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; color: var(--muted); font-size: 12px; padding: 6px 8px; line-height: 20px; border-radius: var(--r-sm); }
 .link-btn:hover { color: var(--text); background: var(--panel-2); }
-.chip { display: inline-flex; align-items: center; gap: 5px; font: 11.5px var(--mono); color: var(--muted); padding: 3px 7px; border-radius: var(--r-sm); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.chip { display: inline-flex; align-items: center; gap: 5px; font: 12px var(--mono); color: var(--muted); padding: 3px 7px; border-radius: var(--r-sm); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .chip.live { color: var(--accent); }
 .chip.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); }
 /* a status is a small dot and a word, never a filled pill */
-.badge { display: inline-flex; align-items: center; gap: 6px; font: 500 11.5px var(--sans); color: var(--muted); white-space: nowrap; padding: 2px 0; }
+.badge { display: inline-flex; align-items: center; gap: 6px; font: 500 12px var(--sans); color: var(--muted); white-space: nowrap; padding: 2px 0; }
 .badge.ok::before, .badge.bad::before, .badge.accent::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .badge.ok { color: var(--ok); } .badge.bad { color: var(--err); } .badge.accent { color: var(--accent); }
 .badge.tag { padding: 1px 7px; border: 1px solid var(--hair); border-radius: var(--r-xs); text-transform: capitalize; }
@@ -117,35 +117,35 @@ code.k { font: 12px var(--mono); background: var(--panel-2); border-radius: var(
 :root[data-theme='light'] #history { border-right: 1px solid var(--hair); }
 .brand { display: flex; align-items: center; gap: 8px; padding: 4px 4px 8px 8px; }
 .brand-mark { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; background: var(--accent); color: var(--accent-ink); font: italic 700 14px/1 Georgia, serif; }
-.brand strong { font-size: 15px; font-weight: 650; letter-spacing: -.03em; color: var(--text); }
+.brand strong { font-size: 16px; font-weight: 600; color: var(--text); }
 .brand .icon-btn { color: var(--side-faint); }
 .side-nav { display: flex; flex-direction: column; gap: 2px; }
-.side-btn { display: flex; align-items: center; gap: 8px; width: 100%; height: 30px; padding: 0 8px; background: none; border: 0; border-radius: var(--r-md); color: var(--side-text); font-size: 12.5px; text-align: left; }
+.side-btn { display: flex; align-items: center; gap: 8px; width: 100%; height: 30px; padding: 0 8px; background: none; border: 0; border-radius: var(--r-md); color: var(--side-text); font-size: 13px; text-align: left; }
 .side-btn:hover, #app.team-mode .team-nav { background: var(--side-hover); color: var(--text); }
 .side-btn kbd { margin-left: auto; opacity: 0; transition: opacity var(--t1); }
 .side-btn:hover kbd, :focus-visible > kbd { opacity: 1; }
-.side-label { display: flex; align-items: center; justify-content: space-between; padding: 14px 4px 2px 8px; color: var(--side-faint); font-size: 11.5px; }
+.side-label { display: flex; align-items: center; justify-content: space-between; padding: 14px 4px 2px 8px; color: var(--side-faint); font-size: 12px; }
 .icon-btn.xs { width: 20px; height: 20px; border-radius: var(--r-xs); color: var(--side-faint); }
 #chat-search { width: 100%; margin: 4px 0 2px; height: 28px; background: transparent; border: 1px solid transparent; border-radius: var(--r-md); padding: 0 8px; outline: 0; font-size: 12px; transition: border-color var(--t1), background-color var(--t1); }
 #chat-search:hover { background: var(--side-hover); }
 #chat-search:focus { border-color: var(--border); background: var(--bg); }
 #chat-search::placeholder { color: var(--side-faint); }
 #chat-list { flex: 1; overflow-y: auto; min-height: 0; margin: 0 -4px; padding: 0 4px; }
-.group-label { color: var(--side-faint); font-size: 11px; padding: 10px 8px 3px; }
+.group-label { color: var(--side-faint); font-size: 12px; padding: 10px 8px 3px; }
 .chat-item { position: relative; display: block; width: 100%; padding: 0 28px 0 0; border-radius: var(--r-md); transition: background-color var(--t1); }
 .chat-item:hover, .chat-item.active { background: var(--side-hover); }
 .chat-item.active .t { color: var(--text); }
 .chat-item.enter { animation: rise var(--t3) var(--ease) both; animation-delay: calc(var(--i, 0) * 24ms); }
-.chat-open { display: block; width: 100%; min-width: 0; background: transparent; border: 0; text-align: left; padding: 5px 8px; border-radius: var(--r-md); font-size: 12.5px; }
+.chat-open { display: block; width: 100%; min-width: 0; background: transparent; border: 0; text-align: left; padding: 5px 8px; border-radius: var(--r-md); font-size: 13px; }
 .chat-open:active:not(:disabled) { transform: none; }
 .chat-item .row1 { display: flex; align-items: center; gap: 7px; }
 .chat-item .t { display: block; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-item .s { display: block; color: var(--side-faint); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-item .s { display: block; color: var(--side-faint); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-item .s.wait { color: var(--warn); }
 .chat-item .x { position: absolute; right: 4px; top: 7px; width: 22px; height: 22px; border: 0; border-radius: var(--r-xs); background: none; color: var(--side-faint); display: grid; place-items: center; opacity: 0; transition: opacity var(--t1), background-color var(--t1); }
 .chat-item:hover .x, .chat-item:focus-within .x { opacity: 1; }
 .chat-item .x:hover { background: var(--border); color: var(--err); }
-.chat-item .x.confirm { opacity: 1; width: auto; padding: 0 7px; font-size: 11px; font-weight: 600; color: var(--err); background: var(--errbg); }
+.chat-item .x.confirm { opacity: 1; width: auto; padding: 0 7px; font-size: 12px; font-weight: 500; color: var(--err); background: var(--errbg); }
 .chat-item .edit { width: 100%; margin: 4px 0; background: var(--bg); border: 1px solid var(--focus); border-radius: 6px; padding: 3px 7px; outline: 0; }
 .chat-item:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .st { width: 7px; height: 7px; border-radius: 50%; flex: none; }

@@ -3,7 +3,7 @@
 /* ---- land part of a run ---- */
 .land-panel { margin: 14px 0 0; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--r-lg); background-color: var(--bg); }
 .land-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-.land-title { display: inline-flex; align-items: center; gap: 7px; font-weight: 550; }
+.land-title { display: inline-flex; align-items: center; gap: 7px; font-weight: 500; }
 .land-title .ic { color: var(--muted); }
 .land-count { margin-left: auto; color: var(--faint); font-size: 12px; }
 .land-group { border-top: 1px solid var(--hair); padding: 8px 0 4px; }
@@ -15,11 +15,11 @@
 .land-path { display: inline-flex; align-items: center; gap: 6px; min-width: 0; flex: 1; overflow-wrap: anywhere; }
 .land-add { color: var(--add-ink); }
 .land-del { color: var(--del-ink); }
-.land-state { min-width: 46px; text-align: right; color: var(--ok); font: 11.5px var(--sans, inherit); }
+.land-state { min-width: 46px; text-align: right; color: var(--ok); font: 12px var(--sans, inherit); }
 .land-foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--hair); }
 .land-foot .btn { height: 30px; }
 .land-log { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--hair); }
-.land-log-row { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; min-height: 26px; }
+.land-log-row { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; min-height: 26px; }
 .land-log-row .link-btn { margin-left: auto; }
 
 /* ---- overnight queue ---- */
@@ -30,14 +30,14 @@
 .queue-item { display: flex; align-items: flex-start; gap: 10px; padding: 9px 10px; border: 1px solid var(--hair); border-radius: var(--r-md); background: var(--panel); }
 .queue-item.drop { border-color: var(--accent); }
 .queue-item[draggable='true'] { cursor: grab; }
-.queue-status { flex: none; min-width: 68px; padding-top: 1px; font-size: 11.5px; font-weight: 550; color: var(--muted); }
+.queue-status { flex: none; min-width: 68px; padding-top: 1px; font-size: 12px; font-weight: 500; color: var(--muted); }
 .queue-status.st-running { color: var(--accent); }
 .queue-status.st-landed { color: var(--ok); }
 .queue-status.st-ready { color: var(--warn); }
 .queue-status.st-failed { color: var(--err); }
 .queue-main { flex: 1; min-width: 0; }
 .queue-goal { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.queue-meta { margin-top: 2px; color: var(--faint); font-size: 11.5px; }
+.queue-meta { margin-top: 2px; color: var(--faint); font-size: 12px; }
 .queue-note { margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .queue-note.warn { color: var(--warn); }
 .queue-ctl { display: flex; flex: none; gap: 2px; }
@@ -45,7 +45,7 @@
 .queue-add textarea, .queue-add select { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg); resize: vertical; }
 .queue-add select { width: auto; max-width: 60%; }
 .queue-opts { display: flex; flex-wrap: wrap; gap: 8px 22px; }
-.queue-opt { display: inline-flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--muted); }
+.queue-opt { display: inline-flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
 .queue-add-bar { display: flex; align-items: center; gap: 8px; }
 .queue-report-bar { display: flex; justify-content: flex-end; margin-bottom: 8px; }
 .queue-report { line-height: 1.6; overflow-wrap: anywhere; }
@@ -53,7 +53,7 @@
 
 /* Key answer: the few things the user asked to receive, small and easy to copy */
 .key-card { margin: 12px 0; padding: 8px 12px; border: 1px solid var(--hair); border-radius: var(--r-md); background: var(--panel); }
-.key-title { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.key-title { font-size: 12px; font-weight: 500; color: var(--muted); margin-bottom: 4px; }
 .key-row { display: flex; align-items: center; gap: 8px; justify-content: space-between; font-size: 12px; line-height: 1.5; }
 .key-text { font-family: var(--mono, ui-monospace, monospace); overflow-wrap: anywhere; user-select: text; }
 .key-empty { margin: 0; font-size: 12px; color: var(--faint); }

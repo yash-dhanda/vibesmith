@@ -18,7 +18,7 @@
 .id-top { display: flex; align-items: flex-start; gap: 8px; }
 .id-toggle { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 0; background: none; border: 0; color: var(--text); text-align: left; }
 .id-toggle:focus-visible { outline: 1.5px solid var(--focus); outline-offset: 3px; border-radius: var(--r-sm); }
-.id-title { font-size: 14px; font-weight: 600; }
+.id-title { font-size: 14px; font-weight: 500; }
 .id-pitch { color: var(--muted); font-size: 12.5px; line-height: 1.5; }
 .id-star { flex: none; color: var(--faint); }
 .id-star.on { color: var(--warn); }
@@ -26,7 +26,7 @@
 .id-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .id-chip { padding: 1px 7px; border: 1px solid var(--hair); border-radius: 999px; color: var(--faint); font-size: 11.5px; white-space: nowrap; }
 .id-chip.stack { color: var(--muted); }
-.id-level { padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 550; background: var(--panel-2); color: var(--muted); }
+.id-level { padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 500; background: var(--panel-2); color: var(--muted); }
 .id-level.starter { color: var(--ok); }
 .id-level.ambitious { color: var(--warn); }
 .id-sub { margin: 4px 0 0; color: var(--faint); font-size: 11.5px; font-weight: 500; }
@@ -46,7 +46,7 @@
 .gi-toggle:focus-visible { outline: 1.5px solid var(--focus); outline-offset: -2px; border-radius: var(--r-sm); }
 .gi-toggle > .ic { margin-left: auto; flex: none; color: var(--faint); transition: rotate var(--t1) var(--ease); }
 .gi-toggle[aria-expanded='true'] > .ic { rotate: 90deg; }
-.gi-title { font-weight: 550; min-width: 0; }
+.gi-title { font-weight: 500; min-width: 0; }
 .gi-meta { color: var(--faint); font-size: 11.5px; white-space: nowrap; }
 .gi-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
 .gi-dot[data-sev='high'] { background: var(--err); }
@@ -72,7 +72,7 @@
 
 /* the project's own section in the gallery */
 .id-project { border: 1px solid var(--hair); border-radius: var(--r-md); background: var(--panel); }
-.id-project > summary { display: flex; align-items: center; gap: 10px; padding: 9px 14px; color: var(--text); font-size: 12.5px; font-weight: 550; cursor: pointer; }
+.id-project > summary { display: flex; align-items: center; gap: 10px; padding: 9px 14px; color: var(--text); font-size: 12.5px; font-weight: 500; cursor: pointer; }
 .id-project[open] > summary { border-bottom: 1px solid var(--hair); }
 .id-count { color: var(--faint); font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .id-project-list { padding: 4px 14px 8px; }

@@ -10,7 +10,7 @@
     /* Boot splash for phones and tablets only (a desktop window draws before it could be seen): the wordmark with a soft sheen, removed once the app has drawn. */
     #boot { display: none; }
     @media (hover: none) and (pointer: coarse) {
-      #boot { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; gap: 10px; background: #141414; color: #d6d6d6; font: 650 24px/1 'Geist Variable', ui-sans-serif, -apple-system, system-ui, sans-serif; letter-spacing: -.03em; }
+      #boot { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; gap: 10px; background: #141414; color: #d6d6d6; font: 600 24px/1 'Geist Variable', ui-sans-serif, -apple-system, system-ui, sans-serif; letter-spacing: -.03em; }
       #boot i { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: #e6e6e6; color: #141414; font: italic 700 20px/1 Georgia, serif; }
       #boot span { position: relative; overflow: hidden; padding: 4px 2px; }
       #boot span::after { content: ''; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .16), transparent); animation: boot-sheen 1.4s ease-in-out infinite; }

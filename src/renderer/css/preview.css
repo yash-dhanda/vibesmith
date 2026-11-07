@@ -1,6 +1,6 @@
 /* ---- Crew: website preview pane and the visual check ---- */
 .crew-preview { border: 1px solid var(--hair); border-radius: var(--r-md); background: var(--bg); min-width: 0; }
-.crew-preview-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 12px; border: 0; background: none; color: var(--text); font-size: 12.5px; text-align: left; border-radius: inherit; }
+.crew-preview-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 12px; border: 0; background: none; color: var(--text); font-size: 13px; text-align: left; border-radius: inherit; }
 .crew-preview-head:hover { background: var(--panel-2); }
 .crew-preview-head .ic { transition: transform var(--t1) var(--ease); color: var(--muted); }
 .crew-preview.open .crew-preview-head .ic { transform: rotate(90deg); }
@@ -11,7 +11,7 @@
 .crew-preview-stage { display: flex; justify-content: center; }
 .crew-preview-box { display: grid; place-items: center; width: 100%; height: min(60vh, 560px); min-height: 240px; border: 1px dashed var(--border); border-radius: var(--r-md); background: var(--panel); transition: width var(--t2) var(--ease); }
 .crew-preview-box.phone { width: min(390px, 100%); }
-.crew-preview-msg { margin: 0; padding: 16px; max-width: 46ch; color: var(--muted); font-size: 12.5px; line-height: 1.6; text-align: center; overflow-wrap: anywhere; }
+.crew-preview-msg { margin: 0; padding: 16px; max-width: 46ch; color: var(--muted); font-size: 13px; line-height: 1.6; text-align: center; overflow-wrap: anywhere; }
 .visual-check { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; min-width: 0; }
 .visual-note { margin: 0; color: var(--faint); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .visual-note:empty { display: none; }
@@ -19,4 +19,4 @@
 .visual-grid:empty { display: none; }
 .visual-shot { margin: 0; min-width: 0; border: 1px solid var(--hair); border-radius: var(--r-md); background: var(--panel); overflow: hidden; }
 .visual-shot img { display: block; width: 100%; height: 120px; object-fit: cover; object-position: top; background: var(--panel-2); }
-.visual-shot figcaption { padding: 4px 8px; color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.visual-shot figcaption { padding: 4px 8px; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

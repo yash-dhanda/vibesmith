@@ -2,7 +2,7 @@
 dialog.diff-review, dialog.restore-points, dialog.project-dashboard { width: min(1100px, 94vw); height: min(780px, 90vh); max-width: none; flex-direction: column; overflow: hidden; }
 dialog.diff-review[open], dialog.restore-points[open], dialog.project-dashboard[open] { display: flex; }
 .dr-head, .rp-head, .db-head { display: flex; align-items: center; gap: 10px; flex: none; padding: 10px 14px; border-bottom: 1px solid var(--hair); }
-.dr-head strong, .rp-head strong, .db-head strong { font-size: 13px; font-weight: 600; }
+.dr-head strong, .rp-head strong, .db-head strong { font-size: 13px; font-weight: 500; }
 .dr-summary, .rp-sub, .db-sub { color: var(--faint); font-size: 12px; }
 .dr-summary, .db-sub { flex: 1; min-width: 0; }
 .rp-head .rp-sub { flex: 1; }
@@ -32,7 +32,7 @@ dialog.diff-review[open], dialog.restore-points[open], dialog.project-dashboard[
 .dr-row.add .dr-code::before { content: '+'; position: absolute; left: 4px; color: var(--add-ink); }
 .dr-row.del .dr-code::before { content: '−'; position: absolute; left: 4px; color: var(--del-ink); }
 .dr-gap { display: flex; justify-content: center; }
-.dr-add { width: 18px; height: 18px; margin-top: 2px; padding: 0; border: 0; border-radius: var(--r-xs); background: var(--accent); color: var(--accent-ink); font: 600 13px/18px var(--sans); opacity: 0; cursor: pointer; }
+.dr-add { width: 18px; height: 18px; margin-top: 2px; padding: 0; border: 0; border-radius: var(--r-xs); background: var(--accent); color: var(--accent-ink); font: 500 13px/18px var(--sans); opacity: 0; cursor: pointer; }
 .dr-row:hover .dr-add, .dr-add:focus-visible { opacity: 1; }
 .dr-note-line { margin: 0; padding: 8px 10px; color: var(--faint); font: 12px var(--sans); }
 .dr-more { align-self: center; }

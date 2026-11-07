@@ -19,7 +19,7 @@
 .refs-body { display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; overflow: auto; padding: 14px 18px; }
 .refs-auto { display: flex; align-items: center; gap: 16px; padding: 10px 14px; border: 1px solid var(--hair); border-radius: var(--r-md); }
 .refs-auto-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; font-size: 12px; color: var(--muted); }
-.refs-auto-text strong { color: var(--text); font-size: 13px; font-weight: 550; }
+.refs-auto-text strong { color: var(--text); font-size: 13px; font-weight: 500; }
 .refs-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .refs-row.link input:first-child { flex: 1.4; }
 .refs-row.link input:nth-child(2) { flex: 1; }
@@ -58,7 +58,7 @@ a.ref-sub { color: var(--muted); text-decoration: underline; text-underline-offs
 .cs-table :is(th, td):first-child { text-align: left; white-space: normal; width: 100%; }
 .cs-table th { color: var(--faint); font-size: 11.5px; font-weight: 500; }
 .cs-table tbody tr, .cs-table tfoot tr { border-top: 1px solid var(--hair); }
-.cs-table tfoot { color: var(--muted); font-weight: 550; }
+.cs-table tfoot { color: var(--muted); font-weight: 500; }
 .cs-who { display: inline-flex; align-items: center; gap: 6px; margin-right: 8px; color: var(--muted); }
 .cs-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--a-claude); }
 .cs-dot[data-agent='codex'] { background: var(--a-codex); }

@@ -1,7 +1,7 @@
 /* ---- git card on a landed run ---- */
 .git-card { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--panel); }
 .git-head { display: flex; align-items: center; gap: 8px; color: var(--muted); }
-.git-head strong { font-size: 13px; font-weight: 600; color: var(--text); }
+.git-head strong { font-size: 13px; font-weight: 500; color: var(--text); }
 .git-line { margin: 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .git-step { display: flex; align-items: center; gap: 12px; min-height: 30px; }
 .git-step .btn { flex: none; min-width: 150px; justify-content: center; height: 30px; }
@@ -16,12 +16,12 @@
 #search-all-input { flex: 1; min-width: 0; background: none; border: 0; outline: none; font-size: 15px; color: var(--text); }
 #search-all-input:focus-visible { outline: 0; animation: none; }
 #search-all-results { overflow-y: auto; max-height: 56vh; padding: 6px; }
-.sa-group { padding: 8px 10px 4px; color: var(--faint); font-size: 11.5px; font-weight: 600; }
+.sa-group { padding: 8px 10px 4px; color: var(--faint); font-size: 11.5px; font-weight: 500; }
 .sa-hit { display: flex; flex-direction: column; gap: 2px; width: 100%; border: 0; border-radius: var(--r-sm); padding: 7px 10px; background: none; color: var(--text); text-align: left; }
 .sa-hit:active:not(:disabled) { transform: none; }
 .sa-hit.selected, .sa-hit:hover { background: var(--panel-2); }
 .sa-top { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
-.sa-top strong { flex: 1; min-width: 0; font-size: 13px; font-weight: 450; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sa-top strong { flex: 1; min-width: 0; font-size: 13px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sa-top small { flex: none; max-width: 40%; color: var(--faint); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sa-snippet { color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .sa-snippet mark { background: color-mix(in srgb, var(--text) 18%, transparent); color: var(--text); border-radius: 3px; padding: 0 1px; }

@@ -2,7 +2,7 @@
 .crew-claude { width: auto; max-width: 1240px; margin: 0 auto; padding: 0 24px; display: flex; flex-direction: column; min-height: 100%; }
 .crew-head { display: flex; align-items: center; gap: 12px; height: 52px; padding: 0; position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--hair); }
 .crew-head-main { flex: 1; min-width: 0; }
-.crew-title { margin: 0; font-size: 15px; font-weight: 600; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crew-title { margin: 0; font-size: 14px; font-weight: 500; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .crew-head-meta { display: flex; align-items: center; gap: 12px; margin-top: 0; font-size: 12px; line-height: 16px; color: var(--faint); }
 .crew-where { display: inline-flex; align-items: center; gap: 5px; }
 .crew-cols { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 24px; align-items: start; flex: 1; }
@@ -17,9 +17,9 @@
 .crew-dots { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--hair); border-top-color: var(--accent, currentColor); animation: crew-spin 0.9s linear infinite; flex: none; }
 @keyframes crew-spin { to { transform: rotate(360deg); } }
 .crew-steps { display: flex; flex-direction: column; gap: 2px; padding: 4px 0; }
-.crew-step { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 12.5px; }
+.crew-step { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 13px; }
 .crew-step-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.crew-step-state { color: var(--faint); font-size: 11.5px; }
+.crew-step-state { color: var(--faint); font-size: 12px; }
 .crew-step.running .crew-step-state { color: var(--accent, currentColor); }
 .crew-step.failed .crew-step-state, .crew-step.blocked .crew-step-state { color: #e5484d; }
 .crew-said { display: flex; flex-direction: column; gap: 4px; margin: 0; font-size: 14px; line-height: 22px; }
@@ -39,7 +39,7 @@
 .cw-chip.on { color: var(--text); background: var(--panel-2); }
 .cw-chip.warn { color: var(--muted); } .cw-chip.warn::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); } /* bypass is every run's default: a small amber dot, not an amber label */
 .cw-pop { position: absolute; bottom: calc(100% + 6px); min-width: 200px; max-height: 320px; overflow: auto; padding: 4px; border: 0; border-radius: 12px; background: var(--panel); box-shadow: var(--float); z-index: 20; }
-.cw-pop-title { padding: 6px 8px 3px; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--faint); }
+.cw-pop-title { padding: 8px 8px 4px; font-size: 12px; line-height: 16px; color: var(--faint); }
 .cw-pop-item { display: block; width: 100%; padding: 6px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--text); font: inherit; font-size: 13px; line-height: 20px; text-align: left; cursor: pointer; }
 .cw-pop-item:hover { background: var(--panel-2); }
 .cw-pop-item.on::after { content: '✓'; float: right; color: var(--accent); }
@@ -53,7 +53,7 @@
 .crew-side-agent { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 0 8px; align-items: center; padding: 2px 0; font-size: 13px; line-height: 20px; } /* one 24px line per agent, tokens in a right-hand column */
 .crew-side-model { grid-column: 3; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 12px; line-height: 16px; }
 .crew-side-tokens { grid-column: 4; grid-row: 1; text-align: right; font-variant-numeric: tabular-nums; color: var(--faint); font-family: var(--mono); font-size: 12px; line-height: 16px; }
-.crew-side-changes { display: flex; align-items: baseline; gap: 8px; font-size: 13px; line-height: 20px; }
+.crew-side-changes { display: flex; align-items: baseline; gap: 8px; font-size: 13px; line-height: 20px; font-variant-numeric: tabular-nums; }
 .crew-add { color: var(--add-ink); font-family: var(--mono); }
 .crew-del { color: var(--del-ink); font-family: var(--mono); }
 .crew-side-files { margin-top: 4px; }

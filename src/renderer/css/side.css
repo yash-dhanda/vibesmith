@@ -41,7 +41,7 @@
 /* ---- new chat, Crew: a greeting and one message box, like Claude or ChatGPT ---- */
 .team-entry.crew-new { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; width: auto; padding: 24px 24px 64px; }
 .crew-new .team-intro { width: 100%; max-width: 760px; }
-.crew-new .team-intro h1 { margin: 0 0 24px; line-height: 36px; text-align: center; font-size: 28px; font-weight: 500; letter-spacing: -0.02em; }
+.crew-new .team-intro h1 { margin: 0 0 24px; line-height: 36px; text-align: center; font-size: 28px; font-weight: 500; letter-spacing: -0.01em; }
 .crew-new .team-lede { display: none; }
 .crew-new .team-start-card { margin: 0 auto; padding: 12px; border-radius: 20px; box-shadow: none; }
 .crew-new .team-start-card > textarea { field-sizing: content; min-height: 80px; max-height: 320px; padding: 4px; border: 0; background: transparent; resize: none; font-size: 15px; line-height: 24px; outline: 0; box-shadow: none; }
@@ -51,12 +51,12 @@
 .crew-new .crew-options-btn { color: var(--faint); }
 .crew-more-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; width: 100%; padding: 8px 0; margin-top: 8px; border-top: 0; }
 .crew-new .team-health { margin-top: 12px; font-size: 12px; opacity: 0.85; }
-.crew-allruns { display: block; margin: 24px auto 0; color: var(--faint); font-size: 12.5px; }
+.crew-allruns { display: block; margin: 24px auto 0; color: var(--faint); font-size: 13px; }
 .team-runs-wrap { width: 100%; max-width: 980px; margin: 16px auto 0; }
 
 /* Solo's new chat: the greeting sits in the middle */
 #thread .empty { margin-top: 12vh; }
-#thread .empty h2 { font-size: 28px; line-height: 36px; font-weight: 500; letter-spacing: -0.02em; }
+#thread .empty h2 { font-size: 28px; line-height: 36px; font-weight: 500; letter-spacing: -0.01em; }
 @media (max-width: 800px) {
   .team-entry.crew-new { padding: 16px 12px 24px; }
   .crew-new .team-intro h1 { font-size: 24px; line-height: 32px; margin-bottom: 16px; }
