@@ -122,6 +122,9 @@ export function briefEvent(ev: AgentEvent) {
   render()
 }
 
+// A chat reopened after it stopped mid-run: its plan holds still.
+export function briefIdle() { live = false; render() }
+
 export function briefUndone(paths: string[]) {
   for (const path of paths) changed.delete(path)
   if (page && paths.includes(page)) page = null

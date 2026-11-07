@@ -120,10 +120,14 @@ export function attachmentStrip(o: Options) {
   // Chips are redrawn as a whole; only the progress text is touched while a file uploads.
   const bars = new Map<number, HTMLElement>()
   const paint = (item: Item) => { const el = bars.get(item.key); if (el) el.textContent = item.progress < 1 ? `Uploading ${Math.round(item.progress * 100)}%` : 'Saving…' }
-  const drawn = new Set<number>() // a chip rises in (.enter, motion.css) the first time it is drawn, not on every redraw
+  // When each chip was first drawn: it rises in once (.enter, motion.css), and a redraw during the rise (the upload finishing, a second file)
+  // carries the same rise on through a negative delay instead of cutting it short.
+  const born = new Map<number, number>()
   function chip(item: Item) {
     const c = h('div', `att-chip ${item.kind} ${item.state}`)
-    if (!drawn.has(item.key)) { drawn.add(item.key); c.classList.add('enter') }
+    const now = performance.now(); if (!born.has(item.key)) born.set(item.key, now)
+    const age = now - born.get(item.key)!
+    if (age < 320) { c.classList.add('enter'); if (age) c.style.animationDelay = `${-Math.round(age)}ms` } // 320 ms is --t3, the rise
     const path = item.result?.path
     c.title = path ?? item.detail ?? item.file.name
     const thumb = h('span', 'att-thumb')

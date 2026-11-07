@@ -18,7 +18,7 @@ import { initModels, noModels, selectedModel } from './models'
 import type { Page } from './settings'
 import { $, agentLimits, cleanErr, copy, h, numCtxPref, reduced, showMenu, toast, uuid } from './ui'
 import { initUsage, setUsage } from './usage'
-import { initBrief, resetBrief, projectBrief, briefGoal, briefEvent, briefUndone, withPriorities } from './brief'
+import { initBrief, resetBrief, projectBrief, briefGoal, briefEvent, briefIdle, briefUndone, withPriorities } from './brief'
 import { initPalette } from './palette'
 import { attachmentStrip, sentChips, type Kind } from './attachments'
 import { cacheGet, cacheSet, isRemote, onResync, phone, toggleDrawer } from './phone'
@@ -255,6 +255,7 @@ function setRunning(on: boolean) {
   else {
     stopLive()
     hideThinking()
+    reply = null // a turn that was stopped or failed mid-reply is closed: the next turn's text starts its own reply
   }
 }
 
@@ -575,8 +576,11 @@ function handle(ev: AgentEvent) {
     }
     case 'plan': {
       const list = checklist(planItems(ev.items), { live: running })
-      if (planEl?.isConnected) morph(planEl, list)
-      else { finishGroup(); planEl = add(list) }
+      if (planEl?.isConnected) { // a step added to the plan you can see rises once (replay() draws a reopened chat still)
+        const had = new Set([...planEl.querySelectorAll<HTMLElement>('.ck-row')].map(r => r.dataset.key)); let n = 0
+        for (const r of list.querySelectorAll<HTMLElement>('.ck-row')) if (!had.has(r.dataset.key)) { r.classList.add('enter'); r.style.setProperty('--i', String(n++)) }
+        morph(planEl, list)
+      } else { finishGroup(); planEl = add(list) }
       break
     }
     case 'note':
@@ -741,6 +745,7 @@ function replay(items: TranscriptItem[], liveRun: boolean, all = !isRemote()) {
       c.actions?.remove()
       if (c.dot.dataset.state === 'ask' || c.dot.dataset.state === 'active') c.dot.dataset.state = 'pending'
     }
+    briefIdle() // the brief's plan stops turning too
   } else {
     setRunning(true) // still working in the background: keep following it live
     showThinking()

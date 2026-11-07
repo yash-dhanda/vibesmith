@@ -153,10 +153,12 @@ function chatItem(c: ChatListItem, active: boolean, handlers: Handlers, fresh: (
     const finish = (save: boolean) => {
       if (done) return
       done = true
+      const keys = document.activeElement === input // Enter or Escape, not a click elsewhere: the keyboard goes back to the row
       if (save && input.value.trim() && input.value.trim() !== c.title) handlers.rename(c.id, input.value)
       input.remove()
       openBtn.hidden = false
       row.removeAttribute('data-hold')
+      if (keys) openBtn.focus()
     }
     input.onkeydown = (ev) => {
       ev.stopPropagation()

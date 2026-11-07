@@ -145,7 +145,7 @@
 .pill:disabled { cursor: default; }
 .pill.need { color: var(--accent); }
 .bar .pill { height: 32px; padding: 0 9px; border-radius: var(--r-md); }
-.bar select { height: 32px; background: none; border: 0; color: var(--muted); border-radius: var(--r-md); padding: 0 6px; max-width: 160px; font-size: 12px; cursor: pointer; transition: background-color var(--t1), color var(--t1); }
+.bar select { field-sizing: content; height: 32px; background: none; border: 0; color: var(--muted); border-radius: var(--r-md); padding: 0 6px; max-width: 160px; font-size: 12px; cursor: pointer; transition: background-color var(--t1), color var(--t1); } /* as wide as the choice it shows, not its longest option */
 .bar select:hover { background: var(--panel-2); color: var(--text); }
 .bar select option, .bar select optgroup { background: var(--panel); color: var(--text); }
 #send { margin-left: auto; flex: none; width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; }

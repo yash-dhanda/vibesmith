@@ -29,6 +29,7 @@
 .chat-item:hover .when, .chat-item:focus-within .when { opacity: 0; } /* the delete cross takes its place */
 .chat-item .x { top: 4px; width: 24px; height: 24px; }
 .chat-item.active { background: color-mix(in srgb, var(--accent) 12%, var(--side-hover)); }
+.chat-item.active .when { color: var(--side-text); } /* the faint grey falls under 4.5:1 on the tinted row */
 .chat-item.active .t { font-weight: 500; }
 .chat-item .t { color: var(--side-text); }
 .run-item .x { display: none; }
@@ -42,7 +43,6 @@
 .team-entry.crew-new { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; width: auto; padding: 24px 24px 64px; }
 .crew-new .team-intro { width: 100%; max-width: 760px; }
 .crew-new .team-intro h1 { margin: 0 0 24px; line-height: 36px; text-align: center; font-size: 28px; font-weight: 500; letter-spacing: -0.01em; }
-.crew-new .team-lede { display: none; }
 .crew-new .team-start-card { margin: 0 auto; padding: 12px; border-radius: 20px; box-shadow: none; }
 .crew-new .team-start-card > textarea { field-sizing: content; min-height: 80px; max-height: 320px; padding: 4px; border: 0; background: transparent; resize: none; font-size: 15px; line-height: 24px; outline: 0; box-shadow: none; }
 .crew-new .team-start-card.has-folder .team-folder { display: none; }
@@ -55,12 +55,15 @@
 .crew-new .team-health { margin-top: 12px; font-size: 12px; opacity: 0.85; }
 .crew-allruns { display: block; margin: 24px auto 0; color: var(--faint); font-size: 13px; }
 .team-runs-wrap { width: 100%; max-width: 980px; margin: 16px auto 0; }
+.crew-new > .team-runs { width: 100%; max-width: 980px; } /* the list on the page itself (a phone, or no runs yet): a centred flex item would shrink to nothing */
 
-/* Solo's new chat: the greeting and the composer sit together in the middle (2fr above, 1fr below), as in Claude */
+/* Solo's new chat: the greeting and the composer sit together in the middle, with as much room above as below, as in Claude */
 #thread > .empty { margin: auto auto 0; padding: 0; }
 @media (min-width: 801px) {
-  #chat:has(#thread > .empty) { grid-template-rows: 52px minmax(0, 2fr) auto minmax(0, 1fr); }
-  #thread:has(> .empty) { padding-bottom: 24px; }
+  #chat:has(#thread > .empty) { grid-template-rows: 52px minmax(0, 1fr) auto auto minmax(0, 1fr); }
+  #chat:has(#thread > .empty) > #thread-wrap { grid-row: 3; }
+  #chat:has(#thread > .empty) > #composer-wrap { grid-row: 4; }
+  #thread:has(> .empty) { padding-top: 14px; padding-bottom: 24px; } /* the greeting stays clear of the 18px top fade */
 }
 #thread .empty h2 { font-size: 28px; line-height: 36px; font-weight: 500; letter-spacing: -0.01em; }
 @media (max-width: 800px) {
