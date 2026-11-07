@@ -1,6 +1,7 @@
 import { isAgent, type AgentName } from './events'
 import { rank } from './memory'
 import { keyLines, KEY_HEADING } from '../keyAnswer'
+import { plainLine } from '../agent/narrate'
 import type { Message, Review, Run, Task } from './types'
 
 // Two rules every agent gets: do what was asked and nothing else, and put what the user must receive in short KEY lines.
@@ -263,6 +264,7 @@ Reply with a short list of the real problems, the most serious first, each with 
 
 // ---------------------------------------------------------------- the final report the user reads
 
+const NAME: Record<AgentName, string> = { claude: 'Claude', codex: 'Codex', local: 'Local' }
 // `changed`: this round's files (the diff Apply will carry); without it the files of every finished task are listed.
 export function buildReport(run: Run, verify: { ok: boolean | null; command?: string; output?: string }, reviewNotes: string[], changed?: Task['changed']): string {
   const lines: string[] = [`# ${run.goal.split('\n')[0].slice(0, 120)}`, '', run.plan.summary ? `${run.plan.summary}\n` : '']
@@ -271,7 +273,7 @@ export function buildReport(run: Run, verify: { ok: boolean | null; command?: st
   const key = keyLines(done.map((t) => `${t.summary ?? ''}\n${t.handoff ?? ''}`).join('\n'))
   if (key.length) lines.push(KEY_HEADING, ...key.map((k) => `- ${k}`), '')
   lines.push(`## What the team did`)
-  for (const t of done) lines.push(`- **${t.title}** (${t.agent}${t.fixRounds ? `, ${t.fixRounds} fix round${t.fixRounds > 1 ? 's' : ''}` : ''}): ${(t.summary || t.handoff || 'done').replace(/\s+/g, ' ').slice(0, 300)}`)
+  for (const t of done) lines.push(`- **${t.title}** (${NAME[t.agent]}${t.fixRounds ? `, ${t.fixRounds} fix round${t.fixRounds > 1 ? 's' : ''}` : ''}): ${plainLine(t.summary || t.handoff || 'Done', 240)}`)
   if (bad.length) {
     lines.push('', '## Not finished')
     for (const t of bad) lines.push(`- **${t.title}** (${t.status}): ${(t.error ?? '').slice(0, 200)}`)

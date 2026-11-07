@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { describeTool, parsePlan } from './narrate'
+import { describeCommand, describeTool, parsePlan, plainLine } from './narrate'
 
 describe('describeTool', () => {
   it('speaks plainly', () => {
@@ -21,4 +21,17 @@ describe('parsePlan', () => {
     ])
   })
   it('caps the length', () => expect(parsePlan('x\n'.repeat(50))).toHaveLength(20))
+})
+
+describe('describeCommand / plainLine', () => {
+  it('says what a command does, never the command', () => {
+    expect(describeCommand("sed -n '1,150p' src/app/api/auth/login/route.ts; sed -n '1,360p' x.ts")).toBe('Reading login/route.ts')
+    expect(describeCommand('cd /p && npm test 2>&1 | tail -20')).toBe('Running the tests')
+    expect(describeCommand('echo hi')).toBe('Running a command')
+  })
+  it('turns an agent summary into one plain line', () => {
+    expect(plainLine('**Summary:**\n\n✅ **Backup created** at `/home/u/backup`\n- ✅ Directory exists')).toBe('Backup created at /home/u/backup. Directory exists')
+    expect(plainLine('Added the admin page.\nKEY: Admin login: id admin, password x')).toBe('Added the admin page.')
+    const cut = plainLine('word '.repeat(60)); expect(cut.length).toBeLessThanOrEqual(140); expect(cut.endsWith('word…')).toBe(true)
+  })
 })

@@ -14,6 +14,7 @@ import { errorSignature, ProjectMemoryStore, rank, routeAgent } from './memory'
 import { decideCommand, decideTool } from './policy'
 import { attachmentsBlock, imagePaths, removeAttachmentDirs } from './attach'
 import { historyBlock, HistoryRecorder, HISTORY_DIR, writeHistory } from './history'
+import { plainLine } from '../agent/narrate'
 import { buildReport, conflictPrompt, contextFor, finalReviewPrompt, fixPrompt, forLocal, parsePlan, parseVerdict, parseReplan, planPrompt, replanPrompt, reviewPrompt, wantsSpeed, securityReviewPrompt, verifyFixPrompt, workPrompt } from './prompts'
 import { effortFor } from './effort'
 import { forecast, mainAuthor, taskStats } from './forecast'
@@ -118,6 +119,7 @@ const strongest = (avail: AgentName[], not?: AgentName): AgentName => PREFER.fin
 // A cap of 100 is the highest the user can allow: reaching it must not stop the run for good, and an agent that is really out answers with a limit error.
 const over = (pct: number, cap: number) => (cap >= 100 ? pct > cap : pct >= cap)
 const label = (a: AgentName) => (a === 'claude' ? 'Claude' : a === 'codex' ? 'Codex' : 'The local model')
+const inLine = (a: AgentName) => (a === 'local' ? 'the local model' : label(a)) // label() inside a sentence
 const id = (p: string) => `${p}${randomUUID().slice(0, 8)}`
 const MAX_PROPOSALS = 6
 const MAX_MESSAGES = 1500 // the oldest fall off; decisions and handoffs are kept on the run and the project memory
@@ -547,7 +549,7 @@ export class TeamOrchestrator {
     // "let local fix this", "use the local model": the words count as much as the recipient box when it says Everyone.
     const named: AgentName | null = to === 'all' && asksForLocal(body) && live.available.includes('local') ? 'local' : null
     const agent = named ?? (to !== 'all' && live.available.includes(to) ? to : strongest(this.pool(live)))
-    return this.addTask(run, { title: body.replace(/\s+/g, ' ').slice(0, 70), goal: body, agent, kind: 'build', proposedBy: 'user', promptId })
+    return this.addTask(run, { title: plainLine(body.replace(/\s*Attached files \(open and look at them\):[\s\S]*$/, ''), 80) || 'Look at the attached files', goal: body, agent, kind: 'build', proposedBy: 'user', promptId })
   }
 
   retryTask(runId: string, taskId: string) {
@@ -1372,7 +1374,7 @@ export class TeamOrchestrator {
       }
       task.attempts++
       if (kind === 'busy' && task.attempts <= 3) {
-        this.post(run, { from: 'orchestrator', to: 'all', kind: 'note', taskId: task.id, body: `${task.agent} is busy right now; trying again shortly.` })
+        this.post(run, { from: 'orchestrator', to: 'all', kind: 'note', taskId: task.id, body: `${label(task.agent)} is busy right now; trying again shortly.` })
         await this.nap(30_000 * task.attempts, live.ctl.signal)
         if (this.stopKind(run)) return this.interrupted(run, task)
         continue
@@ -1395,7 +1397,7 @@ export class TeamOrchestrator {
     // A local model is often wrong, so its work is always reviewed by another agent, whatever the review setting says.
     if (run.config.review === 'cross' || task.agent === 'local') {
       let reviewer = strongest(this.pool(live), task.agent)
-      if (reviewer === task.agent) this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', taskId: task.id, body: `Only ${task.agent} is ready, so it reviewed its own work on "${task.title}".` })
+      if (reviewer === task.agent) this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', taskId: task.id, body: `Only ${inLine(task.agent)} is ready, so it reviewed its own work on "${task.title}".` })
       let busyTries = 0
       for (let round = 1; ; round++) {
         if (this.stopForBudget(run, task, 'review')) return
@@ -1419,7 +1421,7 @@ export class TeamOrchestrator {
           }
           if (kind === 'auth' || kind === 'missing' || kind === 'model' || kind === 'limit') return (task.resumeFrom = 'review'), this.blockTask(run, task, msg, true)
           if (kind === 'busy' && ++busyTries <= 3) {
-            this.post(run, { from: 'orchestrator', to: 'all', kind: 'note', taskId: task.id, body: `${reviewer} is busy right now; the review will be tried again shortly.` })
+            this.post(run, { from: 'orchestrator', to: 'all', kind: 'note', taskId: task.id, body: `${label(reviewer)} is busy right now; the review will be tried again shortly.` })
             await this.nap(30_000 * busyTries, live.ctl.signal)
             if (this.stopKind(run)) return this.interrupted(run, task)
             round--
@@ -1429,7 +1431,7 @@ export class TeamOrchestrator {
         }
         const v = parseVerdict(rr.text)
         task.reviews.push({ by: reviewer, verdict: v.verdict, issues: v.issues, round, at: Date.now() })
-        this.post(run, { from: reviewer, to: task.agent, kind: 'review', taskId: task.id, body: `${v.verdict.toUpperCase()} (round ${round}): ${v.issues.slice(0, 600) || 'no issues listed'}` })
+        this.post(run, { from: reviewer, to: task.agent, kind: 'review', taskId: task.id, body: `${v.verdict === 'pass' ? 'Passed' : v.verdict === 'fail' ? 'Failed' : 'Unclear'} (round ${round}): ${v.issues.slice(0, 600) || 'no issues listed'}` })
         this.touch(run, task)
         if (v.verdict !== 'fail') break
         if (task.fixRounds >= run.config.maxFixRounds) {
@@ -1644,7 +1646,7 @@ export class TeamOrchestrator {
           if (live.ctl.signal.aborted) return
           if (!rr.ok) {
             const kind: ErrorKind = rr.error?.kind ?? 'other'
-            const msg = `${reviewer} could not do the security review: ${rr.error?.message ?? 'unknown error'}`
+            const msg = `${label(reviewer)} could not do the security review: ${rr.error?.message ?? 'unknown error'}`
             if (kind === 'auth' || kind === 'missing' || kind === 'model' || kind === 'limit') {
               live.paused = true
               return this.setStatus(run, 'paused', `${msg}. Resume to try again.`)
@@ -1653,7 +1655,7 @@ export class TeamOrchestrator {
           } else {
             const v = parseVerdict(rr.text)
             notes.push(`Security review: ${v.verdict.toUpperCase()} — ${v.issues.replace(/\s+/g, ' ').slice(0, 500)}`)
-            this.post(run, { from: reviewer, to: 'user', kind: 'review', body: `Security review: ${v.verdict.toUpperCase()}. ${v.issues.slice(0, 600)}` })
+            this.post(run, { from: reviewer, to: 'user', kind: 'review', body: `Security review ${v.verdict === 'pass' ? 'passed' : v.verdict === 'fail' ? 'failed' : 'unclear'}. ${v.issues.slice(0, 600)}` })
             if (v.verdict === 'fail') {
               const r = await this.fixLastStep(run, live, wt, reviewer, 'Fix problems from the security review', v.issues, 'fix: security review', cmd)
               if (r === 'stopped') return
@@ -1672,7 +1674,7 @@ export class TeamOrchestrator {
         if (live.ctl.signal.aborted) return
         if (!rr.ok) {
           const kind: ErrorKind = rr.error?.kind ?? 'other'
-          const msg = `${reviewer} could not do the final review: ${rr.error?.message ?? 'unknown error'}`
+          const msg = `${label(reviewer)} could not do the final review: ${rr.error?.message ?? 'unknown error'}`
           if (kind === 'auth' || kind === 'missing' || kind === 'model' || kind === 'limit') {
             live.paused = true
             return this.setStatus(run, 'paused', `${msg}. Resume to try again.`)
@@ -1681,7 +1683,7 @@ export class TeamOrchestrator {
         } else {
           const v = parseVerdict(rr.text)
           notes.push(`${reviewer}: ${v.verdict.toUpperCase()} — ${v.issues.replace(/\s+/g, ' ').slice(0, 500)}`)
-          this.post(run, { from: reviewer, to: 'user', kind: 'review', body: `Final review: ${v.verdict.toUpperCase()}. ${v.issues.slice(0, 600)}` })
+          this.post(run, { from: reviewer, to: 'user', kind: 'review', body: `Final review ${v.verdict === 'pass' ? 'passed' : v.verdict === 'fail' ? 'failed' : 'unclear'}. ${v.issues.slice(0, 600)}` })
           if (v.verdict === 'fail') {
             const r = await this.fixLastStep(run, live, wt, reviewer, 'Fix problems from the final review', v.issues, 'fix: final review', cmd)
             if (r === 'stopped') return
@@ -1782,7 +1784,7 @@ export class TeamOrchestrator {
     const files = done.flatMap((t) => t.changed)
     if (!files.length || onlyDocsOrConfig(files) || !detectVerify(run.integrationWorktree)) return false
     const t = this.addTask(run, { title: 'Write or extend tests for the changed code', goal: `Write or extend tests for the code the build tasks changed (${new Set(files.map((f) => f.path)).size} files). Look at the diff since the start of the run and add focused tests next to the code.`, agent: this.pick(live, mainAuthor(run) ?? undefined), kind: 'test', deps: builds.map((b) => b.id), acceptance: ['The new tests pass', 'Production code is unchanged, except for an obvious bug the tests found'] })
-    this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', taskId: t.id, body: `Added ${t.id} "${t.title}" for ${t.agent}.` })
+    this.post(run, { from: 'orchestrator', to: 'user', kind: 'note', taskId: t.id, body: `Added ${t.id} "${t.title}" for ${inLine(t.agent)}.` })
     return true
   }
 
@@ -1905,7 +1907,7 @@ export class TeamOrchestrator {
         const avail = this.pool(this.liveOf(run))
         const agent: AgentName = isAgent(args.agent) ? (avail.includes(args.agent) ? args.agent : avail[0]) : routeAgent('build', avail, this.memory(run).load().stats, run.config.effortMode === 'cheap')
         const t = this.addTask(run, { title: str(args.title, 120), goal: str(args.goal, 2000), agent, kind: 'build', acceptance: Array.isArray(args.acceptance) ? args.acceptance.map((x: unknown) => str(x, 300)).slice(0, 4) : [], proposedBy: ctx.taskId })
-        this.post(run, { from: ctx.agent, to: 'all', kind: 'note', taskId: ctx.taskId, body: `Added task ${t.id} "${t.title}" for ${agent}.` })
+        this.post(run, { from: ctx.agent, to: 'all', kind: 'note', taskId: ctx.taskId, body: `Added task ${t.id} "${t.title}" for ${inLine(agent)}.` })
         setTimeout(() => this.pump(run), 0)
         return `added as ${t.id}, assigned to ${agent}`
       }
