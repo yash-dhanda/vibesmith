@@ -503,6 +503,38 @@ describe('team orchestrator', () => {
     expect(r.final?.verifyOk).toBe(true)
   })
 
+  it('Stop during the final review ends that agent too, and Resume asks for the review again', async () => {
+    const x = h({ plan: { tasks: [T('a'), T('b'), T('c')] }, hang: (_a, kind, _t, n) => kind === 'final' && n === 1 })
+    const run = await x.orch.start(x.proj, 'stop in the last look', { finalReview: true })
+    await until(x.orch, run.id, (r) => x.calls.some((c) => c.kind === 'final') && r.status === 'verifying', 20000)
+    x.orch.pause(run.id, true) // the header's stop icon
+    expect(x.orch.get(run.id)?.status).toBe('paused')
+    await sleep(100)
+    await x.orch.resume(run.id)
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval', 20000)
+    expect(r.final).toBeTruthy()
+    expect(x.calls.filter((c) => c.kind === 'final')).toHaveLength(2)
+  })
+
+  it('Stop during the fix after the final review leaves no task running, and Resume checks the result again', async () => {
+    let finals = 0, hung = false
+    const x = h({ plan: { tasks: [T('a')] } })
+    const orig = (x.orch as any).d.runner
+    ;(x.orch as any).d.runner = async (agent: AgentName, o: AgentCall) => {
+      if (/The team finished this goal/.test(o.prompt)) return ok(finals++ === 0 ? '- missing thing\nVERDICT: FAIL' : 'VERDICT: PASS', agent, 'final')
+      if (/A reviewer checked your work/.test(o.prompt) && !hung) { hung = true; await new Promise<void>((res) => (o.signal.aborted ? res() : o.signal.addEventListener('abort', () => res(), { once: true }))); return { ...ok('', agent, 't2'), ok: false, error: { kind: 'aborted', message: 'stopped' } } }
+      return orig(agent, o)
+    }
+    const run = await x.orch.start(x.proj, 'stop the last fix', { finalReview: true, verify: null })
+    await until(x.orch, run.id, (r) => r.tasks.some((t) => t.lastStep && t.status === 'running'), 20000)
+    x.orch.pause(run.id, true) // the header's stop icon
+    const stopped = await until(x.orch, run.id, (r) => r.status === 'paused' && !r.tasks.some((t) => t.status === 'running'), 20000)
+    expect(stopped.tasks.filter((t) => t.lastStep).map((t) => t.status)).toEqual(['cancelled']) // not left "Running" in the panel
+    await x.orch.resume(run.id)
+    const r = await until(x.orch, run.id, (r) => r.status === 'awaiting_approval', 20000)
+    expect(r.tasks.some((t) => t.status === 'running')).toBe(false)
+  })
+
   it('resumes a task interrupted during review without redoing its work', async () => {
     const x = h({ delayMs: 250, plan: { tasks: [T('a', { agent: 'codex' })] } })
     const run = await x.orch.start(x.proj, 'review interrupted')

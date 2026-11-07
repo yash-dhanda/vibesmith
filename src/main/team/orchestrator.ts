@@ -1620,7 +1620,7 @@ export class TeamOrchestrator {
           const past = this.pastProblems(run, t)
           const res = await this.agentRun(run, t, fixer, 'fix', verifyFixPrompt(cmd, v.output, round + 1) + (past.length ? `\n\nSimilar problems met before:\n${past.map((p) => `- ${p}`).join('\n')}` : ''), true, wt)
           if (res.sessionId) t.sessions[fixer] = res.sessionId
-          if (live.ctl.signal.aborted) return void (await this.clean(wt))
+          if (live.ctl.signal.aborted) return void (this.stoppedLastStep(run, t), await this.clean(wt))
           t.summary = res.text
           await commitAll(wt, `fix: failing checks (attempt ${round + 1})`)
           t.changed = await changedSince(wt, run.baseCommit)
@@ -1750,6 +1750,15 @@ export class TeamOrchestrator {
     }
   }
 
+  // A fix made during the last checks, cut off by Stop: it ends as stopped (not left "Running" in the panel); Resume runs the checks and reviews again.
+  private stoppedLastStep(run: Run, t: Task) {
+    t.status = 'cancelled'
+    t.phase = null
+    t.error = 'Stopped by you.'
+    t.endedAt = Date.now()
+    this.touch(run, t)
+  }
+
   // A fix for problems the whole-result review found, then the project's check again on the changed result. 'stopped' when the run was stopped meanwhile.
   private async fixLastStep(run: Run, live: Live, wt: string, reviewer: AgentName, title: string, issues: string, commit: string, cmd: string | null): Promise<'stopped' | { ok: boolean; output: string } | null> {
     const author = strongest(this.pool(live), reviewer)
@@ -1759,7 +1768,7 @@ export class TeamOrchestrator {
     ft.startedAt = Date.now()
     this.touch(run, ft)
     const fx = await this.agentRun(run, ft, author, 'fix', fixPrompt(ft, issues, 1, this.instructions(run, author)), true, wt)
-    if (live.ctl.signal.aborted) return void (await this.clean(wt)), 'stopped'
+    if (live.ctl.signal.aborted) return void (this.stoppedLastStep(run, ft), await this.clean(wt)), 'stopped'
     await commitAll(wt, commit)
     ft.changed = await changedSince(wt, run.baseCommit)
     ft.status = fx.ok ? 'done' : 'failed'
