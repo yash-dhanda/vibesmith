@@ -17,7 +17,6 @@
 .team-entry { width: min(800px, calc(100% - 48px)); margin: 0 auto; padding: 7vh 0 72px; }
 .team-intro > .eyebrow { display: none; }
 .team-intro h1 { font-size: 20px; font-weight: 500; line-height: 1.25; margin: 0 0 6px; text-align: center; }
-.team-lede { margin: 0 auto; color: var(--muted); font-size: 13px; line-height: 1.6; text-align: center; }
 .team-start-card { margin-top: 22px; padding: 14px 14px 12px 16px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--panel); box-shadow: none; transition: border-color var(--t1); }
 :root[data-theme='light'] .team-start-card { box-shadow: 0 1px 2px rgba(0, 0, 0, .05); }
 .team-start-card:focus-within { border-color: color-mix(in srgb, var(--focus) 38%, var(--border)); }
@@ -67,7 +66,6 @@
 .crew-pop select { width: 100%; min-width: 0; height: 32px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg); color: var(--text); font-size: 13px; transition: border-color var(--t1), box-shadow var(--t1); }
 .crew-pop select:focus { border-color: var(--focus); outline: 0; }
 /* questions and web research: two small Off | On toggles; More options on the right */
-.crew-options { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px; margin-top: 10px; }
 .crew-toggle { display: inline-flex; align-items: center; gap: 9px; color: var(--muted); font-size: 13px; }
 .crew-toggle .seg { padding: 2px; gap: 1px; border-radius: var(--r-md); }
 .crew-toggle .seg button { height: 22px; padding: 0 9px; border-radius: 6px; font-size: 12px; }
@@ -96,9 +94,8 @@
 .team-health { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin: 10px 4px 0 6px; color: var(--faint); font-size: 12px; }
 .health-row { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .health-row strong { color: var(--muted); font-weight: 500; }
-.health-row > span:not(.agent-orb) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.health-row > span:not(.agent-orb, .health-fix) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .health-row.missing { flex-wrap: wrap; color: var(--warn); }
-.health-row code { color: var(--warn); font: 12px/1.6 var(--mono); white-space: pre-wrap; }
 .health-allowance { display: inline-flex; flex-wrap: wrap; gap: 0 8px; }
 .health-allowance.high { color: var(--warn); }
 .agent-orb { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; background: var(--a-claude); }
@@ -131,36 +128,15 @@
 .team-load-error h1 { font-size: 20px; font-weight: 500; }
 .team-load-error .btn { margin-top: 16px; }
 
-/* ---- run: a compact header, the plan as small cards, then the live editor and the side column ---- */
-.team-run { width: min(1440px, calc(100% - 40px)); margin: 0 auto; padding: 14px 0 0; }
-.team-run-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0 10px; align-items: start; padding-bottom: 12px; border-bottom: 1px solid var(--hair); background: var(--bg); box-shadow: 0 0 0 14px var(--bg); }
-.team-run-header .back { margin-top: 1px; color: var(--faint); }
-.team-run-identity { min-width: 0; padding-top: 1px; }
-.team-run-identity .eyebrow { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; font-size: 12px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* the goal: two lines, then "Show all" over a fade; clicking the goal does the same */
-.team-goal-box { position: relative; margin-top: 3px; }
-.team-goal { margin: 0; font-size: 14px; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
-.team-goal.long { cursor: pointer; }
-.team-goal-more { position: absolute; right: 0; bottom: 0; padding: 0 2px 0 72px; border: 0; background: linear-gradient(90deg, transparent, var(--bg) 60px); color: var(--muted); font-size: 13px; font-weight: 500; line-height: 22.5px; }
-.team-goal-more:hover { color: var(--text); }
-.team-goal.open + .team-goal-more { position: static; height: auto; padding: 2px 0 0; background: none; }
-/* status, elapsed time, tokens per agent and progress: one line */
-.team-run-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 18px; margin-top: 7px; min-height: 22px; color: var(--faint); font-size: 12px; }
+/* ---- run: the status in the header, the run's own buttons, then the plan as small cards and the live editor (crew3.css lays out the page) ---- */
 .status-pill { display: inline-flex; align-items: center; gap: 8px; width: max-content; color: var(--muted); font-size: 12px; font-weight: 500; white-space: nowrap; }
 .status-pill.running, .status-pill.verifying, .status-pill.planning, .status-pill.awaiting_approval, .status-pill.failed { color: var(--text); }
-.status-pill.icon-only { font-size: 13px; }
 .team-elapsed { margin-left: -6px; color: var(--faint); font: 12px var(--mono); font-variant-numeric: tabular-nums; }
-.team-usage-strip { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
-.team-usage-item { display: inline-flex; align-items: center; gap: 6px; color: var(--faint); font-size: 12px; white-space: nowrap; }
-.team-usage-item strong { color: var(--muted); font-weight: 500; }
-.team-usage-item > span:not(.agent-orb) { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
-.limit-meter { padding-left: 8px; border-left: 1px solid var(--hair); }
 .team-controls { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; justify-content: flex-end; }
 .team-controls .btn, .team-controls .link-btn { height: 32px; border-color: transparent; background: transparent; }
 .team-controls .btn:hover:not(:disabled), .team-controls .link-btn:hover { background: var(--panel-2); }
 .team-controls .btn.only { width: 32px; padding: 0; justify-content: center; }
-.team-controls .btn.danger { color: var(--err); }
-.team-controls .btn.danger:hover:not(:disabled) { background: var(--errbg); }
+.team-controls .btn.danger:hover:not(:disabled) { background: var(--errbg); } /* Cancel run is neutral at rest and red on hover, as every danger button (base.css) */
 /* paused, interrupted, needs attention */
 .team-pause-banner { display: flex; align-items: center; gap: 10px; margin: 14px 0 0; padding: 9px 10px 9px 12px; border: 1px solid var(--border); background: var(--panel); border-radius: var(--r-md); font-size: 13px; }
 .team-pause-banner > div { flex: 1; min-width: 0; color: var(--muted); }
@@ -247,7 +223,7 @@
 .task-actions { margin-top: 8px; }
 .task-actions .btn { height: 26px; padding: 0 10px; font-size: 12px; }
 .task-skeleton { height: 82px; }
-/* the story: the live editor gets the height; the side column keeps the context */
+/* Live work: the one live editor, or with Details a lane per agent */
 .team-lanes { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; min-width: 0; }
 .team-lanes.single { grid-template-columns: minmax(0, 1fr); }
 .agent-lane { --agent: var(--a-claude); min-width: 0; border: 1px solid var(--hair); border-radius: var(--r-md); overflow: hidden; }
@@ -315,8 +291,7 @@
 .feed-item p { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; }
 .feed-item.clamped { cursor: pointer; }
 .feed-item.clamped .feed-body { display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
-.verify-card { border-top: 1px solid var(--hair); }
-.verify-card.ok summary { color: var(--ok); } .verify-card.bad summary { color: var(--err); }
+.verify-card { border-top: 1px solid var(--hair); } /* muted text like the final card's checks: the mark carries passed or failed */
 .team-background > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--hair); border-radius: var(--r-md); background: var(--bg); font-size: 13px; font-weight: 500; color: var(--muted); transition: background-color var(--t1), color var(--t1); }
 .team-background > summary::-webkit-details-marker { display: none; }
 .team-background > summary::after { content: ''; width: 6px; height: 6px; margin: -3px 2px 0 auto; border-right: 1.5px solid var(--faint); border-bottom: 1.5px solid var(--faint); transform: rotate(45deg); transition: transform var(--t2) var(--ease); }
@@ -336,11 +311,13 @@
 .team-final h2 { font-size: 16px; font-weight: 500; line-height: 24px; margin: 0 0 12px; } /* the card opens on its heading: the header already says Ready for you */
 .team-final-report { max-width: 75ch; line-height: 1.65; }
 .team-final-report > :first-child { margin-top: 0; }
-.team-final-files { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.team-final-report :is(h1, h2, h3, h4, strong) { font-weight: 500; }
+.team-final-files { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 12px 0; }
 .team-final-files > div { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid var(--hair); border-radius: var(--r-sm); font: 12px var(--mono); line-height: 16px; overflow-wrap: anywhere; }
+.team-final-files > .more { padding-left: 4px; color: var(--faint); font-size: 12px; line-height: 16px; } /* "3 more files": a muted line after the chips */
 .final-verify { display: flex; align-items: center; gap: 8px; color: var(--muted); line-height: 20px; }
 .final-verify + .final-verify { margin-top: 4px; }
-.final-review-notes summary { cursor: pointer; color: var(--muted); padding: 6px 0; width: max-content; }
+.final-review-notes summary { cursor: pointer; color: var(--muted); padding: 4px 0; font-size: 12px; line-height: 16px; width: max-content; } /* 24px, like the Full report fold above it */
 .final-action-result { margin: 10px 0 0; }
 .team-final-note { color: var(--faint); font-size: 12px; line-height: 16px; }
 .team-final-actions { display: flex; gap: 8px; margin-top: 12px; }
@@ -355,7 +332,7 @@
 .team-undo-result { color: var(--ok); font-size: 12px; }
 .team-applied .git-card { grid-column: 1 / -1; margin-top: 12px; padding: 12px 0 0; border: 0; border-top: 1px solid var(--hair); border-radius: 0; background: none; }
 
-@media (max-width: 1180px) { .team-side-story { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); } .team-run { width: min(100% - 32px, 1100px); } }
+@media (max-width: 1180px) { .team-side-story { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 1000px) { #app.team-mode, #app.team-mode.ws-open { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 900px) {
   #app.team-mode #history { display: none; }
@@ -366,12 +343,11 @@
 @media (max-width: 600px) {
   .team-head { padding-inline: 8px; }
   .team-config-grid { grid-template-columns: minmax(0, 1fr); }
-  .team-run { width: calc(100% - 20px); }
-  .team-run-header { grid-template-columns: auto minmax(0, 1fr); }
   .team-controls { grid-column: 2; justify-content: flex-start; margin: 6px 0 0 -8px; }
   .team-board { grid-template-columns: minmax(0, 1fr); }
   .team-final { padding: 16px; }
   .team-final-actions { flex-direction: column; }
+  .team-final-actions .btn { justify-content: center; } /* full width: the label in the middle, like the start card's Send */
   .team-applied { grid-template-columns: minmax(0, 1fr); }
   .team-applied > .btn { grid-column: 1; grid-row: auto; margin-top: 8px; }
   .plan-edit-row { grid-template-columns: auto minmax(0, 1fr); }
@@ -379,7 +355,7 @@
 }
 /* touch: the chips, toggles and their popover are a finger wide */
 @media (hover: none) {
-  .crew-chip, .cw-chip, .crew-pop select, .team-goal-more, .team-send { min-height: 44px; }
+  .crew-chip, .cw-chip, .crew-pop select, .team-send { min-height: 44px; }
   .team-send { min-width: 44px; }
   .crew-toggle .seg button { height: 40px; }
 }
@@ -387,11 +363,10 @@
 /* ---- live coding: one editor for the whole team (typing engine in teamStage.ts) ---- */
 .stage-editor { --agent: var(--a-claude); position: relative; display: flex; flex-direction: column; min-width: 0; height: clamp(360px, calc(100vh - 380px), 1100px); background: var(--ed-bg); border: 1px solid var(--ed-line); border-radius: var(--r-md); overflow: hidden; }
 .stage-title { position: relative; display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 8px 0 14px; background: var(--ed-bar); border-bottom: 1px solid var(--ed-line); }
-
-.stage-dots { display: none; }
 .stage-name { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--ed-fg); }
 .stage-chips { display: flex; gap: 4px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
 .stage-title .lane-live { margin-left: 4px; color: var(--ed-dim); }
+.crew-side .stage-chips { display: none; } .crew-side .stage-title .lane-live { margin-left: auto; } /* the 280px side panel has no room for the chips: each file's tag and the caret's name the agent */
 .stage-title .lane-details { margin-left: 0; color: var(--ed-dim); }
 .stage-title .lane-details:hover, .stage-title .lane-details.on { color: var(--ed-fg); background: var(--ed-line); }
 .stage-chip { --c: var(--a-claude); display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px 2px 7px; border-radius: var(--r-sm); font-size: 12px; color: var(--ed-dim); transition: color var(--t2), background-color var(--t2); }

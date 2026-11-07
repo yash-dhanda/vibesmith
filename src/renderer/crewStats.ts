@@ -19,7 +19,8 @@ export function forecastLine(f: CrewStats['forecast']): string {
   return `For the ${left}: up to ${mins} and about ${formatTokens(f.estTokensLeft)} tokens${plan}. This is an estimate from the average finished task, so it can be off.`
 }
 
-// "Cost and time" for the run screen: one row per task, the totals and the forecast. Read when opened, then at most every 5 seconds while the run is active.
+// "Cost and time" for the run screen: one row per task, the totals and the forecast. Read when opened, then at most every 5 seconds while the run
+// is active, on the run page's 1 s clock (team.ts sends 'tick'). A fold that took it off the page and put it back gets fresh numbers on the next tick.
 export function renderCrewStats(runId: string): HTMLDetailsElement {
   const root = h('details', 'crew-stats') as HTMLDetailsElement
   const sum = h('summary', '', 'Cost and time')
@@ -27,7 +28,7 @@ export function renderCrewStats(runId: string): HTMLDetailsElement {
   const body = h('div', 'cs-body')
   root.append(sum, body)
 
-  let timer = 0
+  let active = true
   let last = 0
   let busy = false
 
@@ -62,21 +63,16 @@ export function renderCrewStats(runId: string): HTMLDetailsElement {
     }
     const line = forecastLine(s.forecast)
     body.replaceChildren(table, ...(line ? [h('p', 'cs-forecast', line)] : []), h('p', 'cs-note', 'Cost is what the work would cost at API prices. Nothing is billed for it here.'))
-    if (!s.active) window.clearInterval(timer)
+    active = s.active
   }
 
   async function load() {
-    if (busy || !root.open || Date.now() - last < REFRESH_MS - 250) return
+    if (busy || !root.open || !root.isConnected || Date.now() - last < REFRESH_MS - 250) return
     busy = true
     try { paint(await window.forge.teamStats(runId)); last = Date.now() } catch (e) { body.replaceChildren(h('p', 'errtext', cleanErr(e))) } finally { busy = false }
   }
 
-  root.addEventListener('toggle', () => {
-    window.clearInterval(timer)
-    if (!root.open) return
-    last = 0
-    void load()
-    timer = window.setInterval(() => { if (!root.isConnected) window.clearInterval(timer); else void load() }, REFRESH_MS)
-  })
+  root.addEventListener('toggle', () => { if (root.open) { last = 0; active = true; void load() } })
+  root.addEventListener('tick', () => { if (active) void load() })
   return root
 }

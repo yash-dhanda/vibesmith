@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest'
-import { checklist, planItems, type CheckItem } from './checklist'
+import { checklist, patchDetail, planItems, type CheckItem } from './checklist'
 import { morph } from './morph'
 
 const keys = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('.ck-row')].map(r => r.dataset.key)
@@ -23,6 +23,12 @@ describe('checklist', () => {
     morph(live, checklist(steps(3, 1), { live: false }))
     expect(live.querySelector('[data-key="t0"]')).toBe(row); expect(row.querySelector('.ck-mark')).toBe(m)
     expect(m.dataset.state).toBe('done'); expect(live.className).toBe('ck')
+  })
+  it('patches a running row\'s step in place, and its name for screen readers with it', () => {
+    const row = checklist([{ key: 'a', text: 'Fix login', state: 'active', detail: 'Codex is reading a.ts' }]).querySelector('.ck-row')!
+    patchDetail(row, 'Codex is editing b.ts')
+    expect(row.querySelector('.ck-detail')!.textContent).toBe('Codex is editing b.ts')
+    expect(row.getAttribute('aria-label')).toBe('In progress: Fix login, Codex is editing b.ts')
   })
   it('maps Solo plan steps: skipped wins, doing is active, no id falls back to the position', () => {
     expect(planItems([{ id: 'a', text: 'x', status: 'doing' }, { text: 'y', status: 'done', skipped: true }, { text: 'z', status: 'todo' }]).map(i => [i.key, i.state])).toEqual([['a', 'active'], ['1', 'skipped'], ['2', 'pending']])

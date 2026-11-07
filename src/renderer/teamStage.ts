@@ -205,14 +205,20 @@ function apply(stage: Stage, ev: StageCode, animate: boolean) {
   if (animate) { typing(stage, ev.agent); kick(stage) }
 }
 
+// An agent's chip: its name (the caret's tag reads it) and how fast it types.
+function addChip(stage: Stage, chips: Element, a: StageAgentInfo) {
+  const chip = el('span', `stage-chip ${a.agent}${a.running ? ' working' : ''}`); chip.dataset.name = a.name
+  const rate = el('em'); chip.append(el('i'), el('span', '', a.name), rate); chips.append(chip)
+  stage.chips.set(a.agent, { el: chip, rate, typed: 0, timer: null })
+}
+
 // The document built from what the log already holds (opening a run, or a redraw): nothing is typed out, everything is shown as it stands.
 export function buildStage(files: StageCode[], opts: { agents: StageAgentInfo[]; running: boolean; status: string; details: HTMLElement; live: string }): HTMLElement {
   const root = el('section', `stage-editor${opts.running ? ' active' : ''}`)
   const title = el('header', 'stage-title')
-  const dots = el('span', 'stage-dots'); dots.append(el('i'), el('i'), el('i'))
   const chips = el('div', 'stage-chips')
   const name = el('strong', 'stage-name', N.live)
-  title.append(dots, name, chips, el('span', `lane-live${opts.running ? ' on' : ''}`, opts.live), opts.details)
+  title.append(name, chips, el('span', `lane-live${opts.running ? ' on' : ''}`, opts.live), opts.details)
   const view = el('div', 'stage-view')
   const scroll = el('div', 'stage-scroll'); scroll.hidden = true
   const gutter = el('pre', 'stage-gutter'); const doc = el('div', 'stage-doc'); scroll.append(gutter, doc); view.append(scroll)
@@ -221,11 +227,7 @@ export function buildStage(files: StageCode[], opts: { agents: StageAgentInfo[];
   const status = el('footer', 'stage-status'); status.append(where, follow)
   root.append(title, view, status)
   const stage: Stage = { root, scroll, gutter, doc, view, where, follow, blocks: new Map(), order: [], chips: new Map(), following: true, live: opts.running, raf: 0, idleTimer: null, rateTimer: null, lastTick: 0, earlier: [], capped: remote, more: null }
-  for (const a of opts.agents) {
-    const chip = el('span', `stage-chip ${a.agent}${a.running ? ' working' : ''}`); chip.dataset.name = a.name
-    const rate = el('em'); chip.append(el('i'), el('span', '', a.name), rate); chips.append(chip)
-    stage.chips.set(a.agent, { el: chip, rate, typed: 0, timer: null })
-  }
+  for (const a of opts.agents) addChip(stage, chips, a)
   // Scrolling up by hand stops the view from chasing the typing; the button (or scrolling back to the end) resumes it.
   const stopFollow = () => { stage.following = false; follow.hidden = false }
   scroll.addEventListener('wheel', (e) => { if (e.deltaY < 0) stopFollow() }, { passive: true })
@@ -252,7 +254,7 @@ export function updateStage(root: HTMLElement, files: StageCode[], o: { agents: 
   const badge = root.querySelector('.stage-title .lane-live'); if (badge) { badge.classList.toggle('on', o.running); if (badge.textContent !== o.live) badge.textContent = o.live }
   const idle = root.querySelector('.stage-idle'); idle?.classList.toggle('working', o.running); idle?.querySelector('.ck-mark')?.setAttribute('data-state', o.running ? 'active' : 'pending')
   const text = idle?.querySelector('.stage-idle-text'); if (text && text.textContent !== o.status) text.textContent = o.status
-  for (const a of o.agents) s.chips.get(a.agent)?.el.classList.toggle('working', a.running)
+  for (const a of o.agents) { const c = s.chips.get(a.agent); if (c) c.el.classList.toggle('working', a.running); else addChip(s, root.querySelector('.stage-chips')!, a) } // an agent that joins gets its chip; the editor stays
   const last = new Map<string, StageCode>(); for (const e of files) last.set(e.id, e) // the log holds every snapshot of a file: only the newest counts
   const earlier = new Set(s.earlier.map((e) => e.id)) // a phone's older files wait behind "Show earlier files": not added back
   for (const ev of last.values()) { if (earlier.has(ev.id)) continue; const b = s.blocks.get(ev.id); if (!b || b.target !== ev.text || b.done !== ev.done) apply(s, ev, false) }

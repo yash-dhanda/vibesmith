@@ -39,12 +39,14 @@
 .cw-pop-item.on::after { content: '✓'; float: right; color: var(--accent); }
 
 /* the side panel */
-.crew-side { position: sticky; top: 52px; display: flex; flex-direction: column; gap: 0; padding-top: 12px; max-height: calc(100vh - 52px); overflow: auto; }
+.crew-side { order: 1; position: sticky; top: 52px; display: flex; flex-direction: column; gap: 0; padding-top: 12px; max-height: calc(100vh - 52px); overflow: auto; } /* first in the DOM (team.ts renderRun), shown on the right */
 .crew-side-sec { padding: 12px 0; border-bottom: 1px solid var(--hair); }
 .crew-side-sec h3 { margin: 0 0 8px; font-size: 12px; font-weight: 500; line-height: 16px; color: var(--faint); }
 .crew-side-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; font-size: 13px; line-height: 20px; overflow: hidden; }
 .crew-side-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.crew-side-agent { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 0 8px; align-items: center; padding: 2px 0; font-size: 13px; line-height: 20px; } /* one 24px line per agent, tokens in a right-hand column */
+.crew-side-agent { display: grid; grid-template-columns: 14px auto minmax(0, 1fr) auto; gap: 0 8px; align-items: center; padding: 2px 0; font-size: 13px; line-height: 20px; } /* one 24px line per agent, tokens in a right-hand column; the dot in the 14px icon column */
+.crew-side-agent > .agent-orb { justify-self: center; }
+.crew-side-agent > strong { font-weight: 500; }
 .crew-side-model { grid-column: 3; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 12px; line-height: 16px; }
 .crew-side-tokens { grid-column: 4; grid-row: 1; text-align: right; font-variant-numeric: tabular-nums; color: var(--faint); font-family: var(--mono); font-size: 12px; line-height: 16px; }
 .crew-side-changes { display: flex; align-items: baseline; gap: 8px; font-size: 13px; line-height: 20px; font-variant-numeric: tabular-nums; }
@@ -81,18 +83,19 @@
   #team-screen:has(> #team-root > :is(.crew-claude, .team-run-loading)) > .team-head { display: none; }
 }
 
+/* one column: header, side panel, thread, cards, message box, all in the page itself, so the box sticks to the bottom of the whole page */
 @media (max-width: 1100px) {
-  .crew-cols { grid-template-columns: minmax(0, 1fr); row-gap: 0; }
-  .crew-side { position: static; max-height: none; padding-top: 0; order: -1; } /* above the thread: the message box stays at the bottom */
+  .crew-cols, .crew-main { display: contents; }
+  .crew-side { position: static; max-height: none; padding-top: 0; order: 0; }
 }
 
 @media (max-width: 800px) {
   .crew-claude { padding: 0 calc(12px + var(--safe-r)) 0 calc(12px + var(--safe-l)); }
   .crew-me { max-width: 92%; }
-  .cw-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -8px; padding: 4px 8px 0; }
+  .cw-bar { position: static; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -8px; padding: 4px 8px 0; } /* static: the picker sits on the message box, not in the scrolling bar */
   .cw-bar::-webkit-scrollbar { display: none; }
   .cw-chip { flex: none; height: 32px; padding: 0 12px; }
-  .cw-pop { position: fixed; left: 12px !important; right: 12px; bottom: calc(150px + var(--safe-b, 0px)); }
+  .cw-pop { position: absolute; left: 0 !important; right: 0; bottom: calc(100% + 8px); } /* right above the box, however tall the draft makes it */
   .crew-head { gap: 8px; flex-wrap: wrap; position: static; height: auto; padding: 8px 0; } /* it wraps here and scrolls away: the 52px sticky bar is for one line */
   .crew-head .team-controls { order: 3; flex: 1 1 100%; justify-content: flex-end; }
   .crew-head-meta { flex-wrap: wrap; }

@@ -2,6 +2,7 @@
 .crew-preview { border: 1px solid var(--hair); border-radius: var(--r-md); background: var(--bg); min-width: 0; }
 .crew-preview-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 12px; border: 0; background: none; color: var(--text); font-size: 13px; text-align: left; border-radius: inherit; }
 .crew-preview-head:hover { background: var(--panel-2); }
+.crew-preview-head > strong { font-weight: 500; }
 .crew-preview-head .ic { transition: transform var(--t1) var(--ease); color: var(--muted); }
 .crew-preview.open .crew-preview-head .ic { transform: rotate(90deg); }
 .crew-preview-sum { margin-left: auto; min-width: 0; color: var(--faint); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

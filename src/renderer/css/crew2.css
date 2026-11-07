@@ -17,7 +17,6 @@
 .land-del { color: var(--del-ink); }
 .land-state { min-width: 46px; text-align: right; color: var(--ok); font: 12px var(--sans, inherit); }
 .land-foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--hair); }
-.land-foot .btn { height: 30px; }
 .land-log { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--hair); }
 .land-log-row { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; min-height: 26px; }
 .land-log-row .link-btn { margin-left: auto; }
@@ -61,12 +60,8 @@
 .team-fold > summary { padding: 8px 12px; cursor: pointer; font-size: 12px; color: var(--muted); }
 .team-fold[open] > summary { border-bottom: 1px solid var(--hair); }
 .team-fold > .team-lanes, .team-fold > .team-side-story { padding: 8px; }
-/* every fold on the Crew page opens on the same drawn chevron, never the native triangle (Notes and checks keeps its own on the right; a code card's is in crew.css) */
+/* every fold on the Crew page opens on the same drawn chevron, never the native triangle (Notes and checks keeps its own on the right; a code card's is in crew.css).
+   The chevron takes a 14px box like an icon (6.5px border-box, so a border rounded to whole pixels does not move the label), so a fold's label starts where an icon row's does */
 #team-root details:not(.team-background, .live-code) > summary { display: flex; align-items: center; gap: 8px; list-style: none; }
-#team-root details:not(.team-background, .live-code) > summary::before { content: ''; flex: none; width: 5px; height: 5px; margin: 0 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform var(--t1); }
+#team-root details:not(.team-background, .live-code) > summary::before { content: ''; flex: none; box-sizing: border-box; width: 6.5px; height: 6.5px; margin: 0 3.75px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform var(--t1); }
 #team-root details:not(.team-background, .live-code)[open] > summary::before { transform: rotate(45deg); }
-.team-usage-item > .team-usage-model { color: var(--muted); max-width: 22ch; overflow: hidden; text-overflow: ellipsis; }
-.team-models { margin-top: 10px; padding: 12px 14px; border: 1px solid var(--hair); border-radius: 8px; background: var(--panel, transparent); }
-.team-models p { margin: 4px 0 10px; font-size: 12px; }
-.team-models-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px 14px; }
-.team-models-actions { display: flex; gap: 8px; margin-top: 12px; }
