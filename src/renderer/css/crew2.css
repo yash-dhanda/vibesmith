@@ -1,25 +1,4 @@
-/* Crew: landing part of a run, and the overnight queue. */
-
-/* ---- land part of a run ---- */
-.land-panel { margin: 14px 0 0; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--r-lg); background-color: var(--bg); }
-.land-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-.land-title { display: inline-flex; align-items: center; gap: 7px; font-weight: 500; }
-.land-title .ic { color: var(--muted); }
-.land-count { margin-left: auto; color: var(--faint); font-size: 12px; }
-.land-group { border-top: 1px solid var(--hair); padding: 8px 0 4px; }
-.land-group-head { display: flex; align-items: center; gap: 8px; min-height: 28px; }
-.land-task { font-weight: 500; overflow-wrap: anywhere; }
-.land-task-n { color: var(--faint); font-size: 12px; }
-.land-file { display: flex; align-items: center; gap: 8px; padding: 3px 0 3px 22px; font: 12px var(--mono); }
-.land-file.landed { color: var(--faint); }
-.land-path { display: inline-flex; align-items: center; gap: 6px; min-width: 0; flex: 1; overflow-wrap: anywhere; }
-.land-add { color: var(--add-ink); }
-.land-del { color: var(--del-ink); }
-.land-state { min-width: 46px; text-align: right; color: var(--ok); font: 12px var(--sans, inherit); }
-.land-foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--hair); }
-.land-log { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--hair); }
-.land-log-row { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; min-height: 26px; }
-.land-log-row .link-btn { margin-left: auto; }
+/* Crew: the overnight queue. */
 
 /* ---- overnight queue ---- */
 #crew-queue { width: min(680px, calc(100vw - 32px)); max-height: min(720px, calc(100vh - 48px)); }

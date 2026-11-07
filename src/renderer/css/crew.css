@@ -311,14 +311,11 @@
 .team-final-report { max-width: 75ch; line-height: 1.65; }
 .team-final-report > :first-child { margin-top: 0; }
 .team-final-report :is(h1, h2, h3, h4, strong) { font-weight: 500; }
-.team-final-files { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 12px 0; }
-.team-final-files > div { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid var(--hair); border-radius: var(--r-sm); font: 12px var(--mono); line-height: 16px; overflow-wrap: anywhere; }
-.team-final-files > .more { padding-left: 4px; color: var(--faint); font-size: 12px; line-height: 16px; } /* "3 more files": a muted line after the chips */
 .final-verify { display: flex; align-items: center; gap: 8px; color: var(--muted); line-height: 20px; }
 .final-verify + .final-verify { margin-top: 4px; }
-.final-review-notes summary { cursor: pointer; color: var(--muted); padding: 4px 0; font-size: 12px; line-height: 16px; width: max-content; } /* 24px, like the Full report fold above it */
 .final-action-result { margin: 10px 0 0; }
-.team-final-note { color: var(--faint); font-size: 12px; line-height: 16px; }
+.final-review-note { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; line-height: 18px; }
+.team-final-note { margin: 4px 0 12px; color: var(--faint); font-size: 13px; line-height: 20px; }
 .team-final-actions { display: flex; gap: 8px; margin-top: 12px; }
 .team-final-actions .btn { height: 32px; padding: 0 14px; }
 .team-applied { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 16px; margin: 14px 0 0; padding: 20px; border: 1px solid var(--border); border-radius: var(--r-lg); }

@@ -14,7 +14,6 @@ import { buildStage, pushCode, updateStage, type StageCode } from './teamStage'
 import { renderCrewPreview, visualCheckButton } from './crewPreview'
 import { renderGitPanel } from './gitPanel'
 import { openDiffReview } from './diffReview'
-import { renderLandPanel } from './landPanel'
 import { openQueue } from './queuePanel'
 import { attachVoice } from './voice'
 import { renderCrewStats } from './crewStats'
@@ -1166,8 +1165,6 @@ async function openDiff(taskId?: string, path?: string, live = false) {
   catch (e) { host.replaceChildren(h('div', 'errcard', cleanErr(e))) }
 }
 
-// Land part of the result: built once per state of the run (it asks for the file groups when drawn).
-let landPanel: { key: string; el: HTMLElement } | null = null
 let reportOpen = false
 // The stored review notes keep "claude: FAIL — …" (queue.ts reads it); only the words shown change, and the reviewer's text shows plain.
 function noteText(n: string) {
@@ -1176,13 +1173,10 @@ function noteText(n: string) {
   const rest = plainLine(m[3], 600)
   return `${m[1] === 'Security review' ? m[1] : `${AGENT_NAME[m[1] as 'claude']}'s review`} ${({ PASS: 'passed', FAIL: 'failed', UNCLEAR: 'unclear' } as Record<string, string>)[m[2]]}.${rest && ` ${rest[0].toUpperCase()}${rest.slice(1)}`}`
 }
-function landPanelFor() { const key = `${run!.id}:${(run!.landedFiles ?? []).length}:${run!.final!.files.length}`; if (!landPanel || landPanel.key !== key) landPanel = { key, el: renderLandPanel(run!, () => void refreshRun()) }; return landPanel.el }
 function renderFinal() {
   const section = h('section', 'team-final'); section.dataset.key = 'final'; enter(section, `final:${run!.id}`, 0)
   section.append(h('h2', '', N.reviewHead))
-  const files = h('div', 'team-final-files'); for (const file of run!.final!.files.slice(0, 12)) { const f = h('div', '', file.path); f.prepend(fileIcon(file.status)); f.title = `${file.status === 'added' ? 'New' : file.status === 'deleted' ? 'Removed' : 'Updated'}: ${file.path}`; files.append(f) }
-  if (run!.final!.files.length > 12) files.append(h('span', 'more', `${run!.final!.files.length - 12} more files`)) // a muted line, not a file chip (crew.css)
-  section.append(files)
+  const count = run!.final!.files.length; section.append(h('p', 'team-final-note', `${count} ${count === 1 ? 'file' : 'files'} changed. Nothing in your project changes until you land it.`))
   const localReviews = run!.tasks.filter(t => t.agent === 'local' && t.status !== 'cancelled').flatMap(t => t.reviews.slice(-1))
   if (run!.tasks.some(t => t.agent === 'local' && t.status !== 'cancelled')) {
     const by = [...new Set(localReviews.map(r => AGENT_NAME[r.by]))].join(' and ') || 'another agent', ok = localReviews.length > 0 && localReviews.every(r => r.verdict === 'pass')
@@ -1190,11 +1184,8 @@ function renderFinal() {
   }
   const verify = h('div', `final-verify ${run!.final!.verifyOk ? 'ok' : run!.final!.verifyOk === false ? 'bad' : ''}`); verify.append(mark(run!.final!.verifyOk ? 'done' : run!.final!.verifyOk === false ? 'failed' : 'pending'), h('span', '', run!.final!.verifyOk ? 'Project check passed' : run!.final!.verifyOk === false ? 'Project check failed' : 'No project check configured')); section.append(verify)
   const report = splitKeyAnswer(run!.final!.report).rest.replace(/^# .*\n+/, '').replace(/\s*\**\bKEY\b\**\s*:[^\n]*/g, '') // the header shows the goal; saved reports carry KEY inline in 'What the team did'
-  section.append(fold('Full report', reportOpen, o => { reportOpen = o }, () => { const r = h('div', 'team-final-report'); r.innerHTML = md(report); return [r] }))
-  if (run!.final!.reviewNotes.length) { const notes = h('details', 'final-review-notes'); notes.append(h('summary', '', `Final review notes · ${run!.final!.reviewNotes.length}`), ...run!.final!.reviewNotes.map(item => h('p', '', noteText(item)))); section.append(notes) }
+  section.append(fold('Full report', reportOpen, o => { reportOpen = o }, () => { const r = h('div', 'team-final-report'); r.innerHTML = md(report); return [r, ...run!.final!.reviewNotes.map(item => h('p', 'final-review-note', noteText(item)))] }))
   if (undoResult) section.append(h('div', 'errcard final-action-result', undoResult))
-  if (!replay && !isRemote() && typeof window.forge.teamLandings === 'function' && run!.final!.files.length > 1) section.append(keep('land', landPanelFor()))
-  const note = h('p', 'team-final-note', 'Nothing has changed in your project yet. If you don’t land this result, Forge keeps a saved crew copy that you can reopen later.'); section.append(note)
   const actions = h('div', 'team-final-actions')
   const apply = actionButton(N.land, async () => { if (replay) { if (replayScenario === 'applyfail') { undoResult = 'Could not land: your project changed while the crew was working. Review the project and try again.'; renderRun(); return } run!.status = 'done'; run!.applied = true; run!.appliedCheckpoint = 'replay-checkpoint'; toast('Landed · Undo is ready'); renderRun(); return } await call(async () => { let result = await window.forge.teamApply(run!.id); if (!result.ok && /apply without Undo/.test(result.message) && window.confirm(`${result.message}\n\nApply anyway, without Undo?`)) result = await window.forge.teamApply(run!.id, true); if (!result.ok) { undoResult = result.message; renderRun(); return } toast(result.checkpoint ? `${result.message} · Undo is ready` : result.message, 5000); await refreshRun() }) }, 'primary')
   const reject = actionButton('Don’t land', () => { if (replay) { run!.status = 'done'; run!.applied = false; toast('Not landed · Forge kept a saved crew copy'); renderRun(); return } void teamAction(() => window.forge.teamReject(run!.id)) })
